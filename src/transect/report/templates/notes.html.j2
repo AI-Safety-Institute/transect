@@ -1,0 +1,159 @@
+{#- Small standalone note/legend fragments shared across a transcript's
+    sections. Each macro takes already-computed plain values (numbers,
+    strings, small dicts/lists) - no pandas objects - and produces one
+    self-contained HTML fragment; autoescape handles every interpolation,
+    so callers pass raw (unescaped) text. -#}
+
+{% macro section(title, blocks) -%}
+<div class="section">{% if title %}<h3>{{ title }}</h3>{% endif %}{% for block in blocks %}{{ block }}{% endfor %}</div>
+{%- endmacro %}
+
+{% macro chip(swatch_style, text) -%}
+<span class="chip"><span class="swatch" style="{{ swatch_style }}"></span>{{ text }}</span>
+{%- endmacro %}
+
+{#- A small horizontal-rule swatch for a legend naming a *line* mark on
+    a chart (context-flush / human-intervention rules); `.swatch` above
+    suits a fill, not a line. ``style`` is "solid" or "dashed", the two
+    chart line styles this report draws. -#}
+{% macro line_swatch(color, style="solid") -%}
+<span class="swatch-line" style="border-top-color:{{ color }}; border-top-style:{{ style }};"></span>
+{%- endmacro %}
+
+{#- The report's very-top intro: one deterministic sentence composed
+    from recorded facts (sections.run_intro_line), directly under the
+    transcript heading. -#}
+{% macro intro_line(text) -%}
+<p class="meta">{{ text }}</p>
+{%- endmacro %}
+
+{#- The intro's three default-collapsed expandables (Core setup /
+    Additional config details / Run summary - the eval-setup surface).
+    Rows are (label, value) pairs, every value pre-worded by
+    sections.eval_setup_blocks ("data not found" / "not set" included);
+    prompts are (label, verbatim text) sub-expandables - untrusted
+    agent-facing content, interpolated raw into autoescape. -#}
+{% macro setup_blocks(blocks) -%}
+{% for b in blocks %}<details class="event"><summary>{{ b.title }}</summary>{% for label, value, definition in b.rows %}<p class="meta">{% if definition %}<strong><span title="{{ definition }}">{{ label }}</span></strong>{% else %}<strong>{{ label }}</strong>{% endif %}: {{ value }}</p>{% endfor %}{% for label, text in b.prompts %}<details class="event definitions"><summary>{{ label }}</summary><p class="prompt-verbatim">{{ text }}</p></details>{% endfor %}</details>{% endfor %}
+{%- endmacro %}
+
+
+{% macro event_legend(has_context_chart) -%}
+{% if has_context_chart -%}
+<p class="meta">{{ line_swatch('#c44e52', 'dashed') }}dashed red = context flush event, marked on both the bars and context-window charts above; hover a bar for the flush detail.</p>
+{%- else -%}
+<p class="meta">{{ line_swatch('#c44e52', 'dashed') }}context flush: appears on the token telemetry chart; hover that turn for the flush detail.</p>
+{%- endif %}
+{%- endmacro %}
+
+{#- No bold "Token telemetry" lead-in: the section's own header names
+    it, and repeating it two lines apart reads as a duplicate. -#}
+{% macro token_intro_derived() -%}
+<p class="meta explainer">Three measures of the per-turn token stream, selectable below:</p>
+<ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: only what is new this turn; re-reads of unchanged context excluded</li><li><strong>cumulative (billable)</strong>: running total of billable spend; never drops, not even at a flush</li></ul>
+{%- endmacro %}
+
+{% macro token_intro_raw() -%}
+<p class="meta explainer">Per-call output tokens (pre-derivation fallback: this transcript's usage events don't carry the cache/context breakdown the three-measure view needs).</p>
+<p class="meta explainer">Scale: <em>linear</em> or <em>log</em> (log hides turns with a zero or negative token count, since a token count of zero has no logarithm; a turn with no reading at all is hidden under either scale).</p>
+{%- endmacro %}
+
+{#- This fact belongs with the chart whose measures it explains, not on
+    a judge-reliability surface. -#}
+{% macro token_cache_semantics(value) -%}
+<p class="meta explainer">Token cache semantics: {{ value }} (the provider's input_tokens reporting style; the measures above are already normalised for it).</p>
+{%- endmacro %}
+
+{#- Both event lists below are a <details class="event event-list">
+    whose <summary> is just the count and whose body is one <li> per
+    event, turn-ordered (the builders in sections.py sort explicitly, so
+    this template does not have to trust its caller). Same card
+    border/radius and summary hover as `.event`, but a muted rather than
+    semibold summary - these are meta-level detail, not primary
+    content. -#}
+{% macro flush_line(flushes) -%}
+<details class="event event-list"><summary>{{ flushes|length }} context flush(es) &middot; dashed lines on the charts above</summary><ol>{% for f in flushes %}<li>turn {{ f.turn }} &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol></details>
+{%- endmacro %}
+
+{% macro intervention_line(interventions) -%}
+<details class="event event-list"><summary>{{ interventions|length }} human intervention(s) &middot; solid navy lines on the chart above</summary><ol>{% for i in interventions %}<li>turn {{ i.turn }} &middot; {{ i.channel }} &middot; &ldquo;{{ i.content }}&rdquo;</li>{% endfor %}</ol></details>
+{%- endmacro %}
+
+{% macro intervention_legend() -%}
+<p class="meta explainer">{{ line_swatch('#0E2841') }}solid navy = human intervention &middot; hover for source + message</p>
+{%- endmacro %}
+
+{#- No heading of its own: the Phase timeline section's Jinja header
+    (notes.section) names it, and one header per section is the rule. -#}
+{% macro phase_chips(reuse_note, chips) -%}
+{% if reuse_note %}<p class="meta">{{ reuse_note }}</p>{% endif %}<p class="chips">{% for c in chips %}{{ chip(c.swatch_style, c.text) }}{% endfor %}</p>
+{%- endmacro %}
+
+{#- The agreement strip's caption, directly under the chart it
+    explains: an unexplained, unlabeled strip under the band reads as a
+    rendering defect rather than a feature. Rendered only when the strip
+    itself has data (`charts.has_judge_agreement`) - never a caption for
+    a chart element that isn't there. -#}
+{% macro agreement_strip_caption() -%}
+<p class="meta explainer">Strip under the band: teal = per-turn judge agreement, darker = higher (k-roll/cohort judges); grey = no vote agreement (turn not judged, judged by a single voter, or verifier re-label)</p>
+{%- endmacro %}
+
+{% macro group_heading(text) -%}
+<h4>{{ text }}</h4>
+{%- endmacro %}
+
+{#- The Token spend section's custom grouping: heading + one selector
+    over the user layers' tag families; `_transectSpendFamily` (report.html.j2)
+    swaps which family's spend_family_group div is visible. -#}
+{#- No data-scope on the bar: that attribute would enrol it in the
+    phase-card filter init (`.filter-bar[data-scope]`); the charts'
+    own divs carry data-spend-scope instead. -#}
+{% macro spend_family_control(scope, options) -%}
+<h4>By custom tag family <span class="custom-layer-badge">custom</span></h4>
+<div class="filter-bar"><label>Group by: <select onchange="_transectSpendFamily('{{ scope }}', this.value)">{% for o in options %}<option value="{{ o.family }}" title="user tag family from layer '{{ o.layer }}'">{{ o.family }} ({{ o.layer }})</option>{% endfor %}</select></label></div>
+{%- endmacro %}
+
+{% macro spend_family_group(scope, family, chart, hidden) -%}
+<div data-spend-scope="{{ scope }}" data-spend-family="{{ family }}"{% if hidden %} hidden{% endif %}>{{ chart }}</div>
+{%- endmacro %}
+
+{% macro spend_subagent_unavailable() -%}
+<p class="meta explainer">Delegated token spend is unavailable in this export (sub-agent lanes are tool-events-only).</p>
+{%- endmacro %}
+
+{% macro narrator_line(model) -%}
+<p class="meta explainer">Card headlines and summaries are LLM-generated narration by {{ model }}; descriptive, not a validated account.</p>
+{%- endmacro %}
+
+{% macro phase_cards_explanation() -%}
+<p class="meta explainer">One expandable card per phase, chronological - the drill-down for the Phase timeline (clicking a phase chunk there jumps to its card here).</p>
+{%- endmacro %}
+
+{% macro phase_explanation() -%}
+<p class="meta explainer">An LLM judge segments this run into labelled phases, matched against the spec's phase vocabulary; the labels and boundaries are the judge's output.</p>
+{%- endmacro %}
+
+{#- The Sub-agent activity section's analogue of `phase_explanation`
+    above, same shape. Worded to name only the classifier's output
+    vocabulary, never its inputs: the scanner's own prompt basis
+    (`transect/scanners/subagents.py`) can change independently of this
+    report, and this sentence must stay true either way. -#}
+{% macro subagent_explanation() -%}
+<p class="meta explainer">An LLM judge classifies each spawned sub-agent against the spec's sub-agent label vocabulary; the labels are the judge's output.</p>
+{%- endmacro %}
+
+{% macro phase_summary_line(n_phases, judge_label, judge, cohort, verifier=None) -%}
+<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier %} · verifier: {{ verifier }}{% endif %}</p>
+{%- endmacro %}
+
+{% macro phase_meta_line(n_phases, judge_label, judge, cohort, verifier_note, unjudged_count) -%}
+<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier_note %} · verifier: {{ verifier_note.overturned }} of {{ verifier_note.verified }} phase(s) with a verdict relabelled{% if verifier_note.same_model %} <span class="meta">(verifier = the same model, a self-consistency check rather than an independent second opinion)</span>{% endif %}{% endif %}{% if unjudged_count %} · <span class="meta">{{ unjudged_count }} unjudged turn(s) greyed</span>{% endif %} · turn indices are 0-based (the Scout viewer numbers turns from 1)</p>
+{%- endmacro %}
+
+{% macro label_definitions(title, entries) -%}
+<details class="event definitions"><summary>{{ title }}</summary><ul>{% for e in entries %}<li><strong>{{ e.label }}</strong>{% if e.description %}: {{ e.description }}{% endif %}</li>{% endfor %}</ul></details>
+{%- endmacro %}
+
+{% macro definitions_unavailable(title) -%}
+<details class="event definitions"><summary>{{ title }}</summary><p class="meta">The label definitions the judge saw are not recorded in this scan store. Re-run the scan to embed them.</p></details>
+{%- endmacro %}

@@ -1,0 +1,100 @@
+{#- One expandable <details> card per decision phase, chronological -
+    the drill-down of the Decision-phases band/legend. `cards` is a
+    list of already-computed plain dicts (see sections.phase_cards);
+    every text field here is raw (unescaped), autoescape does the
+    work.
+
+    Each card's `id` comes from `c.card_id` and is the band chart's own
+    click target (`charts.phase_band`'s `href` channel); the outer page's
+    hash-navigation script (`report.html.j2`) opens and scrolls to
+    whichever card a band click's fragment names. The id is
+    transcript-scoped - see `sections.phase_cards` for the collision a
+    bare `phase-<phase_index>` causes on a multi-transcript page.
+
+    The summary's second line leads with the class-box: the judge's
+    classification + confidence in one container, neutral when healthy;
+    when any reliability issue fired the box turns red, gains the
+    warning glyph, and carries the issue text (verifier overturn with
+    the pre-overturn label, low confidence, confidently-split votes) -
+    one glanceable unit instead of separate issue chips.
+
+    The cards sit in a `div.phase-cards` with its own `container_id`,
+    matching `phase_card_controls`' bar directly above, and each stamps
+    the data-* attributes that bar's sort/filter handlers read:
+
+      - data-order            this card's position in `cards`
+                               (chronological / phase_index order) -
+                               `_transectCardSort`'s "chronological" restore
+                               point, and the tie-break other sorts run
+                               against so ties always read chronological
+                               regardless of the DOM's current order
+      - data-label            the raw phase label (matches the label
+                               checkboxes' values)
+      - data-spend / data-tools / data-subagents / data-confidence
+                               the tag line's own numbers, so the sorts
+                               and the visible tags cannot disagree
+      - data-after-flush      "1"/"0", see sections._card_event_flags
+      - data-after-intervention  "1"/"0", see sections._card_event_flags
+      - data-tags             "|family=value|..." match keys for the
+                               per-family tag selectors; absent when the
+                               card's range carries no user tags
+
+    Neither flag is a visible tag - they drive the filter bar only. The
+    "compaction during phase" / "human intervention during phase"
+    tag-line entries are a stricter, unrelated "did this land inside this
+    phase's own range" check.
+
+    A turn group with excerpts (`g.excerpts`, from `transect.report.excerpts`)
+    renders as a `<details class="excerpts">` dropdown over its own
+    turns' message text. A group without them - no reachable transcript
+    store, or turns carrying no text - renders a plain list item; the
+    group's summary line is identical either way, so a reader meets one
+    layout, not two.
+
+    `e.text` is agent/user content and is interpolated like every other
+    field here: raw into autoescape, never `Markup`. -#}
+
+{#- One turn group's summary line, shared by both group layouts (a
+    `<details>` summary with excerpts under it, or the plain list item
+    without) so the two can never word the same thing differently. -#}
+{% macro group_line(g) -%}
+turns {{ g.turn_start }}–{{ g.turn_end }} <strong>{{ g.title }}</strong>{% if g.gist %} · {{ g.gist }}{% endif %}
+{%- endmacro %}
+
+{% macro phase_cards(container_id, cards) -%}
+<div class="phase-cards" id="{{ container_id }}">
+{% for c in cards %}<details class="event" id="{{ c.card_id }}" data-order="{{ loop.index0 }}" data-label="{{ c.label }}" data-spend="{{ c.spend }}" data-tools="{{ c.tools }}" data-subagents="{{ c.n_subagents }}" data-confidence="{{ c.confidence }}" data-after-flush="{{ '1' if c.after_flush else '0' }}" data-after-intervention="{{ '1' if c.after_intervention else '0' }}"{% if c.tag_key %} data-tags="{{ c.tag_key }}"{% endif %}><summary><span class="swatch" style="background:{{ c.color }};"></span> <strong>Phase {{ c.phase_index }}</strong> · {{ c.headline }}<br><span class="class-box{% if c.issues %} class-box-flagged{% endif %}" title="The judge's classification and its mean confidence over the phase's judged turns; a red box means a reliability issue fired and names it."><strong>{{ c.label }}</strong>{% if c.confidence != "" %} {{ "%.2f"|format(c.confidence) }}{% endif %}{% if c.issues %} · &#9888; {{ c.issues|join(" · ") }}{% endif %}</span> <span class="meta">{{ c.tags|join(" · ") }}</span>{% for t in c.user_chips %} <span class="user-chip" style="{{ t.style }}" title="user tag from layer '{{ t.layer }}'">{{ t.text }}</span>{% endfor %}</summary>{% if c.summary %}<p>{{ c.summary }}</p>{% endif %}{% if c.groups %}<ul>{% for g in c.groups %}<li>{% if g.excerpts %}<details class="excerpts"><summary>{{ group_line(g) }}</summary><ul class="excerpt-list">{% for e in g.excerpts %}<li><span class="meta">turn {{ e.turn }} · {{ e.lane }}{% if e.tools %} · {{ e.tools }}{% endif %}</span>{{ e.text }}{% if e.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</li>{% endfor %}{% if g.n_more %}<li class="meta">{{ g.n_more }} more turn{{ "" if g.n_more == 1 else "s" }} in this group · open in Scout viewer</li>{% endif %}</ul></details>{% else %}{{ group_line(g) }}{% endif %}</li>{% endfor %}</ul>{% endif %}{% if c.members %}<p class="meta">Cohort members (modal label · share of judged turns matching the consensus · mean confidence):</p><ul class="meta">{% for m in c.members %}<li>{{ m.member }} · {{ m.phase }} · support {{ m.support }} · mean conf {{ m.mean_confidence }}</li>{% endfor %}</ul>{% endif %}{% if c.open_link %}<p class="meta"><a href="{{ c.open_link }}" target="_blank">Open in Scout viewer ↗</a></p>{% endif %}</details>{% endfor %}
+</div>
+{%- endmacro %}
+
+{#- The sort/filter bar for one transcript's phase cards, directly above
+    them (`sections.phase_card_controls`). `container_id` matches the
+    `div.phase-cards` above - every handler in `report.html.j2` scopes
+    its lookups to it, so several transcripts' controls on one page
+    cannot cross-filter each other's cards.
+
+    Sort is a <select>: "chronological" restores phase_index order (the
+    cards' DOM order at render time); the other options sort descending
+    by their data-* attribute, stable for ties (a native Array.sort is
+    spec-guaranteed stable, so ties keep chronological order).
+
+    Labels are per-label checkboxes rather than a single select: all
+    checked = all shown, and unchecking one gives "all but x" in one
+    click. The confidence band thresholds mirror the scanner's own
+    low-confidence verifier trigger.
+
+    The checkboxes carry a title= tooltip stating their exact semantics;
+    see sections._card_event_flags. -#}
+{% macro phase_card_controls(container_id, labels, tag_filters=[]) -%}
+<div class="filter-bar" data-scope="{{ container_id }}">
+<label>Sort: <select onchange="_transectCardSort('{{ container_id }}', this.value)"><option value="chrono">chronological</option><option value="spend">token spend</option><option value="tools">tool calls</option></select></label>
+<label>Confidence: <select id="{{ container_id }}-conf" onchange="_transectCardFilter('{{ container_id }}')"><option value="">(any)</option><option value="high">high (&ge; 0.8)</option><option value="low">low (&lt; 0.6)</option></select></label>
+{% for f in tag_filters %}<label title="user tag family from layer '{{ f.layer }}'">{{ f.family }}: <select data-tag-family="{{ f.family }}" onchange="_transectCardFilter('{{ container_id }}')"><option value="">(any)</option>{% for v in f.options %}<option value="{{ v }}">{{ v }}</option>{% endfor %}</select> <span class="custom-layer-badge">custom</span></label>
+{% endfor %}
+<label title="At least one sub-agent span starts inside this phase's own turn range."><input type="checkbox" id="{{ container_id }}-subag" onchange="_transectCardFilter('{{ container_id }}')"> has sub-agent deployment(s)</label>
+<label title="A context flush falls inside this phase's own turn range, OR inside the immediately preceding phase's range: the phase containing the compaction, plus the one right after it. The tag line's own &quot;compaction during phase&quot; marks the containing phase only."><input type="checkbox" id="{{ container_id }}-flush" onchange="_transectCardFilter('{{ container_id }}')"> at/after a context flush</label>
+<label title="A human intervention falls inside this phase's own turn range, OR inside the immediately preceding phase's range; mirrors the old report's tagging exactly (the phase containing the message, plus the one right after it). One known gap: the old report excludes an initial-brief message from this tag; Transect's interventions frame carries no such kind field to replicate that exclusion."><input type="checkbox" id="{{ container_id }}-intv" onchange="_transectCardFilter('{{ container_id }}')"> at/after a human intervention</label>
+<span class="label-checks">Labels: {% for l in labels %}<label class="label-check"><input type="checkbox" checked data-label-value="{{ l.label }}" onchange="_transectCardFilter('{{ container_id }}')"><span class="swatch" style="{{ l.swatch_style }}"></span>{{ l.label }}</label>{% endfor %}</span>
+<span class="count" id="{{ container_id }}-count"></span>
+</div>
+{%- endmacro %}

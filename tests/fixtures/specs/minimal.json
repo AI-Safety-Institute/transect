@@ -1,0 +1,8 @@
+{
+  "phases": [
+    "orientation",
+    "implementation",
+    "verification"
+  ],
+  "subagent_labels": []
+}

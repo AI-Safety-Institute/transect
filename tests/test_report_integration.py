@@ -1,0 +1,411 @@
+"""Report integration: render real scans of differently-shaped logs
+and check the HTML comes out whole."""
+
+import html as html_mod
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+import transect
+from transect import load, render
+from transect.api import _run
+from transect.frames.phases import _AUDIT_COUNTS
+from transect.report import charts, sections
+from transect.report.embed import (
+    _TIP_EXTRA_LINE_PX,
+    _TIP_FIT_MARGIN,
+    _TIP_SHORT_ROW_PX,
+    _tip_floor,
+    wrap_row_px,
+)
+from transect.report.sections import _verifier_audit_rows
+from transect.spec import Spec
+
+SCENARIOS = {
+    "demo-with-subagents": (
+        "examples/logs",
+        {},
+        ["Eval setup", "Token telemetry", "Sub-agent activity", "Human interventions"],
+    ),
+    "plain-single-agent": (
+        "tests/fixtures/logs",
+        {"sample": "fixture-sample-1"},
+        ["Eval setup", "Token telemetry"],
+    ),
+    "openclaw-import": (
+        "tests/fixtures/openclaw/mini_telemetry.jsonl",
+        {},
+        # no .eval header exists on an OpenClaw import: the setup
+        # section renders its honest absences
+        ["Eval setup", "data not found", "Token telemetry"],
+    ),
+}
+
+
+@pytest.mark.parametrize("name", SCENARIOS)
+def test_mechanical_report_renders_whole(name, tmp_path):
+    """A $0 scan of this log shape renders a report with its expected
+    sections and no leaked error text."""
+    logs, kwargs, sections = SCENARIOS[name]
+    root = Path(__file__).parents[1]
+    results = _run(
+        logs=str(root / logs), spec=Spec(), scans_dir=str(tmp_path / "s"), **kwargs
+    )
+    results = render(
+        results,
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
+    )
+    html = Path(results.report_paths[0]).read_text()
+    for section in sections:
+        assert section in html
+    assert "Traceback" not in html
+    assert len(html) > 20_000
+
+
+_STORE_CONTENT = {
+    # each store's planted signals, as rendered copy; flags counted
+    # twice (once inline in the entity's own section, once in the audit)
+    "demo_scan": (
+        ("k-roll self-consistency (mean per-turn agreement) = 0.67", 2),
+        ("Flagged above 0.95", 2),
+        ("verifier spot-check overturns = 1 of 2 sampled", 2),
+        ("verifier re-label rate (model_development) = 100%", 2),
+        ("Verifier selection", 1),
+        ("Member coverage", 1),
+        # the audit groups flags under the entity sub-heading
+        ("Phase segmentation and labelling", 1),
+        # the joined per-member ballots tooltip channel
+        ("member votes", 1),
+        # the flagged class-box with the pre-overturn label + confidence
+        ("class-box-flagged", 1),
+        ("verifier overturned (was model_development (0.90))", 1),
+        # eval-setup absence wordings (header read; scaffold args recorded)
+        ("scaffold default", 1),
+        ("not set", 1),
+        ("verifier: mockllm/model", 1),
+        # the audit's per-classification maps
+        ("Reliability map", 1),
+        ("Provenance map", 1),
+        ("appears as minority vote", 1),
+        ("Chance-corrected self-consistency", 1),
+        ("Labels (N = decided turns)", 2),
+        ("What these rows mean", 2),
+        ("Flags (overall scanner assessment)", 1),
+    ),
+    "demo_scan_cohort": (
+        ("Gwet's AC1", 1),
+        ("Flagged below 0.66", 2),
+        ("Flagged between 0.66 and 0.80", 2),
+        ("Sub-agent labelling", 1),
+        ("member votes", 1),
+        ("Reliability map", 1),
+        ("Provenance map", 1),
+    ),
+}
+
+
+@pytest.mark.parametrize("store", ["demo_scan", "demo_scan_cohort"])
+def test_judged_report_renders_all_sections_from_a_stored_scan(store, tmp_path):
+    """The committed judged demo scans (k-roll + verifier; dissenting
+    cohort) render every report section, the audit, and each store's
+    planted reliability signals - inline and in the audit."""
+
+    scans = Path(__file__).parent / "fixtures" / store
+    if not scans.exists():
+        pytest.fail(
+            "committed demo scan missing - regenerate: "
+            "python tests/fixtures/generate_demo_scan.py"
+        )
+    results = render(
+        load(str(scans)),
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
+    )
+    html = Path(results.report_paths[0]).read_text()
+    for section in (
+        "Eval setup",
+        "Phase timeline",
+        "Token telemetry",
+        "Human interventions",
+        "Sub-agent activity",
+        "Token spend",
+        "Phase cards",
+        "Reliability",
+    ):
+        assert section in html
+    assert "Traceback" not in html
+    text = html_mod.unescape(html)
+    for needle, at_least in _STORE_CONTENT[store]:
+        assert text.count(needle) >= at_least, f"{needle!r} x{at_least} missing"
+    # reading order: interventions sit directly below the phase timeline
+    assert (
+        text.index("Phase timeline")
+        < text.index("Human interventions")
+        < text.index("Token telemetry")
+    )
+    _assert_no_page_errors(results.report_paths[0])
+
+
+def _assert_no_page_errors(report_path: str, min_frames: int = 6) -> None:
+    """Load the report in a real browser and require zero page errors
+    (inspect-viz widget failures are console-only and blank charts
+    silently). Skips without playwright or without the CDN."""
+    playwright = pytest.importorskip("playwright.sync_api")
+    errors: list[str] = []
+    cdn_failures: list[str] = []
+    with playwright.sync_playwright() as p:
+        try:
+            browser = p.chromium.launch()
+        except Exception as err:
+            # an environment failure, not a content failure
+            pytest.skip(f"browser unavailable: {err}")
+        page = browser.new_page()
+        page.on("pageerror", lambda err: errors.append(str(err)))
+        page.on(
+            "requestfailed",
+            lambda request: (
+                cdn_failures.append(request.url) if "cdn" in request.url else None
+            ),
+        )
+        page.goto(Path(report_path).resolve().as_uri())
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(2000)
+        n_frames = len(page.frames)
+        browser.close()
+    if cdn_failures:
+        pytest.skip(f"inspect-viz CDN unreachable: {cdn_failures[0]}")
+    assert errors == []
+    assert n_frames >= min_frames
+
+
+def test_tip_floor_budgets_one_or_two_wrapping_rows():
+    """The tooltip-fit floor prices the single-line rows plus each
+    wrapping row's own allowance; wrap_row_px caps at four extras."""
+
+    assert _tip_floor(0, 40) == _TIP_FIT_MARGIN
+    assert _tip_floor(5, 40) == 4 * _TIP_SHORT_ROW_PX + 40 + _TIP_FIT_MARGIN
+    assert _tip_floor(5, 40, 30) == 3 * _TIP_SHORT_ROW_PX + 40 + 30 + _TIP_FIT_MARGIN
+    assert wrap_row_px(10) == _TIP_SHORT_ROW_PX
+    assert wrap_row_px(61) == _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX
+    assert wrap_row_px(10_000) == _TIP_SHORT_ROW_PX + 4 * _TIP_EXTRA_LINE_PX
+
+
+def test_spend_bars_floor_covers_the_declared_tooltip_rows():
+    """The spend chart's iframe floor follows its declared channels, so
+    a short chart cannot clip its own tooltip."""
+
+    _, height = charts.spend_bars(
+        [
+            {
+                "label": "x",
+                "value": 10,
+                "color": "#123456",
+                "share": None,
+                "output": "5",
+                "billable": "7",
+            }
+        ]
+    )
+    # single-line rows plus the bucket label's two-line allowance
+    assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
+
+
+def test_run_intro_preserves_recorded_values():
+    """The deterministic intro keeps recorded values verbatim (a score
+    of "C" never lowercases) and picks the article by the agent name."""
+
+    info = pd.DataFrame(
+        [
+            {
+                "model": "m1",
+                "task_name": "t1",
+                "sample_id": "s1",
+                "epoch": 2,
+                "agent": "openclaw",
+                "date": "2026-06-18T10:00:00",
+                "message_count": 10,
+                "wallclock_seconds": 61.0,
+                "total_tokens": 1234,
+                "score": "C",
+                "success": None,
+                "error": None,
+                "limit": "message",
+            }
+        ]
+    )
+    text = str(sections.run_intro_line(info))
+    assert "under an openclaw scaffold" in text
+    assert "Scored C; ended at the message limit." in text
+
+
+def test_custom_layer_section_renders_and_passes_the_browser(layered_run, tmp_path):
+    """The layered $0 run's report carries the badge-marked custom
+    section with its markdown, chart, and band."""
+
+    results, _ = layered_run
+    path = str(tmp_path / "layered.html")
+    transect.render(results, report_path=path, viewer=False, open_report=False)
+    html = open(path).read()
+    assert "custom-layer-badge" in html
+    assert "turn_chars" in html
+    assert "an e2e fixture layer" in html  # markdown rendered
+    # the chart+band embed sits inside the custom section itself (a
+    # page-level iframe count would pass on the built-ins' alone)
+    section_start = html.index('<h3>turn_chars <span class="custom-layer-badge">')
+    section_end = html.index("<h3>", section_start + 1)
+    assert html[section_start:section_end].count("<iframe") >= 1
+    # the $0 mechanical report has fewer sections than the judged one
+    # the default floor is calibrated for: main frame + 3 built-in
+    # chart iframes + the custom section's one
+    _assert_no_page_errors(path, min_frames=5)
+
+
+def test_tag_chips_and_selectors_ride_the_phase_cards(tmp_path):
+    """A tags layer replayed over the committed judged store: each card
+    carries only its own turn range's provenance-marked family=value
+    chips, and the control bar gains one filter selector per family."""
+
+    scans = Path(__file__).parent / "fixtures" / "demo_scan"
+    per_turn = pd.DataFrame({"turn": [0, 1, 12], "quality": ["good", "good", "poor"]})
+    results = render(
+        load(
+            str(scans),
+            extra_layers=[transect.Layer(name="review", frame=per_turn, tags=True)],
+        ),
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
+    )
+    html = Path(results.report_paths[0]).read_text()
+    # the store's two phases span turns 0-7 and 10-15: good lands only
+    # on the first card, poor only on the second
+    assert html.count('data-tags="|quality=good|"') == 1
+    assert html.count('data-tags="|quality=poor|"') == 1
+    assert html.count("user-chip") >= 2
+    # the provenance title names the declaring layer (a bare "review"
+    # match would be satisfied by the demo's reviewer sub-agent)
+    assert "from layer 'review'" in html
+    assert html.count('data-tag-family="quality"') == 1
+    assert "By custom tag family" in html
+    assert "quality (review)" in html
+    assert html.count('data-spend-family="quality"') == 1
+
+
+def test_section_order_rearranges_sections_and_rejects_unknown_keys(tmp_path):
+    """section_order moves the named sections to the front in the given
+    order, everything else follows in default order, and the audit
+    stays last; an unknown key is refused naming the valid set."""
+
+    scans = Path(__file__).parent / "fixtures" / "demo_scan"
+    results = render(
+        load(str(scans)),
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
+        section_order=["token_spend", "phase_cards"],
+    )
+    html = Path(results.report_paths[0]).read_text()
+    positions = [
+        html.index(f"<h3>{title}</h3>")
+        for title in ("Token spend", "Phase cards", "Eval setup", "Phase timeline")
+    ]
+    assert positions == sorted(positions)
+    assert html.rindex("<h3>Reliability") > max(positions)
+    with pytest.raises(ValueError, match="unknown section"):
+        render(
+            results,
+            report_path=str(tmp_path / "r2.html"),
+            viewer=False,
+            open_report=False,
+            section_order=["token_spendd"],
+        )
+    with pytest.raises(ValueError, match="repeats"):
+        render(
+            results,
+            report_path=str(tmp_path / "r3.html"),
+            viewer=False,
+            open_report=False,
+            section_order=["token_spend", "token_spend"],
+        )
+    # the same check guards the transect() entry point pre-spend: it fires
+    # before the logs are even touched (the path does not exist)
+    with pytest.raises(ValueError, match="unknown section"):
+        transect.transect(
+            "does-not-exist",
+            Spec(),
+            viewer=False,
+            open_report=False,
+            section_order=["nope"],
+        )
+
+
+def test_markdown_block_escapes_raw_html():
+    """A Markdown block's text may interpolate transcript-derived
+    strings, so raw HTML must land escaped, never live."""
+    from transect.report import custom
+    from transect.report.blocks import Markdown
+
+    ctx = custom.SectionContext(transcript_id="t", frame=None, n_turns=0)
+    html = str(custom._markdown(Markdown("<script>x</script> *ok*"), ctx))
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html and "<em>ok</em>" in html
+
+
+def test_tag_spend_bars_splits_new_work_with_an_untagged_bucket():
+    """Tagged spend sums per label, the remainder lands in the
+    untagged bucket, and shares stay against the full total; the
+    empty cases return no bars rather than a zero chart."""
+    one = pd.DataFrame({"turn": [0, 1, 2], "new_work": [100, 200, 300]})
+    tags = pd.DataFrame({"turn": [0, 1], "skill": ["a", "a"]})
+    bars = sections.tag_spend_bars(one, tags, "skill")
+    assert {b["label"]: b["value"] for b in bars} == {"a": 300, "untagged": 300}
+    assert all(b["share"] == "50% of new work" for b in bars)
+    assert sections.tag_spend_bars(one, None, "skill") == []
+    assert sections.tag_spend_bars(one, tags, "nope") == []
+
+
+def test_layer_audit_block_skips_quietly_when_the_judge_never_ran():
+    """An audit-declaring layer whose judged columns exist but whose
+    judge never stamped a regime contributes no entity block; with no
+    built-in judged surface either, the honest one-liner renders."""
+    empty = pd.DataFrame()
+    subagents = pd.DataFrame({"status": []})
+    frame = pd.DataFrame({"turn": [0], "label": [None], "judge_regime": [None]})
+    out = str(
+        sections.reliability_audit(
+            empty,
+            empty,
+            subagents,
+            empty,
+            None,
+            phase_turn_votes=empty,
+            layer_audits=[
+                {"name": "x", "frame": frame, "unit_col": "turn", "label_col": "label"}
+            ],
+        )
+    )
+    assert "No judged surfaces" in out
+    assert "x labelling" not in out
+
+
+def test_verifier_audit_rows_sum_only_transcripts_where_the_verifier_ran():
+    """The audit reads the stamped verifier_n_* counts once per
+    transcript; a transcript whose verifier never ran (all-NA counts)
+    contributes nothing rather than poisoning the sum."""
+
+    armed = {f"verifier_{k}": 1 for k in _AUDIT_COUNTS}
+    off = {f"verifier_{k}": None for k in _AUDIT_COUNTS}
+    frame = pd.DataFrame(
+        [
+            {"transcript_id": "a", "verifier_model": "v", **armed},
+            {"transcript_id": "a", "verifier_model": "v", **armed},
+            {"transcript_id": "b", "verifier_model": None, **off},
+        ]
+    )
+    selection, outcomes = _verifier_audit_rows(frame)
+    assert selection["value"].startswith("1 low-confidence")
+    assert "1 no verdict" in outcomes["value"]

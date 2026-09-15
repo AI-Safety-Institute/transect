@@ -1,0 +1,81 @@
+[project]
+name = "transect"
+version = "0.1.0"
+description = "Transect: transcript analysis for agent evals, built on inspect-scout"
+requires-python = ">=3.12"
+dependencies = [
+    "inspect-ai>=0.3.263",
+    "inspect-scout>=0.5.2",
+    "pandas>=3.0.5",
+    "pydantic>=2.13.5",
+    "pyyaml>=6.0.3",
+    "inspect-viz>=0.4.1",
+    "markdown-it-py>=4.2.0",
+    "jinja2>=3.1.6",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pandas-stubs>=3.0.5.260730",
+    "ruff>=0.16.7",
+    "mypy>=2.3.1",
+    "pyright>=1.1.414",
+    "pre-commit>=4.6.2",
+    "types-pyyaml>=6.0.12.20260906",
+    "anthropic>=1.5.0",
+    "openai>=3.13.0",
+]
+ui-test = ["playwright>=1.62.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/transect"]
+
+# ship the Claude Code skills inside the wheel; `python -m transect.skills
+# install` copies them into a project's .claude/skills/
+[tool.hatch.build.targets.wheel.force-include]
+".claude/skills" = "transect/_skills"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.ruff]
+target-version = "py312"
+# pre-commit passes explicit filenames — keep the vendored exclusion
+force-exclude = true
+# vendored upstream source: never lint/format (keeps re-vendor diffs clean)
+extend-exclude = [
+    "src/transect/ingestion/openclaw_telemetry_hal", # vendored upstream
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+# RUF001: report strings deliberately use typographic chars (×, ·)
+ignore = ["RUF001"]
+
+[tool.ruff.lint.isort]
+# keep `X as X` re-export blocks (report/reliability.py) as one import
+combine-as-imports = true
+
+[tool.mypy]
+files = ["src/transect"]
+exclude = ["src/transect/ingestion/openclaw_telemetry_hal"]
+mypy_path = ["tests"] # resolves tests' flat imports
+
+[tool.pyright]
+include = ["src/transect"]
+extraPaths = ["tests"]
+exclude = [
+    "src/transect/ingestion/openclaw_telemetry_hal",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    ".venv",
+]

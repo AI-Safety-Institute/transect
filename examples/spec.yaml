@@ -1,0 +1,77 @@
+# Spec for the house-price demo eval (examples/logs/house_price_demo.eval).
+
+context: >
+  Kaggle-style house-price regression (the House Prices dataset).
+  The agent works as a lead engineer with sub-agents it can delegate
+  to, and is evaluated on RMSE of the log sale price via a
+  submission.csv of held-out predictions.
+
+phases:
+  - label: data_exploration
+    description: >
+      Getting oriented in the workspace and understanding the data:
+      listing files, inspecting the schema and row counts, profiling
+      distributions, missingness, and correlations with the target.
+  - label: baseline_modeling
+    description: >
+      Establishing a first simple model and evaluation protocol:
+      choosing a target transform, fitting a linear or regularised
+      baseline, and recording cross-validated error to compare
+      later work against.
+  - label: model_development
+    description: >
+      Improving on the baseline with different model families or
+      feature work: training alternatives such as tree ensembles,
+      tuning them, and comparing their cross-validated error to the
+      baseline on matched folds.
+  - label: ensembling
+    description: >
+      Combining models into a final predictor: blending or stacking
+      predictions, weighting the components, and producing the
+      submission file from the combined model.
+  - label: validation_and_submission
+    description: >
+      Verifying results before finishing: checking the submission
+      file's integrity (row counts, missing or out-of-range values,
+      prediction distribution), reviewing the final metric, and
+      submitting the answer.
+  - label: coordination
+    ops: true
+    description: >
+      Operational overhead rather than substantive work: handing
+      subtasks off to sub-agents and receiving their reports back,
+      workspace housekeeping, and the mechanics of submitting the
+      final answer.
+
+subagent_labels:
+  - label: data_analysis
+    description: >
+      Explores or profiles the dataset: statistics, distributions,
+      missing values, correlations, and recommendations about
+      transforms or features.
+  - label: model_experimentation
+    description: >
+      Trains or evaluates candidate models: fitting an alternative
+      model family, running cross-validation, and comparing error
+      against an existing baseline.
+  - label: result_review
+    description: >
+      Reviews finished work: validating output files, sanity-checking
+      metrics and prediction distributions, and approving or
+      rejecting results before submission.
+
+extra:
+  research_skills:
+    hypothesis: Proposing a new idea, mechanism, or approach to test.
+    experiment_design: >-
+      Specifying how a test runs: what to vary vs hold fixed, the
+      data, metric, and procedure.
+    evidence_interpretation: >-
+      Reading an already-produced result and stating what it means.
+    literature_grounding: >-
+      Invoking prior work or external references to inform a direction.
+    reflection: Stepping back to assess progress or change strategy.
+    falsification: >-
+      Designing a test, before running it, whose stated purpose is
+      to break the agent's own current approach.
+    none_of_the_above: No research-skill reasoning in this turn.

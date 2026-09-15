@@ -1,0 +1,56 @@
+{#- Reliability & provenance audit: the report's last section, a metric
+    surface a future reliability skill is meant to act on, so every row
+    carries a plain one-line `title=` tooltip rather than relying on
+    prose alone. Each entity's `rows` are already-computed (label, value,
+    definition) string triples - sections.py does all the
+    pandas/reliability.py work, this template only loops and escapes
+    (autoescape handles every interpolation, so every value here is raw
+    on the way in). `flags` is a list of per-flag dicts; `level` selects
+    the CSS class ("warning" for red, "warning warning-amber" for amber).
+    No `<h3>` of its own - the caller's `sections.section` supplies it,
+    like every other section. -#}
+
+{% macro metric_row(label, value, definition) -%}
+<p class="meta"><span title="{{ definition }}">{{ label }}</span>: {{ value }}</p>
+{%- endmacro %}
+
+{#- One audit map: a plain HTML table (deliberately not an
+    inspect-viz chart - small text-heavy grids, no CDN dependency, no
+    tooltip height budget). Cell colours come precomputed from
+    sections.py's ramp helpers; the value is always in the cell text,
+    so colour is never the only signal. -#}
+{% macro relmap(map) -%}
+<h5>{{ map.title }}</h5>
+<div class="relmap-scroll"><table class="relmap">{% if map.group %}<tr><th></th><th colspan="{{ map.columns|length }}" class="relmap-group">{{ map.group }}</th></tr>{% endif %}<tr><th></th>{% for c in map.columns %}<th>{{ c.top }}{% if c.sub %}<br><span class="relmap-sub">{{ c.sub }}</span>{% endif %}</th>{% endfor %}</tr>
+{% for row in map.rows %}<tr><th>{% if row.help %}<span title="{{ row.help }}">{{ row.label }} <span class="relmap-help">(?)</span></span>{% else %}{{ row.label }}{% endif %}</th>{% for cell in row.cells %}<td style="background:{{ cell.bg }};color:{{ cell.fg }}">{{ cell.top }}{% if cell.ci %} <span class="relmap-ci">{{ cell.ci }}</span>{% endif %}{% if cell.bottom %}<br><span class="relmap-sub">{{ cell.bottom }}</span>{% endif %}</td>{% endfor %}</tr>
+{% endfor %}</table></div>
+{% if map.legend %}<details class="event definitions relmap-legend"><summary>What these rows mean</summary><ul>{% for term, text in map.legend %}<li><strong>{{ term }}</strong>: {{ text }}</li>{% endfor %}</ul></details>{% endif %}
+{%- endmacro %}
+
+{#- The text metric rows collapse behind one expandable so each
+    block leads with its maps; the rows stay first in the DOM since
+    they carry the regime/verifier context the maps assume. -#}
+{% macro entity_block(entity) -%}
+<h4>{{ entity.name }}{% if entity.badge %} <span class="custom-layer-badge">custom</span>{% endif %}</h4>
+{% if entity.rows %}<details class="event definitions relmap-legend"><summary>Run-level details</summary>{% for row in entity.rows %}{{ metric_row(row.label, row.value, row.definition) }}{% endfor %}</details>{% endif %}
+{% for map in entity.maps %}{{ relmap(map) }}{% endfor %}
+{%- endmacro %}
+
+{#- One flag = one collapsed <details>: the headline (metric = value)
+    stays scannable, the threshold explanation + remediation prose only
+    takes space when opened. -#}
+{% macro flag_line(flag) -%}
+<details class="{{ 'warning warning-amber' if flag.level == 'amber' else 'warning' }} flag"><summary>&#9888; {{ flag.metric }} = {{ flag.value }}</summary><p>{{ flag.explanation }} {{ flag.remediation }}</p></details>
+{%- endmacro %}
+
+{#- Flags render grouped under their judged entity's own sub-heading,
+    so the flag metrics themselves need no entity prefix. -#}
+{% macro reliability_audit(entities, flag_groups, schema_version, ramp) -%}
+<p class="meta explainer">Cell colour scale: 0 unhealthy <span class="ramp-bar" style="background:linear-gradient(90deg,{{ ramp.low }},{{ ramp.mid }} 50%,{{ ramp.high }})"></span> 1 healthy · share rows use the pale&#8202;&rarr;&#8202;steel half as intensity only · the value is always in the cell text</p>
+{% for entity in entities %}{{ entity_block(entity) }}{% endfor %}
+<h4>Flags (overall scanner assessment)</h4>
+{% set any_flags = flag_groups | selectattr("flags") | list %}
+{% if any_flags %}{% for group in any_flags %}<p class="meta"><strong>{{ group.title }}</strong></p>
+{% for flag in group.flags %}{{ flag_line(flag) }}{% endfor %}{% endfor %}<p class="meta">With a coding agent, use the repo's transect-diagnostics skill to iterate.</p>{% else %}<p class="meta">No metric here crosses a heuristic threshold in this run.</p>{% endif %}
+{{ metric_row("Schema version", schema_version, "The Transect frames contract version these numbers were computed against.") }}
+{%- endmacro %}

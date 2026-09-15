@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Sync dependencies
+        run: uv sync
+      - name: Lint + typecheck + tests
+        run: make check
+      - name: Install chromium for the browser test
+        run: uv run --group ui-test playwright install chromium --with-deps
+      - name: Browser test (must run, not skip)
+        run: |
+          uv run --group ui-test pytest tests/test_report_integration.py \
+            -v | tee pytest-ui.out
+          if grep -q "SKIPPED" pytest-ui.out; then
+            echo "::error::a report-integration test skipped in CI; they must all actually \
+          run (chromium + network required)"
+            exit 1
+          fi
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Build wheel + sdist
+        run: uv build
+      - name: Smoke-import the built wheel in a clean environment
+        run: |
+          uv run --isolated --no-project --with dist/*.whl \
+            python -c "import transect, transect.report.render, transect.frames; print(transect.__version__)"
+      - name: Skills ship in the wheel and install from it
+        run: |
+          cd "$(mktemp -d)"
+          uv run --isolated --no-project \
+            --with "$GITHUB_WORKSPACE"/dist/*.whl \
+            python -m transect.skills install
+          test -f .claude/skills/using-transect/SKILL.md
+          test -f .claude/skills/transect-diagnostics/references/procedures.md
+
+  version-bump:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a version bump when src/transect changes
+        run: |
+          git fetch origin "$BASE_REF"
+          if git diff --quiet "origin/$BASE_REF"...HEAD -- src/transect; then
+            echo "no source change; version bump not required"
+            exit 0
+          fi
+          base_version=$(git show "origin/$BASE_REF:pyproject.toml" \
+            | sed -n 's/^version = "\(.*\)"/\1/p')
+          head_version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml)
+          echo "base=$base_version head=$head_version"
+          if [ "$base_version" = "$head_version" ]; then
+            echo "::error::src/transect changed but pyproject.toml version did \
+          not; bump it in this PR (see CONTRIBUTING.md)"
+            exit 1
+          fi

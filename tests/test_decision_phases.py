@@ -1,0 +1,332 @@
+"""decision_phases end to end: segmentation, stitching, narration,
+and the second-round verifier."""
+
+import pytest
+from helpers import (
+    MODEL,
+    PHASES_SPEC,
+    REFUSED,
+    group,
+    model_turn,
+    narrate_answer,
+    narrative,
+    run_scan,
+    scripted_judge,
+    seg,
+    seg_answer,
+    verify_answer,
+)
+from inspect_ai.model import get_model
+
+from transect.scanners.phases import decision_phases, system_prompt
+from transect.scanners.phases_common import StitchedPhase
+from transect.scanners.phases_verify import select_for_verify
+from transect.spec import Spec
+
+
+def turns(n):
+    return [model_turn(f"reasoning turn {i}") for i in range(n)]
+
+
+def test_system_prompt_carries_the_vocabulary_and_escape_hatches():
+    """The judge sees every declared phase with its description, the
+    task context, and always an ops bucket plus none_of_the_above."""
+    system = system_prompt(PHASES_SPEC)
+    assert "- setup: Environment preparation." in system
+    assert "- experiment" in system
+    assert "reproducing a systems paper" in system
+    assert "ops" in system and "none_of_the_above" in system
+
+
+def test_declared_ops_phase_replaces_the_reserved_bucket():
+    """A spec phase flagged ops: true becomes the operational bucket;
+    no extra reserved ops label is appended."""
+    spec = Spec.model_validate(
+        {"phases": [{"label": "coordination", "ops": True}, "experiment"]}
+    )
+    system = system_prompt(spec)
+    assert "coordination" in system
+    assert "- ops" not in system
+
+
+def test_segments_sharing_a_label_stitch_into_one_phase():
+    """Adjacent same-label segments merge; the phase records its turn
+    range and the minimum member confidence."""
+    judge = scripted_judge(
+        seg_answer(
+            seg(0, 1, "setup", 0.9),
+            seg(2, 3, "setup", 0.7),
+            seg(4, 5, "experiment", 0.8),
+        ),
+    )
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=False, narrate=False), turns(6)
+    ).value
+    assert [(p["phase"], p["turn_start"], p["turn_end"]) for p in value["phases"]] == [
+        ("setup", 0, 3),
+        ("experiment", 4, 5),
+    ]
+    assert value["phases"][0]["min_confidence"] == 0.7
+
+
+def test_every_turn_gets_a_row_with_its_basis():
+    """The per-turn projection covers the whole range, distinguishing
+    judged turns from filled gaps."""
+    judge = scripted_judge(seg_answer(seg(0, 0, "setup", 0.9)))
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=False, narrate=False), turns(2)
+    ).value
+    bases = {t["turn"]: t["basis"] for t in value["turns"]}
+    assert bases[0] == "judged"
+    assert len(bases) == 2
+
+
+def test_narrator_headlines_and_turn_groups_land_on_the_phase():
+    judge = scripted_judge(
+        seg_answer(seg(0, 4, "setup", 0.9)),
+        narrate_answer(
+            narrative(
+                0,
+                headline="Installed deps and configured the env",
+                summary="The agent set things up.",
+                groups=[group(0, 1), group(2, 4, title="config")],
+            )
+        ),
+    )
+    value = run_scan(decision_phases(PHASES_SPEC, judge, verify=False), turns(5)).value
+    (phase,) = value["phases"]
+    assert phase["headline"] == "Installed deps and configured the env"
+    assert [(g["turn_start"], g["turn_end"]) for g in phase["turn_groups"]] == [
+        (0, 1),
+        (2, 4),
+    ]
+    assert value["narrator"]["ran"] is True
+
+
+def test_failed_narration_falls_back_to_template_headlines():
+    """A persistently refused narrator call (all in-call retries spent)
+    degrades to per-phase template headlines instead of failing the scan."""
+    judge = scripted_judge(seg_answer(seg(0, 1, "setup", 0.9)), *[REFUSED] * 4)
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=False, cache=False), turns(2)
+    ).value
+    (phase,) = value["phases"]
+    assert phase["headline"] == "Setup (2 turns)"
+    assert value["narrator"]["n_fallback"] == 1
+
+
+def test_low_confidence_selects_the_verifier_and_a_confident_verdict_relabels():
+    """A doubtful phase goes to review; the verifier's confident
+    differing label rewrites it and the audit counts the relabel."""
+    judge = scripted_judge(
+        seg_answer(seg(0, 1, "setup", 0.4), seg(2, 3, "experiment", 0.9)),
+        verify_answer(
+            {
+                "phase_index": 0,
+                "phase": "experiment",
+                "confidence": 0.9,
+                "explanation": "clearly runs the experiment",
+            }
+        ),
+    )
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=True, narrate=False), turns(4)
+    ).value
+    (phase,) = value["phases"]
+    assert (phase["phase"], phase["turn_start"], phase["turn_end"]) == (
+        "experiment",
+        0,
+        3,
+    )
+    audit = value["verifier"]
+    assert audit["n_low_confidence"] == 1
+    assert audit["n_relabelled"] == 1
+
+
+def test_a_weak_verifier_verdict_never_relabels():
+    """Below the confidence gate the differing verdict is recorded as
+    weak; the judge's label stands."""
+    judge = scripted_judge(
+        seg_answer(seg(0, 1, "setup", 0.4)),
+        verify_answer(
+            {
+                "phase_index": 0,
+                "phase": "experiment",
+                "confidence": 0.5,
+                "explanation": "not sure",
+            }
+        ),
+    )
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=True, narrate=False), turns(2)
+    ).value
+    (phase,) = value["phases"]
+    assert phase["phase"] == "setup"
+    audit = value["verifier"]
+    assert audit["n_relabelled"] == 0 and audit["n_weak_relabel"] == 1
+
+
+def test_confident_phases_still_get_a_random_sample_review():
+    """With nothing doubtful the verifier reviews a fixed-seed random
+    sample; a confirming verdict changes nothing and is audited."""
+    judge = scripted_judge(
+        seg_answer(seg(0, 1, "setup", 0.9)),
+        verify_answer(
+            {
+                "phase_index": 0,
+                "phase": "setup",
+                "confidence": 0.9,
+                "explanation": "confirmed",
+            }
+        ),
+    )
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=True, narrate=False), turns(2)
+    ).value
+    audit = value["verifier"]
+    assert audit["n_random_sample"] == 1
+    assert audit["n_relabelled"] == 0
+    (phase,) = value["phases"]
+    assert phase["verifier"]["trigger"] == "random_sample"
+
+
+def test_a_refused_verifier_chunk_leaves_phases_unreviewed():
+    """A persistently refused verifier chunk (all in-call retries spent)
+    is counted as no-verdict and the phase keeps its judged label."""
+    judge = scripted_judge(seg_answer(seg(0, 1, "setup", 0.4)), *[REFUSED] * 4)
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=True, narrate=False, cache=False),
+        turns(2),
+    ).value
+    (phase,) = value["phases"]
+    assert phase["phase"] == "setup"
+    assert value["verifier"]["n_no_verdict"] == 1
+
+
+def test_k_rolls_vote_per_turn_and_record_agreement():
+    """Three rolls majority-vote each turn; a dissenting roll lowers the
+    phase's minimum agreement below 1."""
+    judge = scripted_judge(
+        seg_answer(seg(0, 1, "setup", 0.9)),
+        seg_answer(seg(0, 1, "setup", 0.8)),
+        seg_answer(seg(0, 0, "setup", 0.7), seg(1, 1, "experiment", 0.7)),
+    )
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, k_rolls=3, verify=False, narrate=False),
+        turns(2),
+    ).value
+    (phase,) = value["phases"]
+    assert phase["phase"] == "setup"
+    assert 0 < phase["min_agreement"] < 1
+
+
+def test_out_of_vocabulary_answers_are_retried_never_invented():
+    """A judge answer using an undeclared label is rejected and retried;
+    the output only ever carries vocabulary labels."""
+    judge = scripted_judge(
+        seg_answer(seg(0, 1, "hallucinated_phase", 0.9)),
+        seg_answer(seg(0, 1, "setup", 0.9)),
+    )
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=False, narrate=False), turns(2)
+    ).value
+    assert [p["phase"] for p in value["phases"]] == ["setup"]
+
+
+def test_spec_without_phases_is_rejected():
+    with pytest.raises(ValueError):
+        decision_phases(Spec(), MODEL)
+
+
+def test_cohort_judges_vote_per_turn():
+    """Two different models vote per turn; the majority decides and the
+    votes block records both members."""
+    a = get_model(
+        MODEL,
+        custom_outputs=[seg_answer(seg(0, 1, "setup", 0.9))],
+        memoize=False,
+    )
+    b = get_model(
+        "mockllm/model2",
+        custom_outputs=[
+            seg_answer(seg(0, 1, "setup", 0.8)).model_copy(
+                update={"model": "mockllm/model2"}
+            )
+        ],
+        memoize=False,
+    )
+    value = run_scan(
+        decision_phases(PHASES_SPEC, [a, b], narrate=False), turns(2)
+    ).value
+    (phase,) = value["phases"]
+    assert phase["phase"] == "setup"
+    cohort = value["cohort"]
+    assert cohort["agreement"]["n_members"] == 2
+    assert [v["agreement"] for v in cohort["vote"]] == [1.0, 1.0]
+
+
+@pytest.mark.parametrize(("verify_sample", "expected_sampled"), [(1.0, 2), (0.0, 0)])
+def test_verify_sample_sizes_the_random_spot_check(verify_sample, expected_sampled):
+    """verify_sample=1.0 spot-checks every confident phase; 0 disables
+    the random sample entirely."""
+    answers = [seg_answer(seg(0, 1, "setup", 0.9), seg(2, 3, "experiment", 0.9))]
+    if expected_sampled:
+        answers.append(
+            verify_answer(
+                {
+                    "phase_index": 0,
+                    "phase": "setup",
+                    "confidence": 0.9,
+                    "explanation": "confirmed",
+                },
+                {
+                    "phase_index": 1,
+                    "phase": "experiment",
+                    "confidence": 0.9,
+                    "explanation": "confirmed",
+                },
+            )
+        )
+    judge = scripted_judge(*answers)
+    value = run_scan(
+        decision_phases(
+            PHASES_SPEC,
+            judge,
+            verify=True,
+            narrate=False,
+            verify_sample=verify_sample,
+        ),
+        turns(4),
+    ).value
+    assert value["verifier"]["n_random_sample"] == expected_sampled
+
+
+@pytest.mark.parametrize(
+    ("n_phases", "sample", "expected"),
+    [(100, None, 5), (10, None, 3), (10, 0.5, 5), (4, 1.0, 4)],
+)
+def test_select_for_verify_sizes_the_random_sample(n_phases, sample, expected):
+    """The random draw is max(5%, 3) of phases by default, round(share
+    times n) for a float share, always capped at the phase count."""
+
+    phases = [
+        StitchedPhase(
+            phase=f"p{k % 3}",
+            turn_start=k * 5,
+            turn_end=k * 5 + 4,
+            n_turns=5,
+            confidence=0.9,
+            min_confidence=0.9,
+            explanation="scripted",
+        )
+        for k in range(n_phases)
+    ]
+    reasons = select_for_verify(phases, sample=sample)
+    assert len(reasons) == expected
+    assert set(reasons.values()) <= {"random_sample"}
+
+
+def test_verify_sample_outside_the_unit_interval_is_rejected():
+    """A verify_sample outside [0, 1] raises at scanner build time."""
+    with pytest.raises(ValueError, match="verify_sample"):
+        decision_phases(PHASES_SPEC, scripted_judge(), verify=True, verify_sample=-0.1)

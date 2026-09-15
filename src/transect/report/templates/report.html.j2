@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>{{ title }}</title>
+<style>{{ style }}</style>
+</head><body{% if sensitivity %} class="classified"{% endif %}>
+{%- if sensitivity %}
+{#- Protective marking at top and bottom of the viewport - the
+    digital analogue of the marking on every page; position:fixed
+    also repeats on each printed page. -#}
+<div class="sensitivity-banner sensitivity-top">{{ sensitivity }}</div>
+<div class="sensitivity-banner sensitivity-bottom">{{ sensitivity }}</div>
+{%- endif %}
+<h1>{{ title }}</h1>
+<p class="meta">scan: {{ scan_location }} · {{ n_transcripts }} transcript(s)</p>
+{#- Fit-to-window is the default view; this checkbox opts into the
+    zoomed-in, horizontally-scrollable variant - full per-turn pixel
+    resolution for laptop-screen reading. -#}
+<p class="meta"><label title="Renders each chart at its full authored width (higher per-turn resolution) inside a horizontal scroll box, instead of scaling it down to fit the window."><input type="checkbox" id="transect-zoom-toggle" onchange="_transectApplyFit()"> zoomed-in charts (scroll horizontally)</label></p>
+{% if not transcripts %}<p>No transcripts in results.</p>{% endif %}
+{% for t in transcripts %}
+<div class="transcript">
+<h2>{{ t.heading }}</h2>
+{% if t.run_meta %}{{ t.run_meta }}{% endif %}
+{% for section in t.sections %}{{ section }}{% endfor %}
+</div>
+{% endfor %}
+{#- Fixed bottom-right "Back to top": the way back after a band click
+    jumps the reader to a phase card. Hidden until they have scrolled a
+    screen. -#}
+<button id="transect-back-top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Back to the top of the page">&uarr; Back to top</button>
+<script>
+// Band chunks link to their phase card (href target="_parent", ids
+// transcript-scoped "#phase-<idx>-<n>"). Fragment navigation scrolls;
+// this additionally opens the target <details> (native auto-open is
+// not yet universal). The "#phase-" prefix check matches either id
+// shape without parsing it.
+function _transectOpenPhaseFromHash() {
+  var hash = location.hash;
+  if (!hash || hash.indexOf("#phase-") !== 0) return;
+  var target = document.getElementById(hash.slice(1));
+  if (!target) return;
+  // A card filter may have hidden the target (a hidden anchor is a
+  // link to nowhere): clear that card scope's filters first. Done on
+  // hashchange because the click originates inside the band's iframe.
+  if (target.style.display === "none") {
+    var scope = target.closest(".phase-cards");
+    if (scope) _transectClearCardFilters(scope.id);
+  }
+  if (target.tagName === "DETAILS") target.open = true;
+  target.scrollIntoView({behavior: "smooth", block: "start"});
+}
+window.addEventListener("hashchange", _transectOpenPhaseFromHash);
+document.addEventListener("DOMContentLoaded", _transectOpenPhaseFromHash);
+
+// Sort/filter handlers for the phase cards (".filter-bar[data-scope]"
+// + "div.phase-cards#<scope>"). Every lookup is scoped to one
+// containerId so multiple transcripts on one page cannot cross-filter.
+function _transectCardSort(containerId, by) {
+  var c = document.getElementById(containerId);
+  if (!c) return;
+  var cards = Array.prototype.slice.call(c.querySelectorAll(".event"));
+  // Always re-sort from data-order (this card's render-time,
+  // chronological/phase_index position) first, regardless of the DOM's
+  // current order - so repeated calls are idempotent (a "chronological"
+  // pick after a "spend" pick genuinely restores phase order, not just
+  // whatever the DOM happens to be in already) and so a "spend" sort's
+  // own ties break chronologically (Array.sort is spec-guaranteed stable
+  // in every evergreen browser, so this second sort's ties keep the
+  // order the first sort just established).
+  cards.sort(function(a, b) {
+    return (parseFloat(a.getAttribute("data-order")) || 0)
+         - (parseFloat(b.getAttribute("data-order")) || 0);
+  });
+  if (by === "spend" || by === "tools") {
+    var attr = by === "spend" ? "data-spend" : "data-tools";
+    cards.sort(function(a, b) {
+      return (parseFloat(b.getAttribute(attr)) || 0)
+           - (parseFloat(a.getAttribute(attr)) || 0);
+    });
+  }
+  cards.forEach(function(el) { c.appendChild(el); });
+}
+
+// Label filter = per-label checkboxes (all checked = all shown);
+// confidence bands: high >= 0.8, low < 0.6 (the scanner's own
+// low-confidence trigger). A card with no recorded confidence fails
+// BOTH bands when one is active - absence is not evidence of either.
+function _transectLabelChecks(containerId) {
+  var bar = document.querySelector('.filter-bar[data-scope="' + containerId + '"]');
+  return bar
+    ? Array.prototype.slice.call(bar.querySelectorAll("input[data-label-value]"))
+    : [];
+}
+
+function _transectTagSelects(containerId) {
+  var bar = document.querySelector('.filter-bar[data-scope="' + containerId + '"]');
+  return bar
+    ? Array.prototype.slice.call(bar.querySelectorAll("select[data-tag-family]"))
+    : [];
+}
+
+function _transectCardFilter(containerId) {
+  var c = document.getElementById(containerId);
+  if (!c) return;
+  var checks = _transectLabelChecks(containerId);
+  var tagSelects = _transectTagSelects(containerId);
+  var allowed = {};
+  checks.forEach(function(el) {
+    if (el.checked) allowed[el.getAttribute("data-label-value")] = true;
+  });
+  var flushEl = document.getElementById(containerId + "-flush");
+  var intvEl = document.getElementById(containerId + "-intv");
+  var subagEl = document.getElementById(containerId + "-subag");
+  var confEl = document.getElementById(containerId + "-conf");
+  var wantFlush = !!(flushEl && flushEl.checked);
+  var wantIntv = !!(intvEl && intvEl.checked);
+  var wantSubag = !!(subagEl && subagEl.checked);
+  var confBand = confEl ? confEl.value : "";
+  var cards = c.querySelectorAll(".event");
+  var shown = 0;
+  cards.forEach(function(card) {
+    var okLabel = checks.length === 0 || !!allowed[card.getAttribute("data-label")];
+    var okFlush = !wantFlush || card.getAttribute("data-after-flush") === "1";
+    var okIntv = !wantIntv || card.getAttribute("data-after-intervention") === "1";
+    var okSubag = !wantSubag
+      || (parseFloat(card.getAttribute("data-subagents")) || 0) > 0;
+    var okConf = true;
+    if (confBand) {
+      var conf = parseFloat(card.getAttribute("data-confidence"));
+      okConf = confBand === "high" ? conf >= 0.8 : conf < 0.6;
+      if (isNaN(conf)) okConf = false;
+    }
+    // every active tag selector must match one of the card's own
+    // "|family=value|" keys (data-tags, fenced against prefix collisions)
+    var okTags = tagSelects.every(function(sel) {
+      if (!sel.value) return true;
+      var key = "|" + sel.getAttribute("data-tag-family") + "=" + sel.value + "|";
+      return (card.getAttribute("data-tags") || "").indexOf(key) >= 0;
+    });
+    var visible = okLabel && okFlush && okIntv && okSubag && okConf && okTags;
+    card.style.display = visible ? "" : "none";
+    if (visible) shown++;
+  });
+  var count = document.getElementById(containerId + "-count");
+  if (count) count.textContent = "showing " + shown + " of " + cards.length + " phases";
+}
+
+function _transectClearCardFilters(containerId) {
+  _transectLabelChecks(containerId).forEach(function(el) { el.checked = true; });
+  var flushEl = document.getElementById(containerId + "-flush");
+  var intvEl = document.getElementById(containerId + "-intv");
+  var subagEl = document.getElementById(containerId + "-subag");
+  var confEl = document.getElementById(containerId + "-conf");
+  if (flushEl) flushEl.checked = false;
+  if (intvEl) intvEl.checked = false;
+  if (subagEl) subagEl.checked = false;
+  if (confEl) confEl.value = "";
+  _transectTagSelects(containerId).forEach(function(sel) { sel.value = ""; });
+  _transectCardFilter(containerId);
+}
+
+// Token spend: the custom-grouping selector shows one tag family's
+// chart at a time (each family's chart is its own hidden-able div).
+function _transectSpendFamily(scope, family) {
+  document.querySelectorAll('[data-spend-scope="' + scope + '"]').forEach(function(el) {
+    el.hidden = el.getAttribute("data-spend-family") !== family;
+  });
+}
+
+// initial "showing N of M phases" line for every transcript's bar (also
+// covers the no-JS-yet-run window right after load, before any control
+// is touched).
+function _transectInitCardFilters() {
+  document.querySelectorAll(".filter-bar[data-scope]").forEach(function(bar) {
+    _transectCardFilter(bar.getAttribute("data-scope"));
+  });
+}
+document.addEventListener("DOMContentLoaded", _transectInitCardFilters);
+
+// Publish each chart iframe's visible box ("left,top,right,bottom",
+// in the iframe's own coordinates) so the in-iframe tooltip clamp can
+// keep popovers inside what the reader actually sees: a scrolled
+// wrapper shows only a sub-box of the iframe. The outer page owns the
+// wrapper and window, so it measures; the child reads the attribute.
+// Absent or stale, the child falls back to its whole viewport.
+function _transectChartVisibleBounds() {
+  document.querySelectorAll("div.chart-scroll > iframe").forEach(function(frame) {
+    var scroller = frame.parentElement;
+    var f = frame.getBoundingClientRect();
+    var s = scroller.getBoundingClientRect();
+    // Under the fit transform, getBoundingClientRect is in scaled
+    // screen px but the child reads unscaled coordinates: divide the
+    // screen-space terms by the effective scale (rect/layout width;
+    // exactly 1 untransformed).
+    var k = frame.clientWidth ? f.width / frame.clientWidth : 1;
+    var box = [
+      Math.max(0, (s.left - f.left) / k, -f.left / k),
+      Math.max(0, (s.top - f.top) / k, -f.top / k),
+      Math.min(frame.clientWidth, (s.right - f.left) / k,
+               (window.innerWidth - f.left) / k),
+      Math.min(frame.clientHeight, (s.bottom - f.top) / k,
+               (window.innerHeight - f.top) / k)
+    ];
+    frame.setAttribute("data-transect-visible", box.map(Math.round).join(","));
+    // Keep each chart's input widgets visible while the zoomed view
+    // scrolls horizontally. Widgets live inside the iframe document (a
+    // Mosaic Param/Selection cannot cross the boundary) and the whole
+    // document is moved by the wrapper's scroll, so position:sticky is
+    // inert - translate the widget rows by scrollLeft instead (0 in
+    // the default fit view).
+    var inner = frame.contentDocument;
+    if (inner) {
+      var shift = scroller.scrollLeft / (k || 1);
+      // a widget ROW is the ancestor of a control (radio fieldset,
+      // tom-select, checkbox) sitting directly under the container
+      // that also holds the plot svgs - the .mosaic-widget root is
+      // one element wrapping everything, so climb instead of class-match
+      var rows = [];
+      inner.querySelectorAll("fieldset, .ts-wrapper, input[type=checkbox]")
+        .forEach(function(el) {
+          var n = el;
+          while (n.parentElement && !n.parentElement.querySelector("svg")) {
+            n = n.parentElement;
+          }
+          if (n.parentElement && rows.indexOf(n) < 0) rows.push(n);
+        });
+      rows.forEach(function(row) {
+        row.style.transform = shift > 0.5 ? "translateX(" + shift + "px)" : "";
+      });
+    }
+  });
+}
+
+// Every chart iframe optically scales down to its wrapper's width
+// (default view; the zoom checkbox restores authored width + h-scroll).
+// A transform does not change layout, so the wrapper gets an explicit
+// height and hides both overflow axes (hidden-x flips visible-y to
+// auto, which grew phantom scrollbars). Charts that already fit stay
+// at authored size (k caps at 1). Re-applied on resize.
+function _transectApplyFit() {
+  var zoom = document.getElementById("transect-zoom-toggle");
+  var zoomed = !!(zoom && zoom.checked);
+  document.querySelectorAll("div.chart-scroll > iframe").forEach(function(frame) {
+    var wrap = frame.parentElement;
+    var k = !zoomed && frame.clientWidth
+      ? Math.min(1, wrap.clientWidth / frame.clientWidth) : 1;
+    if (k >= 1) {
+      frame.style.transform = "";
+      frame.style.transformOrigin = "";
+      wrap.style.height = "";
+      // restore, not clear: the wrapper's overflow-x:auto is an INLINE
+      // style from charts.embed, so writing "" here would erase it and
+      // leave the default (visible) - wide charts would then overflow
+      // the page body itself.
+      wrap.style.overflowX = "auto";
+      wrap.style.overflowY = "";
+      return;
+    }
+    wrap.scrollLeft = 0;
+    wrap.scrollTop = 0;
+    frame.style.transformOrigin = "0 0";
+    frame.style.transform = "scale(" + k + ")";
+    wrap.style.height = (frame.clientHeight * k) + "px";
+    // both axes: the iframe's LAYOUT box keeps its unscaled size (a
+    // transform is visual-only), so with only overflow-x hidden the
+    // wrapper grows a vertical scrollbar for layout the reader can
+    // never see (hidden on one axis computes the other's visible to
+    // auto) - hide both; the scaled chart fits the wrapper's own box
+    // exactly by construction.
+    wrap.style.overflowX = "hidden";
+    wrap.style.overflowY = "hidden";
+  });
+  _transectQueueVisibleBounds();
+}
+var _transectFitPending = false;
+function _transectQueueFit() {
+  if (_transectFitPending) return;
+  _transectFitPending = true;
+  requestAnimationFrame(function() {
+    _transectFitPending = false;
+    _transectApplyFit();
+  });
+}
+document.addEventListener("DOMContentLoaded", _transectApplyFit);
+window.addEventListener("load", _transectApplyFit);
+window.addEventListener("resize", _transectQueueFit);
+
+// "Back to top" visibility: appears once the reader is a screen down
+// (covers both plain scrolling and a band click-to-card jump).
+function _transectBackTopVisibility() {
+  var el = document.getElementById("transect-back-top");
+  if (el) el.style.display = window.scrollY > window.innerHeight ? "block" : "none";
+}
+window.addEventListener("scroll", _transectBackTopVisibility);
+document.addEventListener("DOMContentLoaded", _transectBackTopVisibility);
+// coalesced to one pass per frame: scroll/resize fire far faster than
+// layout needs re-measuring, and this runs in the top document where
+// requestAnimationFrame is never throttled.
+var _transectBoundsPending = false;
+function _transectQueueVisibleBounds() {
+  if (_transectBoundsPending) return;
+  _transectBoundsPending = true;
+  requestAnimationFrame(function() {
+    _transectBoundsPending = false;
+    _transectChartVisibleBounds();
+  });
+}
+document.addEventListener("DOMContentLoaded", _transectChartVisibleBounds);
+window.addEventListener("load", _transectChartVisibleBounds);
+// capture phase: a wrapper's own scroll event does not bubble to window
+window.addEventListener("scroll", _transectQueueVisibleBounds, true);
+window.addEventListener("resize", _transectQueueVisibleBounds);
+</script>
+</body></html>

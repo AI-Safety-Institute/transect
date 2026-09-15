@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+dist/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets + environment
+.env
+
+# Transect scan output
+scans/
+# example-script scan output (regenerable)
+examples/scans/
+
+# Input data (users provide their own)
+transcripts/
+*.eval
+*.jsonl
+# committed test fixtures + the examples demo log are the exceptions
+!tests/fixtures/**/*.eval
+!tests/fixtures/**/*.jsonl
+!examples/logs/house_price_demo.eval
