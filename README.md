@@ -393,7 +393,10 @@ reliability.cohort_agreement(frames["phase_turn_votes"], "turn", "phase")
 reliability.relabel_rate(frames["phases"])  # verifier re-labels, overall + per label
 reliability.spot_check_overturns(frames["phases"])  # overturns among random spot-checks
 reliability.member_coverage(
-    frames["phase_turn_votes"], "basis", "judged", ("refusal", "no_answer", "missing_turn")
+    frames["phase_turn_votes"],
+    "basis",
+    "judged",
+    ("refusal", "no_answer", "missing_turn"),
 )  # usable judgements per (model, roll), with miss reasons
 reliability.label_stats(
     frames["phase_turns"][frames["phase_turns"].basis == "judged"],  # decided units
