@@ -8,6 +8,8 @@ cards, and a reliability & provenance audit.
 """
 
 import base64
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
@@ -336,6 +338,9 @@ def render_report(
         n_transcripts=len(order),
         transcripts=transcripts,
         sensitivity=sensitivity,
+        logo_uri=_brand_asset("logo.svg", "image/svg+xml"),
+        favicon_uri=_brand_asset("favicon-32.png", "image/png"),
+        package_version=_package_version(),
     )
 
 
@@ -648,3 +653,19 @@ def _my_layer_frame(results, layer, transcript_id: str) -> pd.DataFrame | None:
     if frame is not None and "transcript_id" in frame.columns:
         return _mine(frame, transcript_id)
     return frame
+
+
+def _brand_asset(name: str, media_type: str) -> str:
+    """One packaged brand asset as a data URI - the report stays
+    self-contained."""
+    payload = base64.b64encode(
+        (Path(__file__).parent / "assets" / name).read_bytes()
+    ).decode("ascii")
+    return f"data:{media_type};base64,{payload}"
+
+
+def _package_version() -> str:
+    try:
+        return version("transect")
+    except PackageNotFoundError:  # source tree without an install
+        return "dev"

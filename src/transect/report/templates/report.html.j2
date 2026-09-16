@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>{{ title }}</title>
+<link rel="icon" type="image/png" href="{{ favicon_uri }}">
 <style>{{ style }}</style>
 </head><body{% if sensitivity %} class="classified"{% endif %}>
 {%- if sensitivity %}
@@ -10,7 +11,7 @@
 <div class="sensitivity-banner sensitivity-top">{{ sensitivity }}</div>
 <div class="sensitivity-banner sensitivity-bottom">{{ sensitivity }}</div>
 {%- endif %}
-<h1>{{ title }}</h1>
+<h1><img class="brand-logo" src="{{ logo_uri }}" alt=""> {{ title }}</h1>
 <p class="meta">scan: {{ scan_location }} · {{ n_transcripts }} transcript(s)</p>
 {#- Fit-to-window is the default view; this checkbox opts into the
     zoomed-in, horizontally-scrollable variant - full per-turn pixel
@@ -24,6 +25,9 @@
 {% for section in t.sections %}{{ section }}{% endfor %}
 </div>
 {% endfor %}
+{#- Provenance footer: the mark, the producing package + version,
+    and the repo - the report itself carries its attribution. -#}
+<footer class="report-footer"><img src="{{ logo_uri }}" alt=""><span>Produced with Transect v{{ package_version }} · <a href="https://github.com/AI-Safety-Institute/transect">github.com/AI-Safety-Institute/transect</a></span></footer>
 {#- Fixed bottom-right "Back to top": the way back after a band click
     jumps the reader to a phase card. Hidden until they have scrolled a
     screen. -#}
