@@ -185,6 +185,13 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 /* each section reads as a panel: framed box with its h3 title as a
    header strip (steel-tinted wash, navy ink); a titleless section
    keeps the frame only */
+/* brand mark: header (beside the h1) and provenance footer */
+h1 .brand-logo {{ height: 30px; vertical-align: -7px; margin-right: 6px; }}
+.report-footer {{ display: flex; align-items: center; gap: 8px;
+  margin: 2.5rem 0 0.8rem; padding-top: 0.9rem;
+  border-top: 1px solid var(--transect-color-border-subtle);
+  color: var(--transect-color-muted); font-size: 0.8rem; }}
+.report-footer img {{ height: 18px; }}
 .section {{ background: #fff; border: 1px solid var(--transect-color-border);
   border-radius: 6px; padding: 1rem 1.25rem 1.25rem; margin: 0 0 1.5rem; }}
 .section > h3:first-child {{ margin: -1rem -1.25rem 1rem;
