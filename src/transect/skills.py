@@ -45,6 +45,8 @@ def install(project_dir: str | Path = ".", source: Path | None = None) -> list[s
     if not skills:
         raise FileNotFoundError(f"{src} contains no skill directories")
     dest_root = Path(project_dir) / ".claude" / "skills"
+    if dest_root.resolve() == src.resolve():
+        return [p.name for p in skills]
     for skill in skills:
         dest = dest_root / skill.name
         if dest.exists():
