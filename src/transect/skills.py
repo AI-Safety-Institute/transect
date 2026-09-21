@@ -13,6 +13,7 @@ import shutil
 import sys
 from importlib.resources import files
 from pathlib import Path
+from tempfile import mkdtemp
 
 
 def skill_source() -> Path:
@@ -38,6 +39,10 @@ def install(project_dir: str | Path = ".", source: Path | None = None) -> list[s
     replacing any prior copy of the same skill (the skills version
     with the package). Other skills in the project are untouched.
 
+    A resolved source/destination alias is already installed. Each other
+    skill is staged before replacement; a failed replacement restores its
+    previous copy. Installation is per skill, not an all-skills transaction.
+
     Returns the installed skill names, sorted.
     """
     src = skill_source() if source is None else source
@@ -48,11 +53,46 @@ def install(project_dir: str | Path = ".", source: Path | None = None) -> list[s
     if dest_root.resolve() == src.resolve():
         return [p.name for p in skills]
     for skill in skills:
-        dest = dest_root / skill.name
-        if dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(skill, dest)
+        _install_skill(skill, dest_root / skill.name)
     return [p.name for p in skills]
+
+
+def _install_skill(source: Path, destination: Path) -> None:
+    """Stage beside the destination so replacement and rollback use renames."""
+    source_path, destination_path = source.resolve(), destination.resolve()
+    if source_path == destination_path:
+        return
+    if (
+        source_path in destination_path.parents
+        or destination_path in source_path.parents
+    ):
+        raise ValueError(
+            f"skill source and destination overlap: {source} -> {destination}"
+        )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(mkdtemp(prefix=f".transect-{source.name}-", dir=destination.parent))
+    replacement, backup = staging / "new", staging / "previous"
+    retain_backup = False
+    try:
+        shutil.copytree(source, replacement)
+        if destination.exists() or destination.is_symlink():
+            destination.replace(backup)
+        replacement.replace(destination)
+    except BaseException:
+        if backup.exists() or backup.is_symlink():
+            retain_backup = True
+            try:
+                backup.replace(destination)
+            except OSError as error:
+                raise OSError(
+                    f"could not restore {destination}; prior copy retained "
+                    f"at backup {backup}"
+                ) from error
+            retain_backup = False
+        raise
+    finally:
+        if not retain_backup:
+            shutil.rmtree(staging)
 
 
 def main(argv: list[str]) -> int:

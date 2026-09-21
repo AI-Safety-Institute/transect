@@ -1,0 +1,91 @@
+"""Report consumers expose original review counts, completion and unknown history."""
+
+import pandas as pd
+from bs4 import BeautifulSoup
+from test_phase_review_units import reviewed_frame
+
+from transect.frames import phase_turn_votes_df
+from transect.report import sections
+from transect.report._jinja import jinja_env
+from transect.report.custom import _run_judge_cells
+
+
+def audit(frame):
+    turns = pd.DataFrame(
+        {
+            "transcript_id": ["t1"] * 3,
+            "turn": [0, 1, 2],
+            "phase": ["A"] * 3,
+            "basis": ["judged"] * 3,
+            "judge_agreement": [None] * 3,
+            "confidence": [0.9] * 3,
+            "label_source": ["verifier"] * 3,
+        }
+    )
+    return sections._entity_audit(
+        "Phases",
+        frame,
+        phase_turn_votes_df(pd.DataFrame()),
+        "turn",
+        "phase",
+        turns,
+    )[0]
+
+
+def test_phase_metadata_counts_original_reviews_after_merging():
+    frame, _ = reviewed_frame()
+    note = sections._verifier_notes(frame)
+    assert note["selected"] == note["verified"] == 3
+    assert note["overturned"] == 1
+    module = jinja_env().get_template("notes.html.j2").module
+    text = BeautifulSoup(
+        str(module.phase_meta_line(1, "judge", "m", None, note, 0)), "html.parser"
+    ).get_text()
+    assert "1 of 3 completed original phase reviews relabelled (3 selected)" in text
+
+
+def test_audit_shows_completion_coverage_beside_conditional_rate():
+    frame, _ = reviewed_frame(missing=(0, 2))
+    rows = {row["label"]: row for row in audit(frame)["rows"]}
+    assert rows["Verifier review coverage"]["value"] == (
+        "3 selected units · 1 completed verdicts · 2 without usable verdict"
+    )
+    assert "1/1 examined" in rows["Verifier re-label rate (overall)"]["value"]
+    assert "unrepresentative" in rows["Verifier review coverage"]["definition"]
+
+
+def test_historical_unknown_is_visible_in_overall_and_per_label_cells():
+    frame, _ = reviewed_frame()
+    frame["verifier_reviews"] = None
+    block = audit(frame)
+    rows = {row["label"]: row for row in block["rows"]}
+    assert rows["Verifier re-label rate (overall)"]["value"] == "unavailable"
+    assert "unavailable" in rows["Verifier review coverage"]["value"].lower()
+    note = sections._verifier_notes(frame)
+    assert note["unavailable"]
+
+
+def test_failed_review_is_not_described_as_an_unchanged_verdict():
+    row = pd.Series(
+        {
+            "verifier_reviewed": True,
+            "verifier_completed": False,
+            "verifier_status": "error",
+            "verifier_trigger": "random_sample",
+            "verifier_label": None,
+            "overturned": False,
+        }
+    )
+    stored_row = next(pd.DataFrame([row]).itertuples(index=False))
+    assert sections._span_verifier_cell(stored_row) == (
+        "selected, no usable verdict (random sample)"
+    )
+    frame = pd.DataFrame([{**row.to_dict(), "turn": 0}])
+    cells = _run_judge_cells(frame, [{"start": 0, "end": 0}])
+    assert cells == [
+        (
+            "verifier",
+            "verifier_text",
+            ["1 selected · 0 completed · 1 without usable verdict · 0 overturned"],
+        )
+    ]

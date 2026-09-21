@@ -3,7 +3,7 @@
 The report is one HTML file (charts load from a CDN, so it reads
 online), all sections sharing one turn axis (the same turn sits in the same pixel column in every
 chart). Deep links open the Scout viewer at the exact event when a
-viewer is wired. Two global reading rules:
+viewer is wired. Global reading rules:
 
 - **Provenance everywhere.** Every judged surface names its judge
   model(s) and carries confidence/agreement. `label_source` says who
@@ -18,6 +18,15 @@ viewer is wired. Two global reading rules:
 - **Turn indices are 0-based** model-turn indices, the same number in
   every chart, tooltip, card, and frame (the Scout viewer numbers
   turns from 1 - the report footer line says so).
+
+## Analysis status
+
+Read the always-visible status block before interpreting sections. Execution
+completion is separate from usable labels: failed, refused, missing and filled
+outputs are shown separately. Unknown custom coverage is not evidence of either
+success or failure. The status describes the whole stored scan, including epochs
+outside the selected report; empty sections do not establish an absence of activity.
+Original review coverage is also shown next to verifier rates in the audit.
 
 ## 0. Eval setup
 
@@ -122,15 +131,15 @@ Per-turn bars over a separate always-visible context-window chart.
 The measure radio picks what the bars show - in the simplest terms:
 
 - **per-turn total**: everything the turn's model call processed -
-  new input, cache reads/writes, reasoning, output. "How big was
+  uncached input, cache reads/writes, and output (including reasoning). "How big was
   this call."
-- **per-turn new work**: only the genuinely new content this turn -
-  the re-sent conversation prefix does not count. "How much did the
-  agent actually add here." The best measure of activity.
-- **cumulative (billable)**: running total of what the run costs -
-  cache reads are cheap, cache writes and output are not. "What has
-  been spent so far." A steepening slope means the run is getting
-  expensive.
+- **per-turn new work**: a heuristic for new content: uncached input,
+  output, and cache writes capped at growth in the lane's context.
+  It does not measure cognitive work or dollar cost.
+- **cumulative (excluding cache reads)**: uncached input, output, and
+  full cache-write tokens summed over turns. Cache reads are excluded;
+  token types are not price-weighted. This is not monetary spend.
+  The dataframe retains the legacy column name `billable` for compatibility.
 - **linear/log scale**: linear for comparing turns at a glance; log
   when a few huge turns flatten everything else - it makes the small
   turns readable again without hiding the big ones. Dashed red rules mark context flushes (compactions);
@@ -171,7 +180,7 @@ when the span was reviewed ("overturned (was X)" / "reviewed, not
 overturned"), one joined "member votes" row, then tool calls and
 busy time - "no data" where the source recorded nothing, and
 reliability rows absent where the fact does not apply. Per-label
-token rollups (new work, output, billable) live on the Token spend
+token rollups (new work, output, and tokens excluding cache reads) live on the Token spend
 section's "By sub-agent label" bars' tooltip, not here. Spawn
 prompts expandable shows what each sub-agent
 was asked to do; label definitions expandable shows the rubric the
@@ -195,10 +204,10 @@ sub-agent role. When sub-agent spend cannot be computed (tool-events-
 only lanes carry no usage) the report says so instead of drawing a
 zero.
 
-Computing cost per turn from frames: `phases.n_turns` counts only
+Computing new-work tokens per turn from frames: `phases.n_turns` counts only
 reasoning-bearing turns (judged and filled), but `new_work_tokens` folds
 in sub-agent-lane turns attributed into the phase - so
-`new_work_tokens / n_turns` over-states per-turn cost for any phase that
+`new_work_tokens / n_turns` mixes different turn populations for any phase that
 delegates. For the phase's own reasoning, group `phase_turns` by phase
 and `basis` (reasoning-bearing vs attributed) instead of dividing by
 `n_turns`.
@@ -206,7 +215,9 @@ and `basis` (reasoning-bearing vs attributed) instead of dividing by
 ## 6. Phase cards
 
 One expandable card per phase, chronological - the drill-down for the
-timeline. Each card: narrated headline and summary (LLM narrator
+timeline. Headlines and summaries retain the complete generated text. A note on
+the collapsed card explains neutral grouping caused by invalid ranges, empty
+groups, or no usable narrative. This is separate from classification warnings. Each card: narrated headline and summary (LLM narrator
 output - descriptive, not a verdict), the class-box (the judge's
 classification + mean confidence in one container - neutral when
 healthy, red with a warning glyph and the issue text when a
@@ -238,7 +249,7 @@ surfaces are exact: the phases counts read the scanner's own audit
 block, so no-verdict reviews and relabels merged away by
 re-stitching are counted; the sub-agent counts are per-span rows,
 spans never merge), and the regime-appropriate indicator -
-including, on voting regimes, the alpha/AC1 bracket (labelled
+including, on voting regimes, the alpha and AC1 comparison (labelled
 "Chance-corrected self-consistency" on k-roll, where it is
 intra-rater test-retest over the rolls, never "inter-judge").
 
@@ -284,10 +295,10 @@ heuristic conventions, not validated cutoffs:
 
 | Indicator | Bands |
 |---|---|
-| k-roll self-consistency (mean per-turn agreement) | amber below 0.80; amber above 0.95 too (near-perfect self-agreement - expected at temperature 0, otherwise a scrambled-vocabulary-check prompt) |
-| Cohort agreement | Krippendorff's alpha (red below 0.66, amber from 0.66 up to 0.80, clean at 0.80 and above) shown with Gwet's AC1 - the two bracket the true agreement (alpha reads low, AC1 high, when one label dominates); flags threshold on alpha |
-| Verifier re-label rate | amber at or above 0.20 (overall and per original label); with a same-model verifier it is a self-consistency lower bound, and the row says so |
-| Random spot-check overturn | red on any hit - the judge got a randomly sampled case wrong without flagging doubt (confident mislabelling, not noise) |
+| k-roll self-consistency (mean per-turn agreement) | amber below 0.80 and above 0.95; inspect cases, effective sampling settings and cache provenance before attributing a cause |
+| Cohort agreement | Krippendorff's alpha (red below 0.66, amber from 0.66 up to 0.80, clean at 0.80 and above) shown with Gwet's AC1 - the two use different chance models and are not bounds on correctness; flags threshold on alpha |
+| Verifier re-label rate | amber at or above 0.20 (overall and per original label); a same-model verifier measures self-revision under a different prompt, not a bound on independent review |
+| Random spot-check overturn | red on any hit - a randomly sampled case received an applied relabel; review the source to assess correctness |
 | Confidence | mean +/- 95% CI; the CI is omitted below N=8 rather than overstated |
 
 Every count states its denominator.
@@ -303,8 +314,9 @@ zero counts - armed-and-quiet, not off.
 
 Before quoting any judged number, glance at the judge roster the
 audit names: `mockllm/*` models mean a scripted demo or test store -
-every reliability figure in it is fabricated-perfect, and the summary
-should say so. Then keep the register the report itself uses: phases and roles are judge labels with stated
+its reliability figures reflect scripted behavior, which may deliberately
+include disagreement or failed reviews. Identify them as demonstrations, not
+empirical judge performance. Phases and roles are judge labels with stated
 confidence/agreement, headlines are narrator prose, and reliability
 flags are heuristic screens - so say "the judges labelled turns 40-95
 as model_development (mean confidence 0.91, alpha 1.0)", not "the
@@ -313,3 +325,23 @@ red, lead with that before quoting any label it covers - and treat it
 the way a flagged class-box is treated: bring in transect-diagnostics and
 offer to work the spec / judge-setup iteration with the user, not
 just to narrate the flag.
+
+Intervals are descriptive calculations under sampling assumptions, not calibrated
+uncertainty guarantees for dependent turns, shared batches or correlated judges.
+Later phase chunks share prior-consensus hints: vote agreement is conditional on
+that procedure, not agreement between independent end-to-end segmentations.
+Changing a rubric to fit selected disagreements is development work; assess a
+frozen revision on appropriately selected untouched material before claiming
+better labels. Report confidence is the judge's stated confidence, not a verified
+probability of correctness.
+
+Narrative turn groups retain their supplied ranges only when they form a complete
+partition. New scans replace invalid partitions with a neutral phase group rather
+than stretching model-written descriptions to other turns. Reloading an older scan
+preserves its stored groups; this check does not establish narrative correctness.
+
+`phases.narration_group_status` records `accepted`, `invalid_partition`,
+`empty_groups`, `no_narrative`, or `not_run`. Acceptance checks partition
+coordinates, not factual accuracy. Historical scans without this field retain
+unknown status and show no fallback note; absence of a note is not evidence
+that their groups passed validation. Reload cannot recover previously clipped text.

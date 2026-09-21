@@ -19,8 +19,15 @@ file (single file, but its charts load from a CDN - it reads online)
 plus pandas frames: judged decision phases and sub-agent
 classifications on top of a structural ($0) record of tokens, context
 flushes, human interventions, and sub-agent activity. Orientation:
-[README.md](../../../README.md) (user pitch, install, frames diagram),
-[AGENTS.md](../../../AGENTS.md) (architecture, contracts).
+[README](https://github.com/AI-Safety-Institute/transect/blob/main/README.md)
+(user pitch, install, frames diagram) and
+[AGENTS](https://github.com/AI-Safety-Institute/transect/blob/main/AGENTS.md)
+(architecture, contracts). These repository documents and examples are not
+copied by the skill installer. For source examples or package development,
+use a Transect clone checked out at the installed version; the public links
+show the current main branch. Installed Python module docstrings describe
+the installed version. Copying a skill does not verify native discovery in
+the agent environment.
 
 Guide the user spec-first: their knowledge of the eval goes into the
 spec; the run is one call; the report is where the reading happens.
@@ -31,11 +38,17 @@ reliability audit flags disagreement or inconsistency). Spec
 iteration is guided here; judge-setup iteration off reliability
 signals is the transect-diagnostics skill's own subject.
 
+For a new evaluation or a domain-specific adaptation, read the bundled
+[intake and calibration recipe](references/adapting-evaluations.md) before
+choosing labels or custom layers. It starts from original task material and
+keeps configuration, judge evidence and display requirements separate.
+
 ## 1. The spec
 
 A YAML/JSON file (or `transect.Spec`) holding the vocabularies the judges
-classify against - see `examples/spec.yaml` for a complete worked
-example:
+classify against. A source checkout provides the worked
+[examples/spec.yaml](https://github.com/AI-Safety-Institute/transect/blob/main/examples/spec.yaml);
+the bundled adaptation recipe also shows a minimal configuration:
 
 - `phases`: expected activity phases, each `label` + `description`
   (the description is rendered into the judge's rubric - write it as
@@ -45,7 +58,11 @@ example:
   always offered too - an escape hatch beats a forced wrong label.
 - `subagent_labels`: expected sub-agent roles, same label +
   description shape.
-- `context`: free-text task context injected into every judge prompt.
+- `context`: additional context for phase prompts. It is not passed to the
+  built-in sub-agent classifier or automatically to custom scanners.
+- `extra`: opaque configuration for your own code. A custom layer must read
+  it and explicitly construct its question, vocabulary or display data;
+  adding keys does not create an analysis surface.
 
 An empty `phases` disables segmentation; empty `subagent_labels`
 disables classification (each warns at run time). Bare strings are
@@ -72,22 +89,23 @@ Key arguments and what they mean:
 |---|---|
 | `logs` | Inspect `.eval` log(s) read natively; OpenClaw `.jsonl` is imported into a transcript database first |
 | `sample`, `epochs` | one run triages one sample; `epochs="all"` scans every epoch (one report file each), `None` picks the earliest successful epoch (the earliest overall when none succeeded) |
-| `judge_models=None` | $0 structural-only run - zero LLM calls. The report then has exactly: token telemetry, human interventions, sub-agent activity (spans listed, unclassified), and the audit; phase timeline, cards, and spend need judges |
+| `judge_models=None` | Built-in structural extraction without LLM calls; judged phases and sub-agent classifications are absent. Separately configured custom scanners may have their own model calls |
 | one model | solo judge; cheapest judged run |
-| one model + `k_rolls=3` | the same judge repeated k times, majority vote per turn - buys a self-consistency reading (per-turn agreement). Each roll is a real, separate API call (roll-scoped cache keys), so judge cost multiplies by k |
-| a list of models | multi-model cohort, majority vote - independent judges, the strongest reliability signal |
+| one model + `k_rolls=3` | the same judge repeated k times, majority vote per turn - a self-consistency reading. Each roll has separately scoped requests and cache keys; account for fresh requests in each roll |
+| a list of models | multi-model cohort, majority vote; inspect member coverage and agreement without assuming model errors are independent |
 | `verify` | second-round verifier re-reviews doubtful labels - confidence < 0.6, k-roll agreement < 0.6, or a wedge (a <= 2-turn phase between same-label neighbours) - plus a deterministic random spot-check of max(5%, 3) phases; `None` = auto: on for solo/k-roll, off for cohort (the vote is the correction mechanism; forcing it on with a cohort raises) |
 | `verify_sample` | the share of judged units (phases and sub-agent spans) the verifier additionally spot-checks at random - `None` = the default 5% (phases floored at 3), `0.0` disables, `1.0` reviews everything |
-| `verifier_model` | defaults to the judge model - the audit then honestly calls it a self-consistency check, not an independent second opinion; for independence set a different model, at least as capable as the judge (stronger, or peer-capability from another provider) |
-| `scans_dir` | where the scan store lands; results replay from here |
+| `verifier_model` | defaults to the judge model: self-revision under a different review prompt. A different model changes the reviewer; it does not guarantee independent errors or greater correctness |
+| `scans_dir` | parent for new scan stores and retained OpenClaw snapshots; `load()` reads a saved scan |
 | `viewer` | spawns a Scout viewer and wires the report's deep links; with no TTY (coding agent, CI) it detaches and prints its URL |
 | `report_path`, `open_report`, `title` | where the report lands (default `<scans_dir>/report.html`), whether to open it in a browser, and its title. `viewer=True` and `open_report=True` are the defaults - in a coding agent or script, pass both as `False` |
 | `extra_layers` | user-injected `Layer` additions (own judged classification, sections, tags, audit block) - authoring them is the add-a-layer skill's subject |
 | `section_order` | report section order: listed sections first in the given order, unlisted follow in default order, the audit always last. Keys are `transect.report.SECTION_KEYS` plus each custom layer's name; also on `render()` |
 
-Judge calls are cached (inspect's model cache), so a re-run over the
-same inputs replays instead of re-spending - each k-roll replays its
-own roll's answer, never another's. Provider SDKs are not Transect
+Judge requests use inspect-ai's response cache. An identical request with
+a matching cache entry can replay; a repeated invocation does not guarantee
+zero spend. Each k-roll has its own cache scope. Record reused versus fresh
+responses separately when interpreting repeats. Provider SDKs are not Transect
 dependencies - the user installs their own (`pip install anthropic`)
 and exports the matching API key.
 
@@ -115,33 +133,50 @@ execution shape. Extension rule of thumb: a per-item labelling task
 builds on `cohort_llm_scanner`; a stateful/sequence task uses
 `decision_phases` as the reference implementation.
 
-Rough judge-cost arithmetic (for "what will this run cost me"):
-segmentation is about one judge call per 40 reasoning-turn digests,
-plus one narrator call per stitched phase; sub-agent classification
-is one call per spawned span; every k-roll or cohort member is a full
-extra pass over all of that; the verifier adds only the doubtful +
-spot-checked phases, reviewed 8 per call.
+Size paid work from the actual prepared requests, including batch boundaries,
+phase narration, verifier selection, each model/roll and allowed retries.
+Input size, output limits and provider prices determine each call's estimate;
+turn counts alone do not supply a spending bound. The bundled
+[adaptation recipe](references/adapting-evaluations.md#size-and-check-the-runtime)
+describes the preparation and runtime checks. Sizing does not authorize spend.
 
 ## 3. Re-rendering and stored scans
 
-`transect.load(scans_dir)` rebuilds `TransectResults` from a finished store
+Inspect `results.scan_status` on both new and reloaded results. Its `outer_complete`
+describes scanner execution, while its per-scanner records describe available
+label coverage, errors, missing execution and custom results not mounted into the
+report. A completed batch can contain failed items. Member/verifier failures can
+coexist with usable final labels. Unknown custom content coverage is not success.
+The HTML status block remains visible even when a failed section is empty; it
+covers the whole scan, including in epoch-specific reports. Preserve it in custom
+reports and do not claim that a successfully returned object means all work passed.
+
+`transect.load(results.scan_location)` rebuilds `TransectResults` from that exact store
 with no scanning and no spend; `transect.render(results,
 report_path=..., title=..., viewer=False, open_report=False)`
 re-renders the report (same viewer/open defaults as `transect` - turn
 both off when running non-interactively). Use this for report iteration, changed titles, or reading
-someone else's scan. A scanner code change does not take effect on an
-existing store - scan into a fresh `scans_dir` to see it. The same
-goes for OpenClaw ingestion: the transcript database inside
-`scans_dir` dedupes by transcript id, so a same-dir re-run reuses the
-already-imported transcript - an importer change also needs a fresh
-dir.
+someone else's scan. Call `transect()` again to apply scanner or importer changes;
+it creates a new scan even when `scans_dir` is unchanged. OpenClaw inputs are
+reparsed into a new retained database in `scans_dir/transcript_snapshots/`, so
+edited content cannot silently reuse an older imported transcript. Keep those
+databases for historical source viewing. Supply only one file for each transcript
+identity in an invocation; duplicates raise before scanning. Identical judge
+requests can still replay from inspect-ai's separate response cache. For exact
+reloads, pass the saved `results.scan_location` rather than the parent directory;
+a parent selects its newest scan by modification time. Partial loads still
+require readable structural tables and valid mounted custom-frame contracts.
 
-Two stores scanned under different Transect versions are not
-row-comparable: an importer upgrade can change span and sample
-identities and even the sub-agent span count for the same source
-file. Read cross-version differences as pipeline provenance, not
-agent behaviour; for a real comparison, re-scan both sources fresh
-under one version.
+For an independently fresh response-cache run, point `INSPECT_CACHE_DIR` at
+a new empty directory before starting the process. Preserve existing caches
+and scans for comparison. The public `transect()` call has no `cache=False`
+argument; a new scan and a cold model-response cache are different choices.
+
+Do not assume cross-version stores are row-comparable: an importer upgrade
+can change span/sample identities and the span count for the same source.
+Check versions, schemas and unit alignment before attributing differences to
+agent behaviour. If the comparison requires new scans under one version,
+retain the earlier stores and size any fresh judge calls first.
 
 ## 4. Reading the report
 
@@ -157,13 +192,13 @@ means "not judged", never "fine"; absence is stated, never faked.
 
 | Symptom | Cause / fix |
 |---|---|
-| No phases / sub-agent sections in the report | `judge_models` was not set (the run warned), or the spec declares no `phases` / `subagent_labels` |
+| No phases / sub-agent sections in the report | inspect `scan_status` for failed or missing requested work; also check `judge_models` and the spec's enabled vocabularies |
 | `sample= required` error | multi-sample log; the error lists the available ids |
-| "values outside the declared vocabulary ... coerced to NaN" warning on `load()` | the store's recorded values do not match the current scanner schema - re-scan into a fresh dir ($0 for structural, judge calls replay from cache) |
+| "values outside the declared vocabulary ... coerced to NaN" warning on `load()` | the store's recorded values do not match the current scanner schema - run a new scan, retain the old one, and account for any fresh judge calls |
 | Loud "classification joined zero lanes" warning in the report | span identity mismatch between scan and render - treat as a bug, not cosmetics |
 | Charts render blank | the report's charts are CDN-loaded - it is an online document; check network |
-| Scanner change has no effect | results replayed from the existing `scans_dir` - use a fresh one |
-| Label definitions expandable says the definitions are not recorded in the store | the rubric is embedded at scan time - re-scan into a fresh dir to record it |
+| Scanner change has no effect | `load()` reads saved results; call `transect()` for a new scan, and check the separate model-response cache when judging |
+| Label definitions expandable says the definitions are not recorded in the store | the rubric is embedded at scan time - run a new scan to record it and retain the old store |
 | OpenClaw run: no score/success, task name looks like a filename, spans drawn as ticks, sub-agent spend "no data" | expected source gaps (the telemetry never records them), stated honestly in the report - not bugs |
 | Viewer link dead after a run in a coding agent | expected on a TTY (viewer dies with the process); without a TTY it detaches - use the printed URL |
 
@@ -182,9 +217,10 @@ too, but nothing here requires it.)
 - Every frame carries the identity prefix (`sample_id`, `task_set`,
   `epoch`, `transcript_id`, `agent`) - the universal join key - plus
   `schema_version`.
-- The column reference is each frame module's docstring
-  (`src/transect/frames/<name>.py`); the README's mermaid diagram maps how
-  the frames join.
+- The column reference is each installed `transect.frames` module's
+  docstring. In a matching source checkout, the
+  [frame modules](https://github.com/AI-Safety-Institute/transect/tree/main/src/transect/frames)
+  provide the same contracts; the README diagram maps the joins.
 - Frames: `token_timeline`, `flushes`, `interventions`,
   `lane_activity`, `transcript_info` (structural);
   `phases`, `phase_turns`, `turn_groups`, `phase_turn_votes`,
@@ -199,7 +235,7 @@ too, but nothing here requires it.)
 Starter recipes:
 
 ```python
-f = transect.load("scans/").frames()
+f = transect.load(results.scan_location).frames()
 
 # token spend per phase label
 f["phases"].groupby("phase").new_work_tokens.sum().sort_values()
@@ -222,10 +258,12 @@ p[p.overturned.fillna(False)][
 f["subagents"].groupby("label").new_work.sum()
 ```
 
-When a question needs transcript text (not just labels), point the
-user at the report's phase-card excerpts and Scout-viewer deep links
-rather than reconstructing text from frames - the frames deliberately
-carry no message content.
+For source reading, use the report's excerpts and Scout-viewer deep links;
+frames are not a complete transcript reconstruction. They can nevertheless
+contain source text: setup/task prompts, human interventions, delegated task
+text and custom metadata, as well as judge explanations and narration. Treat
+frame exports and reports as potentially sensitive source-derived artifacts;
+select and inspect the fields intended for the recipient before sharing.
 
 ## 7. Extending
 
@@ -236,5 +274,6 @@ add-a-layer skill (and the README's "Custom layers" section).
 Presenting results in a UI of your own (a dashboard, a paper
 figure, an external deliverable) is the custom-ui skill's subject -
 the reliability and provenance rules travel with the data.
-Changing the package's own built-ins follows the wiring points in
-AGENTS.md ("Extending"); workflow in CONTRIBUTING.md.
+Changing the package's built-ins requires a source checkout: follow
+[AGENTS: Extending](https://github.com/AI-Safety-Institute/transect/blob/main/AGENTS.md#extending)
+and [CONTRIBUTING](https://github.com/AI-Safety-Institute/transect/blob/main/CONTRIBUTING.md).

@@ -1,0 +1,28 @@
+<section id="scan-status" aria-label="Analysis status">
+<h2>{% if scan_status.has_failures %}Partial analysis{% elif scan_status.outer_complete is none %}Analysis status unavailable{% else %}Analysis coverage{% endif %}</h2>
+<p>Scan execution: {% if scan_status.outer_complete is none %}completion not recorded{% elif scan_status.outer_complete %}finished{% else %}incomplete{% endif %}.
+Execution completion does not establish usable labels or their correctness.
+Status below covers the whole stored scan, including any epochs outside this report.</p>
+{% if scan_status.has_failures %}<p>Some requested analysis failed or has missing coverage. Empty or omitted sections must not be interpreted as an absence of activity.</p>{% endif %}
+{% for s in scan_status.scanners %}
+<details class="event"{% if s.has_failures %} open="open"{% endif %}>
+<summary>{{ s.scanner }}{% if s.has_failures %}: incomplete or failed results{% endif %}{% if not s.mounted %}: not mounted in this report{% endif %}</summary>
+<p>Recorded scanner executions: {{ s.scanned_transcripts }}{% if s.expected_transcripts is not none %} of {{ s.expected_transcripts }} expected transcripts{% else %}; expected transcript count unknown{% endif %}.
+Recorded execution errors: {{ s.execution_errors }}.
+{% if s.missing_transcripts is not none %}Missing executions: {{ s.missing_transcripts }}.{% endif %}</p>
+{% if s.observed_units is not none %}
+<p>Recorded {{ s.unit }}: {{ s.observed_units }}; usable direct labels: {{ s.usable_units }};
+failed: {{ s.failed_units }}; refused: {{ s.refused_units }}; unanswered or missing: {{ s.missing_units }}.
+{% if s.filled_units or s.attributed_units %}Filled labels: {{ s.filled_units }}; attributed turns: {{ s.attributed_units }}. These are not directly judged labels.{% endif %}</p>
+{% else %}<p>Usable label coverage is not assessed for this scanner's stored content.</p>{% endif %}
+{% if s.coverage_errors %}<p>Unusable coverage records: {{ s.coverage_errors }}.</p>{% endif %}
+{% if s.degraded_judgements %}<p>Member or verifier judgements without a usable answer: {{ s.degraded_judgements }}. These can coexist with usable final labels and are not a count of distinct provider calls.</p>{% endif %}
+{% for note in s.notes %}<p>{{ note }}</p>{% endfor %}
+</details>
+{% endfor %}
+{% if scan_status.errors %}
+<details class="event" open="open"><summary>Recorded analysis errors</summary>
+{% for error in scan_status.errors %}<p>{{ error.scanner }}{% if error.transcript_id %} · transcript {{ error.transcript_id }}{% endif %}: {{ error.message }}</p>{% endfor %}
+</details>
+{% endif %}
+</section>

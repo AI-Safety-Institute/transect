@@ -13,6 +13,7 @@
 {%- endif %}
 <h1><img class="brand-logo" src="{{ logo_uri }}" alt=""> {{ title }}</h1>
 <p class="meta">scan: {{ scan_location }} · {{ n_transcripts }} transcript(s)</p>
+{% include "scan_status.html.j2" %}
 {#- Fit-to-window is the default view; this checkbox opts into the
     zoomed-in, horizontally-scrollable variant - full per-turn pixel
     resolution for laptop-screen reading. -#}

@@ -1064,7 +1064,7 @@ def token_stack(
 _TOKEN_MEASURES = {
     "turn_total": "per-turn total",
     "new_work": "per-turn new work",
-    "cum_billable": "cumulative (billable)",
+    "cum_billable": "cumulative (excluding cache reads)",
 }
 
 
@@ -1879,7 +1879,7 @@ def spend_bars(bars: list[dict]) -> tuple[Component, int]:
                     "bucket": "bucket",
                     "new-work tokens": "tokens_text",
                     "output tokens": "output",
-                    "billable tokens": "billable",
+                    "tokens excluding cache reads": "billable",
                     "share": "share",
                 }
             ),

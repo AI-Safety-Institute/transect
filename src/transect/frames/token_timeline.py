@@ -10,12 +10,13 @@ Columns (identity prefix explained in common.py):
   input_tokens_cache_read / input_tokens_cache_write /
   reasoning_tokens: inspect-ai ModelUsage fields verbatim; None =
   the provider did not report.
-- cache_semantics: "exclusive" or "inclusive" - what input_tokens
-  means for this provider (detected per transcript).
+- cache_semantics: "exclusive" under the supported Inspect ModelUsage
+  contract: input_tokens excludes cache reads and writes.
 - context: context-window size at this turn.
 - new_work: new content processed this turn.
-- billable: what the turn costs (full cache writes included).
-- turn_total: input_new + cache writes/reads + reasoning + output.
+- billable: legacy column name for tokens excluding cache reads
+  (uncached input + output + full cache writes), not monetary cost.
+- turn_total: input + cache writes/reads + output (includes reasoning).
 - schema_version: the frames contract version.
 
 Full derivation definitions on _derive_token_views."""
@@ -81,35 +82,28 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
 
 
 def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
-    """Add provider-aware derived token columns to a timeline frame.
+    """Add token views under the supported Inspect ModelUsage contract.
 
-    Provider-aware: providers disagree on what input_tokens means, so the
-    reporting convention is detected per transcript and normalised.
+    input_tokens excludes cache reads/writes; output_tokens includes
+    reasoning_tokens. Preserve those raw counters and count output once.
+    Importers with other conventions must normalize before this frame.
 
-    New columns:
-
-    - cache_semantics: "exclusive" = input_tokens is uncached input only
-      (cache reads/writes reported separately); "inclusive" = the full
-      prompt, cached context included.
-    - context: context-window size = input_new + cache_write + cache_read,
-      where input_new (an intermediate, not a column) is the genuinely
-      new input: input_tokens as-is when exclusive; input_tokens -
-      cache_read - cache_write (floored at 0) when inclusive.
-    - new_work: input_new + output + reasoning + cache_write capped at the
-      context growth since the previous non-gap turn, so re-caching an
-      unchanged context (e.g. after cache TTL expiry) is not counted.
-    - billable: input_new + output + reasoning + full cache_write
-      (re-caching is paid for even when it is not new work).
-    - turn_total: input_new + cache_write + cache_read + reasoning +
-      output. Distinct from the raw provider total_tokens column.
+    - cache_semantics: "exclusive" (uncached input).
+    - context: input + cache writes + cache reads.
+    - new_work: input + output + cache writes capped at context growth
+      since the previous non-gap turn in this lane. This is a heuristic
+      for new content, not a measurement of cognitive work or dollar cost.
+    - billable: legacy name for input + output + full cache writes;
+      excludes cache reads and has no price weighting.
+    - turn_total: context + output, independent of raw total_tokens.
 
     Gap turns (usage-less or all-zero usage) keep NA derived fields; the
-    previous context carries forward, never reset.
+    previous context carries forward, never reset. Unknown optional
+    breakdowns are treated as zero in these derived views.
     """
     derived_rows = []
     for transcript_id, group in timeline.groupby("transcript_id", sort=False):
         all_turns = group.sort_values("turn")
-        inclusive = _detect_cache_inclusive(all_turns)
         # Each agent span is its own conversation with its own context window
         for _, turns in all_turns.groupby(lane_series(all_turns), sort=False):
             prev_ctx = 0
@@ -117,7 +111,7 @@ def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
                 row = {
                     "transcript_id": transcript_id,
                     "turn": t["turn"],
-                    "cache_semantics": "inclusive" if inclusive else "exclusive",
+                    "cache_semantics": "exclusive",
                     "context": None,
                     "new_work": None,
                     "billable": None,
@@ -128,38 +122,20 @@ def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
                     cw = _int0(t["input_tokens_cache_write"])
                     cr = _int0(t["input_tokens_cache_read"])
                     out = _int0(t["output_tokens"])
-                    reasoning = _int0(t["reasoning_tokens"])
                     new = inp
-                    if inclusive:
-                        # floor at 0: a provider mis-report cannot go negative
-                        new = max(0, inp - cr - cw)
                     ctx = new + cw + cr
-                    base = new + out + reasoning
+                    base = new + out
                     row.update(
                         context=ctx,
                         new_work=base + min(cw, max(0, ctx - prev_ctx)),
                         billable=base + cw,
-                        turn_total=new + cw + cr + reasoning + out,
+                        turn_total=new + cw + cr + out,
                     )
                     prev_ctx = ctx
                 derived_rows.append(row)
     derived = pd.DataFrame(derived_rows)
     derived = derived[["transcript_id", "turn", *_DERIVED_FIELDS]]
     return timeline.merge(derived, on=["transcript_id", "turn"], how="left")
-
-
-def _detect_cache_inclusive(turns: pd.DataFrame) -> bool:
-    """Decide whether input_tokens includes the re-read cached context."""
-    any_cache_read = False
-    for _, t in turns.iterrows():
-        if _is_gap(t):
-            continue
-        cache_read = _int0(t["input_tokens_cache_read"])
-        if cache_read > 0:
-            any_cache_read = True
-        if cache_read > _int0(t["input_tokens"]):
-            return False
-    return any_cache_read
 
 
 def _is_gap(turn_row) -> bool:

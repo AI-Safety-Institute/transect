@@ -15,8 +15,8 @@ reviewer can reliably infer about the model's behaviour narrows.
 Pointing an LLM judge at the transcript only moves the problem:
 judged labels cannot be taken at face value either. Transect is
 built around that fact. Every classification it produces carries
-its provenance and reliability, so a reviewer always knows how
-much weight a label can bear.
+provenance and reliability information so reviewers can inspect how labels
+were produced and where judges disagree.
 
 ```python
 from transect import transect
@@ -34,7 +34,7 @@ Transect places a run on one navigable turn-based timeline:
 structural scanners extract recorded events (token use, context
 compactions, human interventions, sub-agent activity) at no model
 cost, judged scanners classify behaviour against your own
-vocabulary, and a self-contained HTML report presents both. The
+vocabulary, and an HTML report presents both. The
 same surfaces land as pandas dataframes, and everything
 extends: custom scanners, custom report layers, or a fully custom
 UI over the frames.
@@ -97,16 +97,47 @@ custom-presentation recipe (`custom-ui`). Install them into your
 project once (re-run after upgrading the package):
 
 ```bash
-python -m transect.skills install   # copies them into ./.claude/skills/
+python -m transect.skills install   # use the interpreter where you installed Transect
+# After uv sync in a clone: uv run python -m transect.skills install
 ```
+
+Installing in the package's editable checkout leaves the source skills unchanged.
+Elsewhere, each skill is staged before replacement; a failed replacement restores
+its previous copy. If restoration also fails, the error names a retained backup.
+Other skills are untouched. This is per-skill recovery, not an all-skills transaction
+or protection against concurrent installers or process termination.
 
 ## Getting started
 
 The repository ships a runnable worked example in `examples/`:
 
+Start with a built-in structural run that makes no model calls:
+
 ```bash
-python examples/transect_kroll.py    # one judge, 3 rolls + verifier
-python examples/transect_cohort.py   # three-model judge cohort
+uv run python - <<'PY'
+from transect import transect
+
+results = transect(
+    logs="examples/logs",
+    spec="examples/spec.yaml",
+    judge_models=None,
+    scans_dir="scans/demo-structural",
+    report_path="scans/demo-structural/report.html",
+    viewer=False,
+    open_report=False,
+)
+print(results.scan_location)  # save this for exact reload
+print(results.frames()["token_timeline"].head())
+PY
+```
+
+Open `scans/demo-structural/report.html`; structural data is populated
+and judged sections are empty. Charts require their CDN assets. The following
+judged examples require provider credentials and incur model charges:
+
+```bash
+uv run python examples/transect_kroll.py    # one judge, 3 rolls + verifier
+uv run python examples/transect_cohort.py   # three-model judge cohort
 ```
 
 `examples/README.md` walks through both.
@@ -115,7 +146,7 @@ python examples/transect_cohort.py   # three-model judge cohort
 
 - **Spec**: one YAML/JSON file describing an evaluation family,
   reusable across its runs: phase vocabulary, sub-agent labels,
-  free task context for the judges.
+  free task context for phase judges.
 - **Scanners**: per-transcript extractors, run by Scout. Structural
   scanners are free and always on; judged scanners run when
   `judge_models` is set and the Spec declares their vocabulary.
@@ -123,8 +154,10 @@ python examples/transect_cohort.py   # three-model judge cohort
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.
 - **Frames**: the results as pandas dataframes.
-- **Report + viewer**: a self-contained HTML report, deep-linking
-  into a local Scout viewer for the full transcripts.
+- **Report + viewer**: an HTML report with embedded report data; interactive
+  charts load JavaScript assets from a CDN. Full-source links require a running
+  local Scout viewer and accessible source transcripts. `viewer=False` disables
+  that viewer; it does not make the report's charts fully offline.
 
 ### Triaging your own transcripts
 
@@ -196,24 +229,56 @@ vote, with a verifier re-checking doubtful judgements), writes the
 results to `scans_dir`, renders the HTML report, and starts the
 viewer.
 
-`load(scans_dir)` re-reads a finished scan without rescanning (and
-without API calls); `render(results)` re-renders the report.
+`load(scans_dir)` re-reads a stored scan without rescanning (and without API
+calls); `render(results)` re-renders the report. Use `results.scan_location`
+to reload that exact scan rather than whichever scan is latest in its parent.
+
+Inspect `results.scan_status` before interpreting partial results. It retains
+the stored execution completion, requested scanner roster, concise errors and
+recorded label coverage. `outer_complete` means Scout finished execution;
+`has_failures` also checks recorded unusable labels and missing executions.
+Neither establishes that labels are correct or that a custom loader emitted
+every intended item. Coverage is explicitly unknown for custom content that
+does not follow the supported Transect judging contracts. Partial results are
+returned when their required structural tables and mounted custom-frame contracts
+can be loaded; violations still raise an error. `load()` preserves the same status
+without judging.
 
 ## Reading the report
 
-![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
+![Transect report from the synthetic house-price demo, using scripted mock judges to illustrate the interface; labels and reliability signals are not empirical measurements](docs/images/transect_report.png)
 
-Top to bottom, everything on a shared turn axis:
+The status block comes first, followed by sections on a shared turn axis:
 
+- **Analysis status**: run-wide execution and coverage, above the timeline sections.
+  Failed requested work stays visible even when its section has no usable rows.
+  Epoch-specific reports label this status as covering the whole stored scan.
 - **Eval setup**: model, scaffold, verbatim prompts, limits, run summary.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions marked.
 - **Sub-agent activity**: one swimlane per spawned sub-agent, with its classified role.
-- **Token spend**: tokens by phase, by sub-agent, or by custom tag family.
+- **Token spend**: token quantities by phase, sub-agent, or custom tag family;
+  these charts do not estimate monetary cost.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
+  New scans preserve complete narration headlines and summaries; blank headlines
+  use a neutral template. Neutral grouping carries a visible reason
+  when ranges are invalid, groups are empty, or no usable narrative was returned.
+  Invalid narrative group partitions use a neutral whole-phase group; descriptions
+  are never stretched to different turn ranges. Older stored groups remain unchanged.
+
 - **Custom layers**: user layers' own sections; `section_order` rearranges the report.
 - **Reliability & provenance audit**: per judged surface, how every label was produced.
+
+Token views use Inspect's normalized usage: `input_tokens` excludes cache reads
+and writes; `output_tokens` includes reasoning. The raw counters are preserved.
+`turn_total` sums input, cache reads/writes and output once. `new_work` estimates
+new content using per-lane context growth; it is not a measure of effort. The legacy
+`billable` column sums uncached input, output and cache writes, excluding cache
+reads; its chart is labelled accordingly. No token view applies monetary prices.
+Missing optional breakdowns count as zero in derived views, and differing raw
+`total_tokens` are retained rather than silently reconciled. Custom importers must
+normalize usage to the supported Inspect contract before analysis.
 
 ### Building your own UI
 
@@ -249,7 +314,19 @@ frames["label_definitions"]  # the label rubric the judges classified against
 Every frame carries the identity prefix (`sample_id`, `task_set`,
 `epoch`, `transcript_id`, `agent`) and `schema_version`; per-column
 semantics live in the corresponding `transect/frames/*.py` docstring.
-They are plain pandas: filter, join, and plot as usual.
+They are plain pandas: filter, join, and plot as usual. Frames can contain task
+prompts, system/scaffold instructions, human interventions, delegation text and
+model-generated explanations. Review dataframes and reports before sharing;
+exporting frames is not text removal or anonymization.
+
+Phase rows retain a representative `verifier` projection for display and an
+additive `verifier_reviews` collection for all original selected review units.
+`reliability.review_units(frames["phases"])` returns those units plus an optional
+unavailable reason. Rates use completed original verdicts, not final merged phases.
+Historical missing collections cannot recover lost original-label denominators.
+The legacy `verifier_reviewed` flag means a review record exists (including failed
+attempts); `verifier_completed` requires a usable verdict. Always inspect completion
+coverage: relabel rates condition on responses and are not accuracy estimates.
 
 ### How the frames relate
 
@@ -284,7 +361,7 @@ erDiagram
         int total_tokens
         string error "None unless the run errored"
         string limit "the terminating limit, if one"
-        string scaffold_prompt
+        object scaffold_prompt "recorded value, including structured content"
         bool header_available "False on OpenClaw imports"
         int message_limit "None = not set / not found"
         string system_prompt "verbatim; the long prompts sit last"
@@ -316,14 +393,17 @@ erDiagram
     }
     phases["phases (one row per stitched phase)"] {
         int phase_index PK
+        object verifier_reviews
         string phase FK
         int turn_start
         int turn_end
         string headline
+        string narration_group_status
         float confidence
         float judge_agreement
         string confidence_source
         bool verifier_reviewed
+        bool verifier_completed
         bool overturned
     }
     phase_turns["phase_turns (one row per turn (judged surface))"] {
@@ -356,6 +436,7 @@ erDiagram
         float confidence
         string label_source
         bool verifier_reviewed
+        bool verifier_completed
         bool overturned
     }
     subagent_votes["subagent_votes (one row per (judge member, span))"] {
@@ -486,32 +567,57 @@ Each `Layer` field is one surface, all optional:
 
 ## Cost
 
-Structural extraction is free (no LLM calls): without
-`judge_models`, or without the matching Spec vocabulary, only the
-structural scanners run and the whole scan costs nothing. Judged
-surfaces cost roughly (turns + sub-agents) x judges x rolls calls
-per transcript; the demo example costs cents.
+Built-in structural extraction makes no LLM calls. Built-in judged scanners
+require `judge_models` and their matching Spec vocabulary; custom scanners can
+make their own provider calls regardless of those built-in switches.
 
-Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
-with `cohort_llm_scanner(batch=True)` judges N units per call,
-cutting a layer's classification calls. Each batched call returns
-one answer per unit, so votes are still counted per unit and the
-verifier still reviews individual units.
+Before spending, enumerate the actual planned calls: phase segmentation chunks,
+rolls/models, narration batches, subagent items, each custom layer's expanded units
+and batches, verifier selections/chunks, and bounded retries/refusals. Estimate each
+call's serialized input and maximum output using that model's pricing, then sum the
+calls and add an explicit contingency. Record repeated runs and verification too.
+Transcript turns alone do not determine calls or input expansion. In particular,
+phase prompts include prior consensus history, and custom evidence can repeat large
+source blocks. Set an approved spending ceiling and stopping conditions before
+launching; an application-side allowance is not a provider-enforced invoice cap.
 
-Two caches sit at different levels. The scan store (`scans_dir`)
-holds a finished scan's results: `load()` rebuilds the frames and
-the report from it without any model calls. Beneath it, inspect-ai
-keeps a machine-global response cache (shared across projects and
-venvs): a new `transect()` call always re-runs the scan, but any
-judge call identical to a cached one replays from disk, so
-repeating an unchanged analysis costs almost nothing. For a
-stability study or a genuinely cold run, bypass or clear the
-response cache:
+`reasoning_turns(batch=N)` with `cohort_llm_scanner(batch=True)` groups custom-layer
+items per classification call. It still returns item-level judgments and can review
+selected items separately. More batching changes prompt/output sizes; it does not
+establish a universal cost reduction or preserve judgment quality automatically.
+The shipped [adaptation recipe](.claude/skills/using-transect/references/adapting-evaluations.md)
+covers source intake, custom consumers and calibration before a full run.
 
-```bash
-INSPECT_CACHE_DIR=$(mktemp -d) python my_analysis.py  # bypass, one run
-inspect cache clear                                   # or wipe it
-```
+Each OpenClaw JSONL invocation imports only the supplied files into a new parsed
+transcript snapshot under `scans_dir/transcript_snapshots/`. Edited files are read
+afresh, and earlier scans retain their original parsed content for source viewing.
+Keep these snapshots with their scans; repeated runs use additional disk space.
+Supplying multiple files with the same transcript identity raises an error before
+scanning, even if their contents match. Finish writing a log before importing it;
+the importer does not archive raw files or coordinate with a concurrent writer.
+
+Keep scan results, parsed input snapshots and model-response caches distinct:
+
+- `transect()` starts another scan. `load(results.scan_location)` reloads that exact
+  stored scan without judging; `render()` separately builds HTML. Loading a parent
+  scan directory chooses the latest scan by modification time, so save the exact
+  location for reproducibility.
+- Inspect's local response cache can replay identical calls across projects and
+  environments. A fresh output directory or virtual environment is not a fresh
+  model call. For a new-response comparison, set a new empty cache directory before
+  starting Python and retain the old cache and outputs:
+
+  ```bash
+  INSPECT_CACHE_DIR=/path/to/new-comparison-cache uv run python my_analysis.py
+  ```
+
+- Provider prompt caching is separate from local response replay and may be charged.
+  Do not promise a rerun is free: changed phase history, batch composition, narration
+  or models can cause new calls. Verify actual dispatch/cache evidence when comparing.
+- Inspect `results.scan_status` and per-item coverage before reuse or recovery. Outer
+  completion can coexist with failed inner judgments. Preserve that scan and use a
+  separate output store for a recovery run; automatic retry of every failed inner
+  item is not a package guarantee.
 
 ## Development
 

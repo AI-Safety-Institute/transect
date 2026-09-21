@@ -122,7 +122,9 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
 
     def cell(row, name):
         value = row.get(name)
-        return None if value is None or pd.isna(value) else value
+        if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
+            return None
+        return value
 
     def found(row, name):
         value = cell(row, name)
@@ -1047,6 +1049,11 @@ def phase_cards(
                 "card_id": f"{card_id_prefix}-{int(p.phase_index)}",
                 "color": color,
                 "headline": headline,
+                "group_note": {
+                    "invalid_partition": "Neutral grouping: invalid group ranges.",
+                    "empty_groups": "Neutral grouping: no groups supplied.",
+                    "no_narrative": "Neutral grouping: no usable narrative.",
+                }.get(p.narration_group_status),
                 "tags": tags,
                 "summary": summary,
                 "groups": group_items,
@@ -1231,15 +1238,18 @@ def _swatch_style(color: str, hatch: str | None) -> str:
 def _verifier_notes(phases: pd.DataFrame) -> dict | None:
     """Verifier tally for the phase meta line. "With a verdict", not
     "checked": a merged phase may span more turns than were reviewed."""
-    verified = phases.verifier_reviewed.fillna(False).astype(bool)
-    if not verified.any():
+    units, unavailable = reliability.review_units(phases)
+    if unavailable:
+        return {"unavailable": unavailable}
+    if not len(units):
         return None
-    overturned = phases.overturned.fillna(False).astype(bool)
-    same_model = bool(phases.verifier_same_model.dropna().iloc[0])
+    completed = units.verifier_completed.fillna(False).astype(bool)
+    same = phases.verifier_same_model.dropna()
     return {
-        "verified": int(verified.sum()),
-        "overturned": int(overturned.sum()),
-        "same_model": same_model,
+        "verified": int(completed.sum()),
+        "selected": len(units),
+        "overturned": int(units.loc[completed, "overturned"].fillna(False).sum()),
+        "same_model": bool(same.iloc[0]) if len(same) else False,
     }
 
 
@@ -1430,6 +1440,12 @@ def _span_verifier_cell(row) -> str | None:
     if not bool(row.verifier_reviewed):
         return None
     trigger = str(row.verifier_trigger).replace("_", " ")
+    completed = getattr(row, "verifier_completed", None)
+    status = getattr(row, "verifier_status", None)
+    if (completed is not None and pd.notna(completed) and not bool(completed)) or (
+        isinstance(status, str) and status in ("error", "refusal", "no_answer")
+    ):
+        return f"selected, no usable verdict ({trigger})"
     if bool(row.overturned):
         return f"overturned (was {row.original_label}; {trigger})"
     return f"reviewed, not overturned ({trigger})"
@@ -1445,7 +1461,7 @@ def _resolved_label(label_of: dict, span_id) -> str:
 
 def _verifier_text(regime: reliability.Regime) -> str:
     """The entity block's one-line verifier state, reusing the meta
-    line's "self-consistency check" wording. "off" is exact - the
+    line's self-revision wording. "off" is exact - the
     scanner stamps ``verifier_armed`` at factory time - so an armed
     verifier that never triggered still reads on; a cohort never arms
     one."""
@@ -1456,7 +1472,8 @@ def _verifier_text(regime: reliability.Regime) -> str:
     model = regime.verifier_model or "(model not recorded)"
     if regime.verifier_same_model:
         return (
-            f"on ({model}): a self-consistency check, not an independent second opinion"
+            f"on ({model}): self-revision under a different prompt; "
+            "correctness unverified"
         )
     return f"on ({model})"
 
@@ -1493,6 +1510,8 @@ def _rate_cell(
     """A `Rate` as a cell: "x% [a-b%]" over "count/of unit" (the Wilson
     interval is asymmetric, so brackets rather than a ±). ``invert``
     colours a high rate as unhealthy (re-label, spot-check, minority)."""
+    if value.unavailable_reason:
+        return _map_cell("unavailable", bottom=value.unavailable_reason)
     if value.rate is None:
         return _map_cell(empty)
     return _map_cell(
@@ -1658,8 +1677,8 @@ def _entity_maps(
         help_text = (
             "Changes among the randomly picked double-checks only: the "
             "fraction is changed/sampled, the brackets a Wilson 95% CI. "
-            "The judge was confidently wrong there without flagging any "
-            "doubt - any overturn here flags red."
+            "An applied relabel records disagreement, not established wrongness; "
+            "any overturn here flags red for source review."
         )
         rows.append(
             {
@@ -1848,6 +1867,20 @@ def _entity_audit(
     )
 
     rows = list(extra_rows or [])
+    rows.append(
+        {
+            "label": "Interpretation limits",
+            "value": "Agreement and revision describe the judging procedure; "
+            "they do not establish correctness.",
+            "definition": "Wilson and normal-approximation intervals assume sampling "
+            "conditions that may not hold for dependent turns, shared batches or "
+            "correlated judges; nominal coverage has not been established here. "
+            "Later phase chunks share prior consensus context; their votes are not "
+            "independent whole-trajectory segmentations. Rubric tuning on reviewed "
+            "disagreements is development fit; "
+            "generalization needs appropriately selected untouched cases.",
+        }
+    )
     rows += [
         {
             "label": "Judge regime",
@@ -1903,14 +1936,38 @@ def _entity_audit(
                     else "no data"
                 ),
                 "definition": "Percent agreement (chance-uncorrected) plus two "
-                "chance-corrected coefficients that bracket the true "
-                "agreement: Krippendorff's alpha (reads low when one label "
-                "dominates) and Gwet's AC1 (reads high in the same case). "
+                "chance-corrected coefficients with different chance models: "
+                "Krippendorff's alpha and Gwet's AC1. They are not bounds on "
+                "true agreement or correctness. "
                 "Healthy heuristic on α: ≥ 0.80 green, 0.66–0.80 amber, "
-                "< 0.66 red; flags threshold on α, AC1 is the bracket's "
-                "other end.",
+                "< 0.66 red; flags threshold on α. These are reporting conventions.",
             }
         )
+    if regime.verifier_on:
+        units, unavailable = reliability.review_units(entity)
+        completed = int(units.verifier_completed.sum()) if len(units) else 0
+        rows.append(
+            {
+                "label": "Verifier review coverage",
+                "value": f"Unavailable: {unavailable}"
+                if unavailable
+                else (
+                    f"{len(units)} selected units · {completed} completed verdicts · "
+                    f"{len(units) - completed} without usable verdict"
+                ),
+                "definition": "Counts refer to original review units, not API calls or "
+                "merged display phases. Relabel rates condition on completed verdicts; "
+                "missing outcomes can make that subset unrepresentative.",
+            }
+        )
+        if relabel.overall.unavailable_reason:
+            rows.append(
+                {
+                    "label": "Verifier re-label rate (overall)",
+                    "value": "unavailable",
+                    "definition": relabel.overall.unavailable_reason,
+                }
+            )
     if regime.verifier_on and relabel.overall.of:
         # an armed verifier can have examined nothing (zero doubt
         # triggers and an empty spot-check draw) - then there is no
@@ -1982,44 +2039,52 @@ def _span_verifier_rows(subagents: pd.DataFrame, unit_word: str = "span") -> lis
     the custom-layer blocks, mirroring the phases rows."""
     if not len(subagents):
         return []
-    reviewed = subagents[subagents.verifier_reviewed.fillna(False)]
-    if not subagents.verifier_model.notna().any() and not len(reviewed):
+    selected, unavailable = reliability.review_units(subagents)
+    if unavailable:
+        return [
+            {
+                "label": "Verifier review coverage",
+                "value": "unavailable",
+                "definition": unavailable,
+            }
+        ]
+    if not subagents.verifier_model.notna().any() and not len(selected):
         return []
-    triggers = reviewed.verifier_trigger.value_counts()
+    completed = selected[selected.verifier_completed] if len(selected) else selected
+    triggers = (
+        selected.verifier_trigger.value_counts()
+        if len(selected)
+        else pd.Series(dtype=int)
+    )
 
     def n(trigger: str) -> int:
         return int(triggers.get(trigger, 0))
 
-    overturned = reviewed.overturned.fillna(False)
+    overturned = completed.overturned.fillna(False)
     weak = (
         ~overturned
-        & reviewed.verifier_label.notna()
-        & (reviewed.verifier_label != reviewed.original_label)
+        & completed.verifier_label.notna()
+        & (completed.verifier_label != completed.original_label)
     )
-    n_random = n("random_sample")
-    n_random_relabelled = int(
-        (overturned & (reviewed.verifier_trigger == "random_sample")).sum()
-    )
+    sampled = completed.verifier_trigger == "random_sample"
     return [
         {
             "label": "Verifier selection",
-            "value": (
-                f"{n('low_confidence')} low-confidence · "
-                f"{n('low_agreement')} low-agreement · "
-                f"{n_random} random sample"
-            ),
-            "definition": f"How many {unit_word}s each verifier trigger "
-            f"picked for review. Exact counts: {unit_word}s never merge, "
-            "so every review survives as a row.",
+            "value": f"{n('low_confidence')} low-confidence · "
+            f"{n('low_agreement')} low-agreement · {n('random_sample')} random sample",
+            "definition": f"Original {unit_word} units selected for review; "
+            "not API calls.",
         },
         {
             "label": "Verifier outcomes",
-            "value": (
-                f"{int(overturned.sum())} relabelled · "
-                f"{int(weak.sum())} weak relabel(s) recorded, not applied · "
-                f"{n_random_relabelled} of {n_random} random samples relabelled"
-            ),
-            "definition": f"Review outcomes over the same {unit_word}s.",
+            "value": f"{len(completed)} completed · "
+            f"{len(selected) - len(completed)} without usable verdict · "
+            f"{int(overturned.sum())} relabelled · {int(weak.sum())} "
+            "weak relabel(s) recorded, not applied · "
+            f"{int((overturned & sampled).sum())} of {int(sampled.sum())} "
+            "completed random samples relabelled",
+            "definition": "Relabel rates condition on usable completed verdicts; "
+            "missing outcomes are reported separately.",
         },
     ]
 

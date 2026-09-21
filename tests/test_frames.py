@@ -406,7 +406,19 @@ def test_solo_default_model_rows_read_the_judge_from_usage():
     assert bool(r.verifier_armed) is True
 
 
-def test_errored_solo_rows_project_absent_judge_columns():
+@pytest.mark.parametrize(
+    "storage,category,status",
+    [
+        ("absent", None, "error"),
+        ("object", None, "error"),
+        ("parquet", None, "error"),
+        ("parquet", "refusal", "refusal"),
+        ("parquet", "other", "error"),
+    ],
+)
+def test_errored_solo_rows_project_absent_judge_columns(
+    tmp_path, storage, category, status
+):
     """An errored solo scan records no value, so there is no judge
     block: the judge columns project as absent, dtypes intact."""
     result = SimpleNamespace(value={}, label=None, answer=None, explanation=None)
@@ -414,31 +426,37 @@ def test_errored_solo_rows_project_absent_judge_columns():
     # span id must still arrive via the store's input_ids column
     row = raw_row(result, metadata=None, input_ids=["sp1"])
     row["scan_error"] = "boom"
-    frame = subagents_df(pd.DataFrame([row]))
+    if storage != "absent":
+        row["scan_error_type"] = category
+    raw = pd.DataFrame([row])
+    if storage == "parquet":
+        raw["scan_error_type"] = raw["scan_error_type"].astype("string[pyarrow]")
+        path = tmp_path / "errors.parquet"
+        raw.to_parquet(path)
+        raw = pd.read_parquet(path, dtype_backend="pyarrow")
+    frame = subagents_df(raw)
     r = frame.iloc[0]
     assert r.agent_span_id == "sp1"
-    assert r.status == "error"
+    assert r.status == status
     assert pd.isna(r.judge_regime)
     assert pd.isna(r.n_models)
     assert pd.isna(r.verifier_armed)
 
 
-def test_inclusive_cache_semantics_detected_and_normalised():
-    """OpenAI-style usage (input_tokens includes the re-read cache) is
-    detected and normalised, so new_work is genuine new work rather
-    than the cumulative re-sent prompt."""
+def test_normalized_cache_usage_is_not_subtracted_twice():
+    """Inspect already excludes cached tokens from input_tokens; preserve them."""
     usages = [
         ModelUsage(
             input_tokens=1000,
             output_tokens=50,
-            total_tokens=1050,
+            total_tokens=1950,
             input_tokens_cache_read=800,
             input_tokens_cache_write=100,
         ),
         ModelUsage(
             input_tokens=1200,
             output_tokens=30,
-            total_tokens=1230,
+            total_tokens=2280,
             input_tokens_cache_read=1000,
             input_tokens_cache_write=50,
         ),
@@ -448,23 +466,22 @@ def test_inclusive_cache_semantics_detected_and_normalised():
         [model_turn(f"t{i}", usage=u) for i, u in enumerate(usages)],
     )
     frame = token_timeline_df(pd.DataFrame([raw_row(result)])).sort_values("turn")
-    assert (frame.cache_semantics == "inclusive").all()
-    # turn 0: new = 1000-800-100 = 100; context = new+cw+cr = 1000;
-    # new_work = (new+out) + min(cw, context growth) = 150 + 100
+    assert (frame.cache_semantics == "exclusive").all()
+    # Uncached input and cache breakdowns are disjoint in ModelUsage.
     r0 = frame.iloc[0]
     assert (r0.context, r0.new_work, r0.billable, r0.turn_total) == (
-        1000,
-        250,
-        250,
-        1050,
+        1900,
+        1150,
+        1150,
+        1950,
     )
-    # turn 1: new = 150; context = 1200; growth over 1000 caps cw fully
+    # The next context grows enough to include its full cache write.
     r1 = frame.iloc[1]
     assert (r1.context, r1.new_work, r1.billable, r1.turn_total) == (
-        1200,
-        230,
-        230,
-        1230,
+        2250,
+        1280,
+        1280,
+        2280,
     )
 
 

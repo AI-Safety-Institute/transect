@@ -335,6 +335,7 @@ def render_report(
         title=title,
         style=Markup(_STYLE),
         scan_location=str(results.scan_location),
+        scan_status=results.scan_status,
         n_transcripts=len(order),
         transcripts=transcripts,
         sensitivity=sensitivity,

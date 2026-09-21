@@ -21,7 +21,7 @@ re-derivation; there is no external doc to hunt for.
 
 ## What this package is
 
-`transect` triages long agent-eval transcripts into one self-contained HTML
+`transect` triages long agent-eval transcripts into one HTML
 report plus tidy pandas frames (see README.md for the full pitch). Two
 kinds of extraction, deliberately separated: **structural** ($0, no API
 key - token timeline, context flushes, human interventions, sub-agent
@@ -51,9 +51,12 @@ store -> frames -> report.
 
 `load()` + `render()` rebuild a report from a stored scan without
 re-scanning - keep everything the report needs inside the scan value.
-The flip side during development: scan results replay from `scans_dir`,
-so a scanner code change does not take effect on an existing store -
-scan into a fresh directory (or delete the existing store) to see it.
+`transect()` starts a new scan; identical judge requests can reuse inspect-ai's
+response cache. OpenClaw JSONL inputs are reparsed into a separate retained
+`scans_dir/transcript_snapshots/` database on each invocation. Preserve these
+databases for source viewing. Duplicate transcript identities within one
+invocation are rejected before scanning. Never delete old stores to make a
+scanner change take effect; run a new scan and retain both results for comparison.
 
 ## Load-bearing contracts
 
@@ -86,6 +89,11 @@ scan into a fresh directory (or delete the existing store) to see it.
   data" / an explicit note - never a fabricated zero, never a silently
   missing section. Unclassified spans are listed as unclassified;
   a classifier that joined zero spans warns loudly.
+- **Execution and coverage.** `results.scan_status` is reconstructed from the
+  stored scan on every load. It separates Scout completion from usable recorded
+  labels, member/verifier degradation and unknown custom content contracts.
+  The report always shows this run-wide status outside optional sections. Keep
+  it in custom UIs, including when an epoch filter hides other scan transcripts.
 
 ## Report code: read before touching
 
@@ -189,8 +197,7 @@ the standard judge columns (`judge_regime`, `n_models`, `k_rolls`,
 `transect.reliability.detect_regime` and the report's audit read directly.
 Every `transect.reliability` function checks its required columns upfront
 and raises a `KeyError` naming the missing ones and the fix; the
-per-function contract is stated in README.md's table and each
-function's docstring, and the conformance path is pinned end to end
+per-function contract is stated in each public function's docstring, and the conformance path is pinned end to end
 by `tests/test_reliability.py`'s custom-judged-layer test.
 Workflow and release flow are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -204,3 +211,24 @@ particular, README.md's mermaid diagram of the frames (columns +
 how frames join) must be updated when a frame or column changes -
 it is also a good first map of how the frames connect when you are
 orienting.
+
+
+Review-unit compatibility: phase `verifier_reviews` retains original selected units
+before display merging. Use `transect.reliability.review_units` for review populations;
+`None`/absent historical collections are unknown, not empty. Keep the legacy
+`verifier_reviewed` record-presence flag; `verifier_completed` is distinct. Rates
+condition on completed verdicts and reports must expose missing coverage beside them.
+Mock stores must be regenerated after scanner value-schema changes. No real provider
+calls are needed for those fixtures. Public docs and fixtures must not embed local
+private paths; verify regenerated source links from a different checkout location.
+
+Narration groups: preserve each supplied title/gist only on its exact inclusive
+range when the groups form a complete, non-overlapping phase partition. Invalid
+partitions use a neutral whole-phase group; never clamp or extend factual prose
+to repair coordinates. Stored historical groups are not rewritten on load.
+
+Preserve complete nonblank narration headlines and summaries without character
+clipping. Stamp `narration_group_status` in new scans and expose neutral-group
+reasons separately from classification warnings. Historical absence stays unknown;
+`accepted` checks a partition, not factual correctness. Keep narrator prompts and
+answer schemas separate from this storage/reporting contract.

@@ -81,6 +81,25 @@ class TurnGroup(BaseModel):
     gist: str = Field(description="One-line gist of the section.")
 
 
+class PhaseReview(BaseModel):
+    """One selected original phase, preserved independently of display merging.
+
+    ``review`` carries VerifierReview fields for a completed verdict. Missing
+    verdicts retain original facts and status ``no_answer`` or ``refusal``.
+    This record is not judge-facing.
+    """
+
+    original_phase_index: int
+    turn_start: int
+    turn_end: int
+    review: dict[str, JsonValue]
+
+
+NarrationGroupStatus = Literal[
+    "accepted", "invalid_partition", "empty_groups", "no_narrative", "not_run"
+]
+
+
 class StitchedPhase(BaseModel):
     """One phase: consecutive same-label segments merged across chunk boundaries."""
 
@@ -127,8 +146,17 @@ class StitchedPhase(BaseModel):
     verifier: VerifierReview | None = Field(
         default=None,
         description=(
-            "The second-round review of this phase's range; None when "
-            "the verifier never saw it."
+            "A representative completed review overlapping this phase; None "
+            "when no completed verdict overlaps. Original selected units "
+            "live in verifier_reviews."
+        ),
+    )
+    verifier_reviews: list[PhaseReview] | None = Field(
+        default=None,
+        description=(
+            "Original phase review units overlapping this displayed phase. "
+            "An empty list means none selected; None means historical records "
+            "were not preserved. The singular verifier is representative only."
         ),
     )
     headline: str = Field(
@@ -142,6 +170,10 @@ class StitchedPhase(BaseModel):
     turn_groups: list[TurnGroup] = Field(
         default_factory=list,
         description="Narrator: gapless partition of the phase's turn range.",
+    )
+    narration_group_status: NarrationGroupStatus | None = Field(
+        default=None,
+        description="Group partition outcome; None means historical status unknown.",
     )
     anchor_event_id: str | None = Field(
         default=None,

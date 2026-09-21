@@ -51,7 +51,7 @@ class Spec(BaseModel):
     """The sub-agent role vocabulary; empty disables classification."""
 
     context: str = ""
-    """Free-text task context injected into the judges' prompts."""
+    """Free-text task context for phase prompts; not passed to subagent judges."""
 
     extra: dict[str, Any] = {}
     """The user's own namespace (e.g. custom Layer content, keyed by

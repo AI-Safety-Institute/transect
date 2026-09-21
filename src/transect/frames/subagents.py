@@ -31,8 +31,9 @@ Columns (identity prefix explained in common.py):
   mean; overturn = the verifier's).
 - judge_agreement: vote agreement (NaN unless >= 2 voted).
 - n_voting / n_members: vote participation.
-- verifier_reviewed / overturned: a second-round review happened /
-  it replaced the label.
+- verifier_reviewed: legacy record-presence flag, including failed reviews.
+- verifier_completed: a usable verifier verdict was returned.
+- overturned: the verifier replaced the label.
 - verifier_trigger / verifier_label / verifier_confidence /
   verifier_explanation / verifier_status / original_label /
   original_confidence / original_explanation: the flattened
@@ -268,7 +269,12 @@ def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:
         else:
             # solo errors surface as Scout scan errors, not value facts
             if has_error:
-                status = "refusal" if r.get("scan_error_type") == "refusal" else "error"
+                category = r.get("scan_error_type")
+                status = (
+                    "refusal"
+                    if isinstance(category, str) and category == "refusal"
+                    else "error"
+                )
             else:
                 status = "ok" if label else "error"
             stamped = value.get("judge")

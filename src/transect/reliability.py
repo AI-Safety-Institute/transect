@@ -18,7 +18,7 @@ from typing import get_args
 import numpy as np
 import pandas as pd
 
-from transect.frames.common import JUDGE_COLS
+from transect.frames.common import IDENTITY_COLS, JUDGE_COLS
 from transect.scanners.cohort import LabelSource
 
 __all__ = [
@@ -34,6 +34,7 @@ __all__ = [
     "label_stats",
     "member_coverage",
     "relabel_rate",
+    "review_units",
     "spot_check_overturns",
     "wilson_interval",
 ]
@@ -68,8 +69,8 @@ class Regime:
 
     verifier_same_model: bool
     """The verifier is the same model as the (lone) judge - its
-    reviews are a self-consistency check, not an independent second
-    opinion."""
+    reviews use a second procedure and prompt. They do not measure
+    repeatability under an unchanged judging procedure."""
 
 
 NO_REGIME = Regime("none", 0, 1, (), False, None, False)
@@ -94,6 +95,10 @@ class Rate:
     """Wilson 95% interval on the rate; None when the denominator is
     zero."""
 
+    unavailable_reason: str | None = None
+    """Why the population could not be recovered; counts are placeholders
+    when set, not an assertion that zero reviews occurred."""
+
 
 NO_RATE = Rate(0, 0, None, None)
 
@@ -108,14 +113,13 @@ class CohortAgreement:
     unit has two or more raters."""
 
     alpha: float | None
-    """Krippendorff's alpha (nominal) - reads low when one label
-    dominates; None when expected disagreement is zero."""
+    """Krippendorff's alpha under its nominal chance model;
+    None when expected disagreement is zero."""
 
     ac1: float | None
-    """Gwet's AC1: chance-corrected agreement like alpha, but biased
-    the opposite way when one label dominates (alpha reads too low
-    there, AC1 too high) - read the two together as a bracket around
-    the true agreement. None when only one category was ever used."""
+    """Gwet's AC1 under a different chance model from alpha.
+    Their values are not bounds on a latent true agreement or label
+    accuracy. None when only one category was ever used."""
 
     n: int
     """Ratings entering the computation (units with >= 2 raters)."""
@@ -303,6 +307,151 @@ def cohort_agreement(
     return CohortAgreement(percent, alpha, ac1, n)
 
 
+def review_units(frame: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
+    """Return original selected review units and any population limitation.
+
+    Phase ``verifier_reviews`` sequences, including Parquet ndarray cells,
+    are expanded and deduplicated by transcript identity and original phase
+    index. Historical phase frames are recognized by their phase index,
+    label and turn-range columns even when the list column is absent.
+    Missing historical lists
+    make the combined population unavailable; known rows are retained for
+    inspection, but must not be presented as complete counts. Scalar custom
+    and subagent frames keep their row grain. ``verifier_completed`` identifies
+    usable verdicts; explicit failures and missing verdict labels are excluded.
+    Wholly legacy scalar frames without status or completion columns retain
+    their reviewed flag. Otherwise explicit completion is respected unless
+    contradicted by a failed status; ambiguous selected rows have nullable
+    completion and make the population unavailable.
+    ``verifier_reviewed`` and ``verifier_selected`` describe record presence;
+    ``verifier_completed`` is the separate usable-verdict flag.
+    """
+    unavailable = None
+    phase_frame = "verifier_reviews" in frame.columns or {
+        "phase_index",
+        "phase",
+        "turn_start",
+        "turn_end",
+    }.issubset(frame.columns)
+    if not phase_frame:
+        units = frame.copy()
+    else:
+        records: dict[tuple, dict] = {}
+        for _, row in frame.iterrows():
+            reviews = row.get("verifier_reviews")
+            if isinstance(reviews, np.ndarray):
+                if reviews.ndim != 1:
+                    raise ValueError("malformed original phase review sequence")
+                reviews = reviews.tolist()
+            if not isinstance(reviews, (list, tuple)):
+                armed = row.get("verifier_armed")
+                if isinstance(armed, (bool, np.bool_)) and not armed:
+                    continue
+                unavailable = (
+                    "Original phase review units were not preserved for all "
+                    "transcripts in this population."
+                )
+                continue
+            identity = {
+                name: None if pd.isna(row.get(name)) else row.get(name)
+                for name in IDENTITY_COLS
+            }
+            for record in reviews:
+                if (
+                    not isinstance(record, dict)
+                    or not isinstance(
+                        record.get("original_phase_index"), (int, np.integer)
+                    )
+                    or not isinstance(record.get("review"), dict)
+                ):
+                    raise ValueError("malformed original phase review unit")
+                review = dict(record["review"])
+                flattened = {
+                    **identity,
+                    "original_phase_index": record["original_phase_index"],
+                    "turn_start": record.get("turn_start"),
+                    "turn_end": record.get("turn_end"),
+                    **review,
+                    "verifier_trigger": review.get("trigger"),
+                    "verifier_status": review.get("status"),
+                    "verifier_selected": True,
+                }
+                key = (*identity.values(), record["original_phase_index"])
+                if key in records and records[key] != flattened:
+                    raise ValueError("conflicting duplicate original phase reviews")
+                records[key] = flattened
+        units = pd.DataFrame(
+            list(records.values()),
+            columns=[
+                *IDENTITY_COLS,
+                "original_phase_index",
+                "turn_start",
+                "turn_end",
+                "original_label",
+                "original_confidence",
+                "original_explanation",
+                "verifier_label",
+                "verifier_confidence",
+                "verifier_explanation",
+                "verifier_model",
+                "overturned",
+                "verifier_trigger",
+                "verifier_status",
+                "verifier_selected",
+            ],
+        )
+    selected = (
+        units.verifier_selected.fillna(False).astype(bool)
+        if "verifier_selected" in units.columns
+        else units.verifier_reviewed.fillna(False).astype(bool)
+        if "verifier_reviewed" in units.columns
+        else units.verifier_trigger.notna()
+        if "verifier_trigger" in units.columns
+        else pd.Series(False, index=units.index)
+    )
+    legacy_scalar = (
+        not phase_frame
+        and "verifier_status" not in units.columns
+        and "verifier_completed" not in units.columns
+    )
+    if "verifier_status" in units.columns:
+        selected = selected | units.verifier_status.notna()
+    if "verifier_completed" in units.columns:
+        selected = selected | units.verifier_completed.eq(True).fillna(False)
+    completion: list[bool | None] = []
+    for is_selected, (_, row) in zip(selected, units.iterrows(), strict=True):
+        status = row.get("verifier_status")
+        status = status if isinstance(status, str) and status else None
+        declared = row.get("verifier_completed")
+        label = row.get("verifier_label")
+        usable_label = isinstance(label, str) and bool(label.strip())
+        if not is_selected or (status is not None and status != "ok"):
+            completion.append(False)
+        elif isinstance(declared, (bool, np.bool_)):
+            completion.append(bool(declared) and (status != "ok" or usable_label))
+        elif legacy_scalar:
+            completion.append(True)
+        elif status == "ok":
+            completion.append(usable_label)
+        elif usable_label:
+            completion.append(True)
+        else:
+            completion.append(None)
+            unavailable = unavailable or (
+                "Completion provenance is unavailable for one or more selected reviews."
+            )
+    units["verifier_selected"] = selected
+    units["verifier_completed"] = pd.Series(
+        completion, index=units.index, dtype="boolean"
+    )
+    units["verifier_reviewed"] = selected
+    return units[selected].reset_index(drop=True), unavailable
+
+
+def _unavailable_rate(reason: str) -> Rate:
+    return Rate(0, 0, None, None, unavailable_reason=reason)
+
+
 def label_stats(
     decided: pd.DataFrame,
     votes: pd.DataFrame,
@@ -324,10 +473,11 @@ def label_stats(
             ``label_col`` is the member's own label. Phases:
             ``frames["phase_turn_votes"]``; sub-agents:
             ``frames["subagent_votes"]``.
-        frame: The verifier-bearing frame, unfiltered - read for
+        frame: The verifier-bearing frame, unfiltered. Original phase
+            units come from ``verifier_reviews``; scalar reviews use
             ``original_label`` / ``verifier_reviewed`` / ``overturned``
-            / ``verifier_trigger``. Phases: ``frames["phases"]``;
-            sub-agents: ``frames["subagents"]``.
+            / ``verifier_trigger`` and recorded status/label when present.
+            Phases: ``frames["phases"]``; sub-agents: ``frames["subagents"]``.
         unit_col: The unit key joining ``decided`` and ``votes``:
             "turn" for phases, "agent_span_id" for sub-agents. The
             join is scoped per transcript when both frames carry
@@ -361,7 +511,8 @@ def label_stats(
     )
     decided_of = decided[decided[label_col].notna()] if len(decided) else decided
     voted = votes[votes[label_col].notna()] if len(votes) else votes
-    examined = frame[frame.verifier_reviewed.fillna(False)] if len(frame) else frame
+    units, unavailable = review_units(frame)
+    examined = units[units.verifier_completed]
     observed = sorted(
         {str(v) for v in (decided_of[label_col] if len(decided_of) else [])}
         | {str(v) for v in (voted[label_col] if len(voted) else [])}
@@ -396,13 +547,17 @@ def label_stats(
                 n=len(mine),
                 agreement=mean_stat(mine.judge_agreement if len(mine) else []),
                 confidence=mean_stat(mine.confidence if len(mine) else []),
-                relabelled=rate(
+                relabelled=_unavailable_rate(unavailable)
+                if unavailable
+                else rate(
                     int(examined_mine.overturned.fillna(False).sum())
                     if len(examined_mine)
                     else 0,
                     len(examined_mine),
                 ),
-                spot_checked=rate(
+                spot_checked=_unavailable_rate(unavailable)
+                if unavailable
+                else rate(
                     int(sampled.overturned.fillna(False).sum()) if len(sampled) else 0,
                     len(sampled),
                 ),
@@ -418,7 +573,11 @@ def label_stats(
 
 
 def relabel_rate(frame: pd.DataFrame, label_col: str = "original_label") -> RelabelRate:
-    """Verifier re-label rate = overturned / examined.
+    """Verifier re-label rate = applied relabels / completed usable reviews.
+
+    Phase review lists preserve original units before display merging.
+    Missing historical units return an unavailable rate, not a reconstructed
+    denominator from representative display rows.
 
     Args:
         frame: The verifier-bearing frame: ``frames["phases"]`` or
@@ -438,9 +597,10 @@ def relabel_rate(frame: pd.DataFrame, label_col: str = "original_label") -> Rela
         "relabel_rate reads the flattened verifier review columns a "
         "judged frame projects",
     )
-    if not len(frame):
-        return RelabelRate(NO_RATE, {})
-    examined = frame[frame.verifier_reviewed.fillna(False)]
+    units, unavailable = review_units(frame)
+    if unavailable:
+        return RelabelRate(_unavailable_rate(unavailable), {})
+    examined = units[units.verifier_completed]
     if not len(examined):
         return RelabelRate(NO_RATE, {})
     overall = rate(int(examined.overturned.fillna(False).sum()), len(examined))
@@ -452,10 +612,10 @@ def relabel_rate(frame: pd.DataFrame, label_col: str = "original_label") -> Rela
 
 
 def spot_check_overturns(frame: pd.DataFrame) -> Rate:
-    """Count of verifier reviews triggered by a random sample (not the
-    judge's own stated doubt) that overturned the label - a
-    confidently-wrong judge caught by chance rather than by its own
-    uncertainty.
+    """Applied relabels among completed random-sample verifier reviews.
+
+    These are observed changes by a second procedure, not demonstrated
+    errors in the original labels.
 
     Args:
         frame: The verifier-bearing frame: ``frames["phases"]`` or
@@ -471,10 +631,12 @@ def spot_check_overturns(frame: pd.DataFrame) -> Rate:
         "spot_check_overturns reads the flattened verifier review "
         "columns a judged frame projects",
     )
-    if not len(frame):
-        return NO_RATE
-    overturned = frame.overturned.fillna(False).astype(bool)
-    sampled = frame.verifier_trigger == "random_sample"
+    units, unavailable = review_units(frame)
+    if unavailable:
+        return _unavailable_rate(unavailable)
+    completed = units[units.verifier_completed]
+    overturned = completed.overturned.fillna(False).astype(bool)
+    sampled = completed.verifier_trigger == "random_sample"
     return rate(int((overturned & sampled).sum()), int(sampled.sum()))
 
 
@@ -525,6 +687,10 @@ def member_coverage(
 def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float] | None:
     """Wilson score interval for a binomial proportion k/n.
 
+    The binomial model assumes independent trials with a common probability.
+    Nominal coverage is not established for dependent turns, batches or
+    repeated judges by computing this interval.
+
     Args:
         k: Successes.
         n: Trials.
@@ -550,7 +716,9 @@ def mean_stat(values) -> Mean:
     column. Works equally for a phase's per-phase `confidence` column
     and a judged surface's per-unit `judge_agreement` column.
 
-    The CI is omitted (not computed at all) below N = `_CI_MIN_N`."""
+    The CI is omitted (not computed at all) below N = `_CI_MIN_N`.
+    The standard-error calculation treats observations as independent;
+    nominal coverage is not calibrated for dependent transcript units."""
     vals = pd.to_numeric(pd.Series(values), errors="coerce").dropna()
     n = len(vals)
     if n == 0:

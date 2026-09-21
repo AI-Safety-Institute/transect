@@ -14,14 +14,23 @@ Columns (identity prefix explained in common.py):
 - min_confidence: minimum per-turn confidence in the phase.
 - min_agreement: minimum per-turn vote agreement (voting regimes).
 - explanation: the first contributing segment's explanation.
-- verifier_reviewed: a second-round verdict covered this range.
+- verifier_reviewed: legacy representative review-record flag for this phase.
+- verifier_completed: that representative review returned a usable verdict.
+  Original-unit counts must use verifier_reviews, not these display flags.
+- verifier_reviews: list of original phase review units, with their original
+  phase index, turn range and nested review fields; [] means none selected,
+  None means historical units were not preserved. Use these for review counts;
+  the flattened verifier fields describe only a representative review.
 - overturned: the verifier relabelled it.
 - verifier_trigger / verifier_label / verifier_confidence /
   verifier_explanation / verifier_status / original_label /
   original_confidence / original_explanation: the flattened
   VerifierReview record (common.VERIFIER_COLS; NaN when never
   reviewed).
-- headline / summary: narrator output.
+- headline / summary: complete narrator output (blank headline uses a template).
+- narration_group_status: accepted (complete partition, not factual validation),
+  invalid_partition / empty_groups / no_narrative (neutral grouping), or not_run.
+  Missing historical status is unknown; it is not inferred from the prose.
 - anchor_event_id: Scout-viewer deep-link anchor.
 - judge_models: the judge model(s) that segmented the run, as one
   "+"-joined string (one name solo; the cohort's distinct models
@@ -48,6 +57,8 @@ Columns (identity prefix explained in common.py):
 - schema_version: the frames contract version.
 """
 
+from typing import get_args
+
 import pandas as pd
 
 from transect.frames.common import (
@@ -63,6 +74,7 @@ from transect.frames.common import (
     verifier_review,
     with_schema,
 )
+from transect.scanners.phases_common import NarrationGroupStatus
 
 # VerifierAudit count fields (scanners/phases_verify.py)
 _AUDIT_COUNTS = (
@@ -117,6 +129,7 @@ def phases_df(
                     **identity_cols,
                     "phase_index": index,
                     **phase,
+                    "verifier_reviews": phase.get("verifier_reviews"),
                     **verifier_review(review),
                     "judge_models": joined,
                     "verifier_model": verifier_model,
@@ -137,9 +150,11 @@ def phases_df(
         "min_confidence",
         "min_agreement",
         "explanation",
+        "verifier_reviews",
         *VERIFIER_COLS,
         "headline",
         "summary",
+        "narration_group_status",
         "anchor_event_id",
         "judge_models",
         "verifier_model",
@@ -168,6 +183,9 @@ def phases_df(
         }
     )
     df["phase"] = categorical(df.phase, vocabulary)
+    df["narration_group_status"] = categorical(
+        df.narration_group_status, list(get_args(NarrationGroupStatus))
+    )
     df["verifier_status"] = categorical(df.verifier_status, CALL_STATUSES)
     df["new_work_tokens"] = _new_work_rollup(df, phase_turns, token_timeline)
     return with_schema(df)
