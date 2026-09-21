@@ -190,6 +190,17 @@ def test_skills_install_copies_and_replaces_prior_copies(tmp_path):
     assert not (stale / "leftover.md").exists()
 
 
+def test_skills_install_is_a_no_op_when_source_is_the_destination(tmp_path):
+    """On a source checkout the shipped skills dir is the repo's own
+    .claude/skills; installing into that repo must not delete them."""
+    project = tmp_path / "repo"
+    source = project / ".claude" / "skills"
+    (source / "add-a-layer").mkdir(parents=True)
+    (source / "add-a-layer" / "SKILL.md").write_text("keep")
+    assert install(project, source=source) == ["add-a-layer"]
+    assert (source / "add-a-layer" / "SKILL.md").read_text() == "keep"
+
+
 def test_verify_sample_zero_renders_an_armed_idle_verifier(demo_log, tmp_path):
     """verify_sample=0.0 with confident answers arms the verifier but
     examines nothing; the audit renders without the re-label rows."""
