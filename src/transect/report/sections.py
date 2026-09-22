@@ -15,6 +15,7 @@ import pandas as pd
 from markupsafe import Markup
 
 from transect.frames import SCHEMA_VERSION
+from transect.frames.transcript_info import _compact
 from transect.frames.user import member_ballots
 from transect.report import reliability
 from transect.report._jinja import jinja_env
@@ -124,6 +125,9 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
         value = row.get(name)
         if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
             return None
+        if isinstance(value, (list, dict)):
+            # same display rule as the frame's own _compact fields
+            return _compact(value)
         return value
 
     def found(row, name):

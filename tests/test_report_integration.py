@@ -214,6 +214,28 @@ def test_spend_bars_floor_covers_the_declared_tooltip_rows():
     assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
 
 
+def test_eval_setup_renders_container_values():
+    """Container values in the bypass fields render as compact JSON
+    (escaped); an empty container reads as unconfigured, not []."""
+    info = pd.DataFrame(
+        [
+            {
+                "header_available": True,
+                "scaffold_prompt": ["<b>x</b>", "a & b"],
+                "sandbox": ["docker", "compose.yaml"],
+                "tools": [],
+            }
+        ],
+        dtype=object,
+    )
+    html = str(sections.eval_setup_blocks(info))
+    text = html_mod.unescape(html)
+    assert '["<b>x</b>", "a & b"]' in text
+    assert '["docker", "compose.yaml"]' in text
+    assert "<b>x</b>" not in html  # escaped, not markup
+    assert "[]" not in text
+
+
 def test_run_intro_preserves_recorded_values():
     """The deterministic intro keeps recorded values verbatim (a score
     of "C" never lowercases) and picks the article by the agent name."""
