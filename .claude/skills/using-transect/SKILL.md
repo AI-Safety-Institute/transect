@@ -160,7 +160,10 @@ someone else's scan. Call `transect()` again to apply scanner or importer change
 it creates a new scan even when `scans_dir` is unchanged. OpenClaw inputs are
 reparsed into a new retained database in `scans_dir/transcript_snapshots/`, so
 edited content cannot silently reuse an older imported transcript. Keep those
-databases for historical source viewing. Supply only one file for each transcript
+databases for historical source viewing; to reclaim disk, delete only
+snapshots no kept scan references (`load(scan_location).transcripts_location`
+names a scan's snapshot) - the scan still loads afterwards, but renders
+without excerpts and viewer links. Supply only one file for each transcript
 identity in an invocation; duplicates raise before scanning. Identical judge
 requests can still replay from inspect-ai's separate response cache. For exact
 reloads, pass the saved `results.scan_location` rather than the parent directory;

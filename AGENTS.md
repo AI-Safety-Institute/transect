@@ -54,7 +54,10 @@ re-scanning - keep everything the report needs inside the scan value.
 `transect()` starts a new scan; identical judge requests can reuse inspect-ai's
 response cache. OpenClaw JSONL inputs are reparsed into a separate retained
 `scans_dir/transcript_snapshots/` database on each invocation. Preserve these
-databases for source viewing. Duplicate transcript identities within one
+databases for source viewing. To reclaim disk, delete only snapshot
+directories no kept scan references (`load(scan_location).transcripts_location`
+names the one a scan reads); a scan whose snapshot is gone still loads, but
+renders without transcript excerpts and viewer links. Duplicate transcript identities within one
 invocation are rejected before scanning. Never delete old stores to make a
 scanner change take effect; run a new scan and retain both results for comparison.
 
