@@ -4,8 +4,8 @@
     self-contained HTML fragment; autoescape handles every interpolation,
     so callers pass raw (unescaped) text. -#}
 
-{% macro section(title, blocks) -%}
-<div class="section">{% if title %}<h3>{{ title }}</h3>{% endif %}{% for block in blocks %}{{ block }}{% endfor %}</div>
+{% macro section(title, blocks, anchor=None) -%}
+<div{% if anchor %} id="{{ anchor }}"{% endif %} class="section">{% if title %}<h3>{{ title }}</h3>{% endif %}{% for block in blocks %}{{ block }}{% endfor %}</div>
 {%- endmacro %}
 
 {% macro chip(swatch_style, text) -%}

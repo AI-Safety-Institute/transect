@@ -48,11 +48,15 @@ _subagent_tpl: Any = jinja_env().get_template("subagent_notes.html.j2").module
 _reliability_tpl: Any = jinja_env().get_template("reliability.html.j2").module
 
 
-def section(title: str, blocks: Sequence[Markup | None]) -> Markup:
+def section(
+    title: str, blocks: Sequence[Markup | None], anchor: str | None = None
+) -> Markup:
     """One report section: an ``<h3>`` header followed by the given
     already-rendered fragments in order; empty/`None` entries are
-    dropped, so callers can express optional blocks inline."""
-    return _notes.section(title, [block for block in blocks if block])
+    dropped, so callers can express optional blocks inline. ``anchor``
+    sets an ``id`` for in-page links; ids must stay unique, so a
+    per-transcript section takes one on its first occurrence only."""
+    return _notes.section(title, [block for block in blocks if block], anchor)
 
 
 _NOT_FOUND = "data not found"
@@ -1111,28 +1115,33 @@ def reliability_audit(
             continue  # the layer's judge never ran: nothing to audit
         unit_col, label_col = audit["unit_col"], audit["label_col"]
         unit_word = unit_col.replace("_", " ")
-        decided = frame[frame[label_col].notna()]
-        extra_rows = [
-            {
-                "label": "Judged units",
-                "value": f"{len(decided)} {unit_word}(s) of {len(frame)}",
-                "definition": "This layer's frame rows carrying a decided "
-                "label, of all its rows for this transcript.",
-            }
-        ]
-        extra_rows += _span_verifier_rows(frame, unit_word=unit_word)
-        block, block_flags = _entity_audit(
-            audit["name"],
-            frame,
-            member_ballots(frame, unit_col, label_col),
-            unit_col,
-            label_col,
-            frame,
-            extra_rows=extra_rows,
-            vocabulary=declared(audit["name"]),
-            unit_word=unit_word,
-            badge=True,
-        )
+        # an arbitrary user frame may not carry the columns the audit
+        # reads; the report renders the failure instead of crashing
+        try:
+            decided = frame[frame[label_col].notna()]
+            extra_rows = [
+                {
+                    "label": "Judged units",
+                    "value": f"{len(decided)} {unit_word}(s) of {len(frame)}",
+                    "definition": "This layer's frame rows carrying a decided "
+                    "label, of all its rows for this transcript.",
+                }
+            ]
+            extra_rows += _span_verifier_rows(frame, unit_word=unit_word)
+            block, block_flags = _entity_audit(
+                audit["name"],
+                frame,
+                member_ballots(frame, unit_col, label_col),
+                unit_col,
+                label_col,
+                frame,
+                extra_rows=extra_rows,
+                vocabulary=declared(audit["name"]),
+                unit_word=unit_word,
+                badge=True,
+            )
+        except Exception as error:
+            block, block_flags = _unauditable_layer_block(audit["name"], error), []
         custom_blocks.append((audit["name"], block, block_flags))
 
     phases_ran = bool(len(phases))
@@ -1217,6 +1226,52 @@ def reliability_audit(
     return _reliability_tpl.reliability_audit(
         blocks, flag_groups, SCHEMA_VERSION, {"low": low, "mid": mid, "high": high}
     )
+
+
+def scan_status_view(status) -> dict:
+    """The run-wide execution block: per-scanner execution counts
+    (audit-red on failure states, plain otherwise), the recorded
+    error list, and any stored-but-unmounted scanner names."""
+    rows = []
+    for scanner in status.scanners:
+        total = scanner.total_transcripts
+        if total:
+            scanned = _status_cell(
+                f"{scanner.scanned_transcripts} of {total}",
+                bad=scanner.scanned_transcripts < total,
+            )
+        else:
+            scanned = _status_cell(str(scanner.scanned_transcripts), bad=False)
+        rows.append(
+            {
+                "name": scanner.scanner,
+                "sub": None if scanner.mounted else "not mounted",
+                "scanned": scanned,
+                "errors": _status_count(scanner.execution_errors),
+            }
+        )
+    return {
+        "failures": status.has_failures,
+        "execution": {
+            None: "completion not recorded",
+            True: "finished",
+            False: "incomplete",
+        }[status.outer_complete],
+        "rows": rows,
+        "unmounted": [s.scanner for s in status.scanners if not s.mounted],
+        "errors": [
+            {
+                "scanner": e.scanner,
+                "transcript_id": e.transcript_id,
+                # Scout stores the traceback separately; this is the
+                # message alone, clipped against pathological payloads.
+                "message": e.message
+                if len(e.message) <= 300
+                else e.message[:300] + "…",
+            }
+            for e in status.errors
+        ],
+    }
 
 
 def _fmt_busy(seconds) -> str:
@@ -1799,6 +1854,29 @@ def _entity_maps(
     return maps
 
 
+def _unauditable_layer_block(name: str, error: Exception) -> dict:
+    """The honest-absence fallback for a custom layer whose frame does
+    not carry the columns the audit reads: the block names the failure
+    instead of the report crashing on an arbitrary user frame."""
+    return {
+        "name": name,
+        "rows": [
+            {
+                "label": "Not audited",
+                "value": "This layer's frame could not be audited "
+                f"({type(error).__name__}: {error}).",
+                "definition": "The audit reads the judged columns "
+                "transect.turns_frame emits (the decided label plus "
+                "confidence, judge identity and agreement); a frame "
+                "without them renders as data only, its coverage "
+                "unassessed.",
+            }
+        ],
+        "maps": [],
+        "badge": True,
+    }
+
+
 def _entity_audit(
     name: str,
     entity: pd.DataFrame,
@@ -1831,11 +1909,12 @@ def _entity_audit(
     spot_check = reliability.spot_check_overturns(entity)
     confidence_stat = reliability.mean_stat(entity.confidence)
     tiers = reliability.confidence_tiers(entity.confidence)
-    flags = reliability.build_flags(regime, k_roll_stat, cohort, relabel, spot_check)
 
     # the per-classification maps: decided units, per-member coverage,
     # and deciding-provenance shares, each derived at this surface's
-    # own grain (turns for Phases, spans for Sub-agents)
+    # own grain (turns for Phases, spans for Sub-agents). The unjudged
+    # rate excludes turns the judge never saw (attributed), so it reads
+    # "of the units judging attempted, how many got no judgement".
     if name == "Phases":
         decided = (
             agreement_source[agreement_source.basis == "judged"]
@@ -1849,12 +1928,28 @@ def _entity_audit(
             ("refusal", "no_answer", "missing_turn", "filled"),
         )
         unit_word = "turn"
+        unjudged_count = sum(reliability.abstention_counts(agreement_source).values())
+        attempted = len(agreement_source) - (
+            int((agreement_source.basis == "attributed").sum())
+            if len(agreement_source)
+            else 0
+        )
     else:
         decided = entity[entity[value_col].notna()] if len(entity) else entity
         coverage = reliability.member_coverage(
             members, "status", "ok", ("refusal", "error", "no_answer")
         )
         unit_word = unit_word or "span"
+        unjudged_count = len(entity) - len(decided)
+        attempted = len(entity)
+    flags = reliability.build_flags(
+        regime,
+        k_roll_stat,
+        cohort,
+        relabel,
+        spot_check,
+        unjudged=reliability.rate(unjudged_count, attempted),
+    )
     stats = reliability.label_stats(
         decided, members, entity, unit_col, value_col, vocabulary=vocabulary
     )
@@ -2139,3 +2234,19 @@ def _verifier_audit_rows(phases: pd.DataFrame) -> list[dict]:
             "(omitted id, refusal, no answer). " + exact,
         },
     ]
+
+
+def _status_cell(text: str, bad: bool) -> dict:
+    """One execution-table cell: the audit ramp's red on a failure
+    state, the table's default background otherwise."""
+    if not bad:
+        return {"text": text, "bg": None, "fg": None}
+    bg = health_color(0.0)
+    return {"text": text, "bg": bg, "fg": cell_text_color(bg)}
+
+
+def _status_count(count: int | None) -> dict:
+    """A failure-count cell: red when positive, plain otherwise."""
+    if count is None:
+        return _status_cell("-", bad=False)
+    return _status_cell(str(count), bad=count > 0)

@@ -318,6 +318,7 @@ def render_report(
                     layer_audits=layer_audits,
                 )
             ],
+            anchor="reliability-audit" if idx == 0 else None,
         )
         sections_html = [markup for _, markup in _apply_order(keyed, section_order)]
         sections_html.append(audit_section)
@@ -335,7 +336,7 @@ def render_report(
         title=title,
         style=Markup(_STYLE),
         scan_location=str(results.scan_location),
-        scan_status=results.scan_status,
+        scan_status_view=sections.scan_status_view(results.scan_status),
         n_transcripts=len(order),
         transcripts=transcripts,
         sensitivity=sensitivity,
@@ -358,7 +359,8 @@ def validate_section_order(
             f"section_order names unknown section(s) {unknown} - valid "
             f"keys are {list(valid)} (built-ins plus each custom "
             "layer's name; the reliability audit is not orderable, it "
-            "always renders last)"
+            "always renders last, and the run-wide Scan execution & "
+            "coverage block always renders once after all transcripts)"
         )
     if len(set(section_order)) != len(section_order):
         raise ValueError("section_order repeats a section key")

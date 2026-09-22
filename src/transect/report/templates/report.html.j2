@@ -13,7 +13,9 @@
 {%- endif %}
 <h1><img class="brand-logo" src="{{ logo_uri }}" alt=""> {{ title }}</h1>
 <p class="meta">scan: {{ scan_location }} · {{ n_transcripts }} transcript(s)</p>
-{% include "scan_status.html.j2" %}
+{%- if scan_status_view.failures %}
+<p class="warning flag">&#9888; Some requested scanners failed or have missing coverage - see <a href="#scan-status">Scan execution &amp; coverage</a>.</p>
+{%- endif %}
 {#- Fit-to-window is the default view; this checkbox opts into the
     zoomed-in, horizontally-scrollable variant - full per-turn pixel
     resolution for laptop-screen reading. -#}
@@ -26,6 +28,7 @@
 {% for section in t.sections %}{{ section }}{% endfor %}
 </div>
 {% endfor %}
+{% include "scan_status.html.j2" %}
 {#- Provenance footer: the mark, the producing package + version,
     and the repo - the report itself carries its attribution. -#}
 <footer class="report-footer"><img src="{{ logo_uri }}" alt=""><span>Produced with Transect v{{ package_version }} · <a href="https://github.com/AI-Safety-Institute/transect">github.com/AI-Safety-Institute/transect</a></span></footer>

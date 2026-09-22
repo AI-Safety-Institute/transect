@@ -115,6 +115,26 @@ def test_cohort_alpha_flag_bands(alpha, level):
         assert flag.metric.startswith("cohort inter-judge agreement")
 
 
+@pytest.mark.parametrize(
+    ("count", "of", "level"),
+    # any unjudged unit flags amber; red starts at exactly 25%
+    [(0, 8, None), (1, 8, "amber"), (2, 8, "red"), (8, 8, "red")],
+)
+def test_unjudged_units_flag_bands(count, of, level):
+    """Any unjudged unit flags amber; a quarter or more of the surface red."""
+    solo = Regime("solo", 1, 1, ("m",), False, None, False)
+    flags = build_flags(
+        solo, NO_MEAN, NO_COHORT, NO_RELABEL, NO_RATE, unjudged=rate(count, of)
+    )
+    if level is None:
+        assert flags == []
+    else:
+        (flag,) = flags
+        assert flag.level == level
+        assert flag.metric == "unjudged units (no delivered judgement)"
+        assert flag.value == f"{count} of {of} ({count / of:.0%})"
+
+
 def test_relabel_and_spot_check_flags_with_same_model_caveat():
     """A >= 0.20 re-label rate flags overall and per label with the
     same-model caveat inlined; any random-sample overturn flags red."""

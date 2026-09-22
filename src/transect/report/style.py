@@ -79,6 +79,7 @@ h4 {{ font-size: var(--transect-font-size-smaller); font-weight: 600; }}
 .warning {{ color: #b00a1f; font-size: 0.9rem; font-weight: 600;
            background: #fdeaee; padding: 6px 10px;
            border-radius: var(--transect-radius); }}  /* darkened red */
+.warning a {{ color: inherit; }}  /* steel clashes inside the red band */
 .warning-amber {{ color: #7a6300; background: #fdf6e0; font-weight: 500; }}
 /* the audit's per-classification maps: colour ramps computed in
    sections.py (red = unhealthy, steel = healthy; pale-to-steel for

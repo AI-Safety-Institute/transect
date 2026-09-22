@@ -96,9 +96,9 @@ def test_epochs_all_renders_one_report_per_epoch(epochs_logs, tmp_path):
     )
     assert len(results.report_paths) == 3
     assert sorted(results.token_timeline.epoch.unique()) == [1, 2, 3]
-    assert all(s.expected_transcripts == 3 for s in results.scan_status.scanners)
+    assert all(s.total_transcripts == 3 for s in results.scan_status.scanners)
     for path in results.report_paths:
-        assert "including any epochs outside this report" in open(path).read()
+        assert 'id="scan-status"' in open(path).read()
 
 
 def test_viewer_lifetime_follows_the_execution_context(monkeypatch):

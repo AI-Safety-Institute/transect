@@ -414,6 +414,29 @@ def test_layer_audit_block_skips_quietly_when_the_judge_never_ran():
     assert "x labelling" not in out
 
 
+def test_layer_audit_block_names_an_unauditable_frame_instead_of_crashing():
+    """An arbitrary user frame that stamps a judge regime but lacks the
+    audit's columns renders an honest not-audited block, never a crash."""
+    empty = pd.DataFrame()
+    subagents = pd.DataFrame({"status": []})
+    frame = pd.DataFrame({"turn": [0], "judge_regime": ["solo"]})
+    out = str(
+        sections.reliability_audit(
+            empty,
+            empty,
+            subagents,
+            empty,
+            None,
+            phase_turn_votes=empty,
+            layer_audits=[
+                {"name": "x", "frame": frame, "unit_col": "turn", "label_col": "label"}
+            ],
+        )
+    )
+    assert "could not be audited" in out
+    assert "KeyError" in out
+
+
 def test_verifier_audit_rows_sum_only_transcripts_where_the_verifier_ran():
     """The audit reads the stamped verifier_n_* counts once per
     transcript; a transcript whose verifier never ran (all-NA counts)

@@ -93,10 +93,11 @@ scanner change take effect; run a new scan and retain both results for compariso
   missing section. Unclassified spans are listed as unclassified;
   a classifier that joined zero spans warns loudly.
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
-  stored scan on every load. It separates Scout completion from usable recorded
-  labels, member/verifier degradation and unknown custom content contracts.
-  The report always shows this run-wide status outside optional sections. Keep
-  it in custom UIs, including when an epoch filter hides other scan transcripts.
+  stored scan on every load. It records execution only: scanned vs total
+  transcripts, recorded errors and store integrity per requested scanner;
+  judgement quality belongs to the reliability audit. The report always shows
+  this run-wide status outside optional sections. Keep it in custom UIs,
+  including when an epoch filter hides other scan transcripts.
 
 ## Report code: read before touching
 

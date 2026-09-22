@@ -143,10 +143,10 @@ describes the preparation and runtime checks. Sizing does not authorize spend.
 ## 3. Re-rendering and stored scans
 
 Inspect `results.scan_status` on both new and reloaded results. Its `outer_complete`
-describes scanner execution, while its per-scanner records describe available
-label coverage, errors, missing execution and custom results not mounted into the
-report. A completed batch can contain failed items. Member/verifier failures can
-coexist with usable final labels. Unknown custom content coverage is not success.
+describes scanner execution, while its per-scanner records describe scanned vs
+total transcripts, recorded errors, store integrity and custom results not mounted
+into the report. It records execution only: a cleanly executed scan can still
+carry failed or refused judgements, which surface in the reliability audit.
 The HTML status block remains visible even when a failed section is empty; it
 covers the whole scan, including in epoch-specific reports. Preserve it in custom
 reports and do not claim that a successfully returned object means all work passed.

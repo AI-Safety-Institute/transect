@@ -156,7 +156,8 @@ def transect(
             first, in this order; unnamed ones follow in the default
             reading order. Keys are ``transect.report.SECTION_KEYS`` plus
             each custom layer's name; the reliability audit always
-            renders last.
+            renders last, and the run-wide Scan execution & coverage
+            block renders once after all transcripts.
         sensitivity: A protective marking (e.g. "OFFICIAL SENSITIVE")
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``
@@ -349,7 +350,8 @@ def render(
             first, in this order; unnamed ones follow in the default
             reading order. Keys are ``transect.report.SECTION_KEYS`` plus
             each custom layer's name; the reliability audit always
-            renders last.
+            renders last, and the run-wide Scan execution & coverage
+            block renders once after all transcripts.
         sensitivity: A protective marking (e.g. "OFFICIAL SENSITIVE")
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``

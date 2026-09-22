@@ -58,9 +58,9 @@ def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
     )
     assert phase.execution_errors == 1
     assert result.phases.empty
+    assert 'see <a href="#scan-status">' in Path(result.report_paths[0]).read_text()
     element = _status_element(result.report_paths[0])
     text = " ".join(element.itertext())
-    assert "Partial analysis" in text
     assert "decision_phases" in text
     assert "Synthetic judge failure" in text
     assert element.find(".//script") is None
@@ -112,13 +112,10 @@ def partial_batch(judge_models=None):
     )
 
 
-@pytest.mark.parametrize("all_fail", [False, True])
-def test_batch_coverage_does_not_trust_outer_completion(demo_log, tmp_path, all_fail):
-    """Nested unanswered or errored units stay visible even after a completed scan."""
+def test_clean_execution_with_partial_labels_raises_no_alarm(demo_log, tmp_path):
+    """Judgement-quality gaps are the audit's territory, not execution failures."""
 
     def answer(*args, **kwargs):
-        if all_fail:
-            raise RuntimeError("Synthetic batch failure")
         return ModelOutput.for_tool_call(
             "mockllm/model",
             "answer",
@@ -149,21 +146,15 @@ def test_batch_coverage_does_not_trust_outer_completion(demo_log, tmp_path, all_
     status = next(
         s for s in result.scan_status.scanners if s.scanner == "partial_batch"
     )
-    assert status.observed_units == 3
-    assert status.usable_units == (0 if all_fail else 1)
-    assert status.failed_units == (3 if all_fail else 0)
-    assert status.missing_units == (0 if all_fail else 2)
-    assert result.scan_status.has_failures
-    text = " ".join(_status_element(result.report_paths[0]).itertext())
-    assert "Partial analysis" in text
-    assert "partial_batch" in text
-    # Reload without the custom declaration still reports its execution and coverage.
+    assert status.scanned_transcripts == 1 and status.missing_scans == 0
+    assert not result.scan_status.has_failures
+    assert 'see <a href="#scan-status">' not in Path(result.report_paths[0]).read_text()
+    # Reload without the custom declaration still reports its execution.
     restored = transect.load(result.scan_location)
     unmounted = next(
         s for s in restored.scan_status.scanners if s.scanner == "partial_batch"
     )
     assert unmounted.mounted is False
-    assert unmounted.usable_units == status.usable_units
     transect.render(
         restored,
         report_path=str(tmp_path / "unmounted.html"),

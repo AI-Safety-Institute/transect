@@ -13,6 +13,7 @@ import pandas as pd
 
 from transect.reliability import (
     NO_MEAN as NO_MEAN,
+    NO_RATE as NO_RATE,
     CohortAgreement as CohortAgreement,
     LabelStats as LabelStats,
     Mean as Mean,
@@ -26,6 +27,7 @@ from transect.reliability import (
     mean_stat as mean_stat,
     member_coverage as member_coverage,
     provenance_shares as provenance_shares,
+    rate as rate,
     relabel_rate as relabel_rate,
     review_units as review_units,
     spot_check_overturns as spot_check_overturns,
@@ -39,6 +41,7 @@ AGREEMENT_RELIABLE = 0.80  # Krippendorff's conventional "reliable" band
 AGREEMENT_TENTATIVE = 0.66  # below: unreliable; between the two: tentative
 KROLL_SUSPICIOUSLY_HIGH = 0.95  # heuristic: inspect near-perfect self-agreement
 RELABEL_RATE_HIGH = 0.20  # verifier re-labels more than 1 in 5 examined
+UNJUDGED_SHARE_SERIOUS = 0.25  # red: a quarter of the surface is unmeasured
 
 
 def describe_regime(regime: Regime) -> str:
@@ -122,6 +125,7 @@ def build_flags(
     cohort: CohortAgreement,
     relabel: RelabelRate,
     spot_check: Rate,
+    unjudged: Rate = NO_RATE,
 ) -> list[Flag]:
     """Flags for one judged entity, each self-contained: metric, value,
     a plain-language explanation of what its threshold means, and a
@@ -129,8 +133,8 @@ def build_flags(
     into amber/red.
 
     Thresholds are the module-level flagging-policy constants above,
-    plus the thresholdless rule: any random-sample spot-check overturn
-    flags red.
+    plus two thresholdless rules: any random-sample spot-check overturn
+    flags red, and any unjudged unit flags at least amber.
     """
     flags: list[Flag] = []
     if regime.kind == "k_roll" and k_roll_stat.n and k_roll_stat.mean is not None:
@@ -259,6 +263,28 @@ def build_flags(
                 "Inspect the original evidence and both explanations. Planted-error "
                 "tests assess response to those interventions, not the verifier's "
                 "accuracy on naturally occurring cases.",
+            )
+        )
+    if unjudged.count > 0 and unjudged.rate is not None:
+        serious = unjudged.rate >= UNJUDGED_SHARE_SERIOUS
+        flags.append(
+            Flag(
+                "unjudged units (no delivered judgement)",
+                f"{unjudged.count} of {unjudged.of} ({unjudged.rate:.0%})",
+                "red" if serious else "amber",
+                "Flagged whenever this count is above zero: these units carry "
+                "no judgement at all (refusal, empty answer, or never reached), "
+                "so the report's greyed surfaces are unmeasured, not evidence "
+                "of absent activity."
+                + (
+                    f" Red at or above {UNJUDGED_SHARE_SERIOUS:.0%}: a large "
+                    "share of this surface is unmeasured."
+                    if serious
+                    else ""
+                ),
+                "Check the recorded analysis errors under Scan execution & "
+                "coverage for provider failures, then re-run judging into a "
+                "separate scan store; do not read partial coverage as complete.",
             )
         )
     return flags

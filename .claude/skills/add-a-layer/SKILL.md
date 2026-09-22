@@ -198,6 +198,12 @@ The pieces, and the rules that make them work:
   (confidence, agreement, label_source, verifier review, judge
   identity). Do not read the stored item payload; item facts belong
   in loader metadata.
+- **One row per attempted item**: the audit reads coverage from the
+  frame, so a hand-rolled frame fn must keep every item judging
+  attempted, with a null `label` where no judgement was delivered -
+  filtering to labelled rows makes failed or refused items invisible
+  to the audit and its unjudged-units flag. `turns_frame` satisfies
+  this by construction.
 
 ## 2. Report blocks
 

@@ -235,14 +235,13 @@ to reload that exact scan rather than whichever scan is latest in its parent.
 
 Inspect `results.scan_status` before interpreting partial results. It retains
 the stored execution completion, requested scanner roster, concise errors and
-recorded label coverage. `outer_complete` means Scout finished execution;
-`has_failures` also checks recorded unusable labels and missing executions.
-Neither establishes that labels are correct or that a custom loader emitted
-every intended item. Coverage is explicitly unknown for custom content that
-does not follow the supported Transect judging contracts. Partial results are
-returned when their required structural tables and mounted custom-frame contracts
-can be loaded; violations still raise an error. `load()` preserves the same status
-without judging.
+scanned-vs-total transcript counts. `outer_complete` means Scout finished
+execution; `has_failures` also checks recorded errors, missing scans and store
+integrity. Neither establishes that labels are usable or correct: judgement
+quality (abstentions, filled labels, member and verifier degradation) is the
+reliability audit's territory. Partial results are returned when their required
+structural tables and mounted custom-frame contracts can be loaded; violations
+still raise an error. `load()` preserves the same status without judging.
 
 ## Reading the report
 
@@ -614,10 +613,10 @@ Keep scan results, parsed input snapshots and model-response caches distinct:
 - Provider prompt caching is separate from local response replay and may be charged.
   Do not promise a rerun is free: changed phase history, batch composition, narration
   or models can cause new calls. Verify actual dispatch/cache evidence when comparing.
-- Inspect `results.scan_status` and per-item coverage before reuse or recovery. Outer
-  completion can coexist with failed inner judgments. Preserve that scan and use a
-  separate output store for a recovery run; automatic retry of every failed inner
-  item is not a package guarantee.
+- Inspect `results.scan_status` and the reliability audit before reuse or recovery.
+  Outer completion can coexist with failed inner judgements, which surface in the
+  audit. Preserve that scan and use a separate output store for a recovery run;
+  automatic retry of every failed inner item is not a package guarantee.
 
 ## Development
 
