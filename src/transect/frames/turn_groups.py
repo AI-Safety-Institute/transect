@@ -8,7 +8,7 @@ Columns (identity prefix explained in common.py):
   phase's range gaplessly.
 - title / gist: the narrator's short name and one-line summary. Invalid
   partitions use a neutral phase title and empty gist; factual prose is
-  never stretched onto a repaired range in newly generated scans.
+  never stretched onto a repaired range.
 - schema_version: the frames contract version.
 """
 

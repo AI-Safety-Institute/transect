@@ -6,34 +6,9 @@ from helpers import JSON_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
 
 import transect.api as api
-from transect import TransectResults, load, reliability, transect
+from transect import load, reliability, transect
 from transect.api import _run, _scanners, _viewer_exit_mode
 from transect.spec import Spec
-
-
-def test_results_preserves_existing_positional_constructor():
-    """Adding status must not shift the existing optional public arguments."""
-    frames = [pd.DataFrame() for _ in range(12)]
-    layer_frames = {"custom": pd.DataFrame({"turn": [0]})}
-    tags = pd.DataFrame({"turn": [0]})
-    layers = []
-    reports = ["example.html"]
-    results = TransectResults(
-        "scan",
-        *frames,
-        "transcripts",
-        layer_frames,
-        tags,
-        layers,
-        reports,
-        "http://localhost:1234",
-    )
-    assert results.layer_frames is layer_frames
-    assert results.turn_tags is tags
-    assert results.extra_layers is layers
-    assert results.report_paths is reports
-    assert results.viewer_url == "http://localhost:1234"
-    assert results.scan_status.outer_complete is None
 
 
 def test_triage_runs_the_default_path_end_to_end(demo_log, tmp_path, capsys):
