@@ -22,7 +22,7 @@ scan.
 Use the shipped report for the same scan as a presentation reference
 (`transect.render`, guide in the using-transect skill), and check the source
 for any claims the custom artifact will make. For a new evaluation, read the
-bundled [adaptation recipe](../using-transect/references/adapting-evaluations.md).
+using-transect skill's "Adapting to a new evaluation" section.
 The shipped report can contain incomplete or mistaken judgments; its presence
 does not validate a custom presentation.
 
@@ -33,17 +33,18 @@ carries frames and status. Source excerpts and navigation also depend on the
 recorded transcript location:
 
 - `results.frames()`: the built-in frames, plain pandas. The column
-  contract for each is its installed module docstring. The public
+  contract for each is its module docstring; the
   [frame sources](https://github.com/AI-Safety-Institute/transect/tree/main/src/transect/frames)
   and [README diagram](https://github.com/AI-Safety-Institute/transect/blob/main/README.md)
-  are source-checkout references; use the version matching your installation.
+  map the joins.
 - `results.layer_frames[name]` / `results.turn_tags`: custom
   layers' frames and their tag families.
 - `results.scan_location` / `results.transcripts_location`: the
   exact scan and its transcripts (Scout viewer deep links).
-- `results.scan_status`: run-wide execution, recorded errors and supported
-  label-coverage checks. Keep its scope explicit when the UI filters epochs or
-  units. Unknown custom coverage is not successful coverage.
+- `results.scan_status`: the run-wide execution record (scanned vs total
+  transcripts, recorded errors). Keep its scope explicit when the UI
+  filters epochs or units; judgement quality is the reliability audit's
+  territory.
 
 Frames can carry task/setup text, intervention text, spawn instructions and
 custom metadata; they are not anonymized exports. Map source fields separately
@@ -95,8 +96,8 @@ declared rubric per surface - unused labels included).
   keyed per transcript. Keep transcript scope explicit rather than silently
   pooling units.
 - Preserve complete narration text and surface neutral-group reasons from
-  `phases.narration_group_status`. Historical missing status is unknown; do not
-  infer acceptance or fallback from prose. See the report guide for the values.
+  `phases.narration_group_status`; do not infer acceptance or fallback from
+  prose. See the report guide for the values.
 - **Descriptive, not validated.** Labels and narration are an LLM
   judge's output against the user's vocabulary. Keep a framing
   sentence to that effect; the shipped report's explanation lines

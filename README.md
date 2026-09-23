@@ -317,14 +317,12 @@ prompts, system/scaffold instructions, human interventions, delegation text and
 model-generated explanations. Review dataframes and reports before sharing;
 exporting frames is not text removal or anonymization.
 
-Phase rows retain a representative `verifier` projection for display and an
-additive `verifier_reviews` collection for all original selected review units.
-`reliability.review_units(frames["phases"])` returns those units plus an optional
-unavailable reason. Rates use completed original verdicts, not final merged phases.
-Historical missing collections cannot recover lost original-label denominators.
-The legacy `verifier_reviewed` flag means a review record exists (including failed
-attempts); `verifier_completed` requires a usable verdict. Always inspect completion
-coverage: relabel rates condition on responses and are not accuracy estimates.
+Phase rows retain a representative `verifier` projection for display and a
+`verifier_reviews` collection of all original selected review units;
+`reliability.review_units(frames["phases"])` returns those units.
+`verifier_reviewed` means a review record exists (failed attempts included);
+`verifier_completed` requires a usable verdict. Relabel rates condition on
+completed verdicts and are not accuracy estimates.
 
 ### How the frames relate
 
@@ -583,8 +581,8 @@ launching; an application-side allowance is not a provider-enforced invoice cap.
 items per classification call. It still returns item-level judgments and can review
 selected items separately. More batching changes prompt/output sizes; it does not
 establish a universal cost reduction or preserve judgment quality automatically.
-The shipped [adaptation recipe](.claude/skills/using-transect/references/adapting-evaluations.md)
-covers source intake, custom consumers and calibration before a full run.
+The using-transect skill's "Adapting to a new evaluation" section covers
+source intake, custom consumers and calibration before a full run.
 
 Each OpenClaw JSONL invocation imports only the supplied files into a new parsed
 transcript snapshot under `scans_dir/transcript_snapshots/`. Edited files are read

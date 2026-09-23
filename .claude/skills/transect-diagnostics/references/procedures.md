@@ -79,12 +79,9 @@ attributing a cause. Flag thresholds are reporting conventions, not validity tes
 
 ```python
 from transect.reliability import review_units
-reviews, unavailable = review_units(f["phases"])
-if unavailable:
-    print(unavailable)  # old stores may have lost original review units
-else:
-    reviews[["original_phase_index", "original_label", "verifier_label",
-             "verifier_completed", "overturned", "verifier_trigger"]]
+reviews = review_units(f["phases"])
+reviews[["original_phase_index", "original_label", "verifier_label",
+         "verifier_completed", "overturned", "verifier_trigger"]]
 ```
 
 These are original review units, which can outnumber the final merged phases.

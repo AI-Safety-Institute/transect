@@ -22,12 +22,7 @@ flushes, human interventions, and sub-agent activity. Orientation:
 [README](https://github.com/AI-Safety-Institute/transect/blob/main/README.md)
 (user pitch, install, frames diagram) and
 [AGENTS](https://github.com/AI-Safety-Institute/transect/blob/main/AGENTS.md)
-(architecture, contracts). These repository documents and examples are not
-copied by the skill installer. For source examples or package development,
-use a Transect clone checked out at the installed version; the public links
-show the current main branch. Installed Python module docstrings describe
-the installed version. Copying a skill does not verify native discovery in
-the agent environment.
+(architecture, contracts).
 
 Guide the user spec-first: their knowledge of the eval goes into the
 spec; the run is one call; the report is where the reading happens.
@@ -38,17 +33,16 @@ reliability audit flags disagreement or inconsistency). Spec
 iteration is guided here; judge-setup iteration off reliability
 signals is the transect-diagnostics skill's own subject.
 
-For a new evaluation or a domain-specific adaptation, read the bundled
-[intake and calibration recipe](references/adapting-evaluations.md) before
-choosing labels or custom layers. It starts from original task material and
-keeps configuration, judge evidence and display requirements separate.
+For a new evaluation or a domain-specific adaptation, work through
+section 8 (Adapting to a new evaluation) before choosing labels or
+custom layers.
 
 ## 1. The spec
 
 A YAML/JSON file (or `transect.Spec`) holding the vocabularies the judges
-classify against. A source checkout provides the worked
+classify against. The worked example is
 [examples/spec.yaml](https://github.com/AI-Safety-Institute/transect/blob/main/examples/spec.yaml);
-the bundled adaptation recipe also shows a minimal configuration:
+section 8 shows a minimal starting configuration:
 
 - `phases`: expected activity phases, each `label` + `description`
   (the description is rendered into the judge's rubric - write it as
@@ -136,9 +130,8 @@ builds on `cohort_llm_scanner`; a stateful/sequence task uses
 Size paid work from the actual prepared requests, including batch boundaries,
 phase narration, verifier selection, each model/roll and allowed retries.
 Input size, output limits and provider prices determine each call's estimate;
-turn counts alone do not supply a spending bound. The bundled
-[adaptation recipe](references/adapting-evaluations.md#size-and-check-the-runtime)
-describes the preparation and runtime checks. Sizing does not authorize spend.
+turn counts alone do not supply a spending bound (section 8 has the
+per-call ledger).
 
 ## 3. Re-rendering and stored scans
 
@@ -160,7 +153,7 @@ someone else's scan. Call `transect()` again to apply scanner or importer change
 it creates a new scan even when `scans_dir` is unchanged. OpenClaw inputs are
 reparsed into a new retained database in `scans_dir/transcript_snapshots/`, so
 edited content cannot silently reuse an older imported transcript. Keep those
-databases for historical source viewing; to reclaim disk, delete only
+databases for source viewing; to reclaim disk, delete only
 snapshots no kept scan references (`load(scan_location).transcripts_location`
 names a scan's snapshot) - the scan still loads afterwards, but renders
 without excerpts and viewer links. Supply only one file for each transcript
@@ -220,10 +213,10 @@ too, but nothing here requires it.)
 - Every frame carries the identity prefix (`sample_id`, `task_set`,
   `epoch`, `transcript_id`, `agent`) - the universal join key - plus
   `schema_version`.
-- The column reference is each installed `transect.frames` module's
-  docstring. In a matching source checkout, the
-  [frame modules](https://github.com/AI-Safety-Institute/transect/tree/main/src/transect/frames)
-  provide the same contracts; the README diagram maps the joins.
+- The column reference is each `transect.frames` module's docstring
+  (also browsable as the
+  [frame modules](https://github.com/AI-Safety-Institute/transect/tree/main/src/transect/frames));
+  the README diagram maps the joins.
 - Frames: `token_timeline`, `flushes`, `interventions`,
   `lane_activity`, `transcript_info` (structural);
   `phases`, `phase_turns`, `turn_groups`, `phase_turn_votes`,
@@ -262,11 +255,9 @@ f["subagents"].groupby("label").new_work.sum()
 ```
 
 For source reading, use the report's excerpts and Scout-viewer deep links;
-frames are not a complete transcript reconstruction. They can nevertheless
-contain source text: setup/task prompts, human interventions, delegated task
-text and custom metadata, as well as judge explanations and narration. Treat
-frame exports and reports as potentially sensitive source-derived artifacts;
-select and inspect the fields intended for the recipient before sharing.
+frames are not a complete transcript reconstruction, but they do carry
+source text (prompts, interventions, delegated task text, judge
+explanations) - check the fields before sharing an export.
 
 ## 7. Extending
 
@@ -280,3 +271,52 @@ the reliability and provenance rules travel with the data.
 Changing the package's built-ins requires a source checkout: follow
 [AGENTS: Extending](https://github.com/AI-Safety-Institute/transect/blob/main/AGENTS.md#extending)
 and [CONTRIBUTING](https://github.com/AI-Safety-Institute/transect/blob/main/CONTRIBUTING.md).
+
+## 8. Adapting to a new evaluation
+
+Intake first: record which transcript, sample and epoch are selected, and
+distinguish original task material (task definition, scaffold
+configuration, native scorer) from previously generated specs, labels and
+reports. Agree which sources are open for development and which are held
+out, and keep held-out outcomes and intended solutions out of prompt
+iteration. Inspect the source's actual schema before deriving counts or
+captions - a native scalar, an event list and a checkpoint roster measure
+different things - and preserve native values and their units.
+
+Map each requested output to its actual consumer, with a check there:
+
+| Requirement | Implementation route | Check at the consumer |
+|---|---|---|
+| Describe activity phases | `Spec.phases`, descriptions and phase-only `Spec.context` | Capture the prepared phase prompt and inspect source-associated labels |
+| Classify delegated tasks | `Spec.subagent_labels` | Inspect the prepared span task and its resulting classification; global context is not injected |
+| Add another judged facet | Custom loader and `cohort_llm_scanner` question | Verify unit identity, question text, vocabulary and explicit failure statuses |
+| Show a native outcome | Mechanical extraction or a data-only `Layer` | Compare displayed values and units with the selected native record |
+| Present a custom view | Typed layer blocks or a separate UI over frames | Check joins, coverage, provenance and exact source-link destinations |
+
+Choose the unit from the evidence: multiple actions in one turn need
+separate identities or an explicit aggregation rule, and a single primary
+label on a compound action hides secondary methods from an exact-label
+filter.
+
+Start from a fresh, empty spec and a $0 structural run
+(`judge_models=None`, section 2) rather than inheriting a previous
+evaluation's labels; derive the vocabularies from the task and the review
+question, with descriptions and escape categories.
+
+Calibrate before paying for labels: capture prepared prompts with a
+deterministic model substitute to verify the rubric and context reach the
+intended consumer; use negative controls for dropped, repeated and
+reordered batch answers; check per-unit joins and
+`no_answer`/error/refusal states, not only row counts. Build a fixed
+development set with source-grounded reference judgments and keep
+held-out material out of the tuning loop. An agent's assertion of success
+is not an observed result; confidence, agreement and a populated report
+do not demonstrate correctness.
+
+Before a paid run, prepare a per-call ledger - scanner, unit identities,
+model and roll, prepared input size, output cap, provider prices, allowed
+retries; narration and verifier counts depend on earlier labels, so state
+bounds - and get the user's spending approval. Verify effective model
+settings at the provider boundary; Scout scan settings can override model
+defaults. After each staged run, check `results.scan_status` and item
+statuses (section 3) and read the report in a browser.

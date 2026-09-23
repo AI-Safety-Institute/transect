@@ -26,13 +26,9 @@ results = transect.transect(logs, spec, judge_models=..., extra_layers=[MY_LAYER
 Each layer bundles an optional scanner (joins the scan batch), an
 optional frame, typed report blocks, phase-card tags, and an audit
 declaration. Every field is optional but the layer must do something.
-For evaluation-specific choices, first read the bundled
-[intake and calibration recipe](../using-transect/references/adapting-evaluations.md).
-The worked reference is
+For evaluation-specific choices, first read the using-transect skill's
+"Adapting to a new evaluation" section. The worked reference is
 [transect_custom_layer.py](https://github.com/AI-Safety-Institute/transect/blob/main/examples/transect_custom_layer.py).
-It requires a Transect source checkout, with its companion files and the
-version matching the installed package; examples are not installed with these
-skills. The recipe and example below are available without that checkout.
 
 | Layer field | What it does |
 |---|---|

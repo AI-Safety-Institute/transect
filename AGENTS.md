@@ -217,22 +217,16 @@ it is also a good first map of how the frames connect when you are
 orienting.
 
 
-Review-unit compatibility: phase `verifier_reviews` retains original selected units
-before display merging. Use `transect.reliability.review_units` for review populations;
-`None`/absent historical collections are unknown, not empty. Keep the legacy
-`verifier_reviewed` record-presence flag; `verifier_completed` is distinct. Rates
-condition on completed verdicts and reports must expose missing coverage beside them.
-Mock stores must be regenerated after scanner value-schema changes. No real provider
-calls are needed for those fixtures. Public docs and fixtures must not embed local
-private paths; verify regenerated source links from a different checkout location.
+Review units: phase `verifier_reviews` retains original selected units before
+display merging; `transect.reliability.review_units` is the review-population
+read. `verifier_reviewed` is record presence, `verifier_completed` the
+usable-verdict flag rates condition on. Mock stores must be regenerated after
+scanner value-schema changes (no real provider calls needed). Public docs and
+fixtures must not embed local private paths.
 
 Narration groups: preserve each supplied title/gist only on its exact inclusive
 range when the groups form a complete, non-overlapping phase partition. Invalid
 partitions use a neutral whole-phase group; never clamp or extend factual prose
-to repair coordinates. Stored historical groups are not rewritten on load.
-
-Preserve complete nonblank narration headlines and summaries without character
-clipping. Stamp `narration_group_status` in new scans and expose neutral-group
-reasons separately from classification warnings. Historical absence stays unknown;
-`accepted` checks a partition, not factual correctness. Keep narrator prompts and
-answer schemas separate from this storage/reporting contract.
+to repair coordinates. Preserve complete nonblank headlines and summaries
+without character clipping, and stamp `narration_group_status`; `accepted`
+checks a partition, not factual correctness.

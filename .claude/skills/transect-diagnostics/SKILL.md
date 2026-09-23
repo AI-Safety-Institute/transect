@@ -14,10 +14,8 @@ An apparent improvement in agreement can reflect a changed rubric, easier cases,
 missing votes or response-cache replay. It does not establish better labels.
 
 Use [procedures.md](references/procedures.md) for dataframe recipes. The sibling
-[using-transect](../using-transect/SKILL.md) covers running the pipeline and its
-[intake recipe](../using-transect/references/adapting-evaluations.md) covers new
-evaluations. Repository examples require a source checkout; they are not installed
-alongside these skills.
+[using-transect](../using-transect/SKILL.md) covers running the pipeline, and its
+"Adapting to a new evaluation" section covers new evaluations.
 
 ## Read the quantity and its denominator
 
@@ -34,8 +32,7 @@ alongside these skills.
   wrong. Same-model verification uses a different prompt and is self-revision,
   not unchanged-procedure repeatability or a lower bound on another model's review.
 - Review rates use original completed review units. Inspect selected, completed
-  and missing outcomes separately. Historical stores may lack original phase
-  review records; merged display phases cannot reconstruct them.
+  and missing outcomes separately.
 - Wilson and normal-approximation intervals rely on sampling assumptions.
   Dependent turns, shared batches and correlated judges can violate them; nominal
   coverage is not established by the formula. Later phase chunks share prior
@@ -60,8 +57,7 @@ alongside these skills.
    Expert adjudication is needed for stronger correctness claims.
 5. Before a paid comparison, size the actual calls and obtain the user's required
    spending approval. Include batching, context history, rolls, narration, verifier
-   selection/chunks, retries and outputs. No generic transcript-length cost formula
-   or historical approval establishes the next run's budget.
+   selection/chunks, retries and outputs.
 
 ## Sampling and runtime controls
 

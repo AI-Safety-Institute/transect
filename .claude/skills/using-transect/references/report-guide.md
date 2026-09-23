@@ -341,11 +341,9 @@ probability of correctness.
 
 Narrative turn groups retain their supplied ranges only when they form a complete
 partition. New scans replace invalid partitions with a neutral phase group rather
-than stretching model-written descriptions to other turns. Reloading an older scan
+than stretching model-written descriptions to other turns. Reloading a scan
 preserves its stored groups; this check does not establish narrative correctness.
 
 `phases.narration_group_status` records `accepted`, `invalid_partition`,
 `empty_groups`, `no_narrative`, or `not_run`. Acceptance checks partition
-coordinates, not factual accuracy. Historical scans without this field retain
-unknown status and show no fallback note; absence of a note is not evidence
-that their groups passed validation. Reload cannot recover previously clipped text.
+coordinates, not factual accuracy.
