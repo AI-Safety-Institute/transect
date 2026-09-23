@@ -1479,7 +1479,7 @@ def _span_confidence(row) -> str | None:
 def _span_verifier_cell(row) -> str | None:
     """One tooltip line for a reviewed span: what the verifier did -
     None (no row) for the unreviewed majority."""
-    if not bool(row.verifier_reviewed):
+    if not bool(row.verifier_selected):
         return None
     trigger = str(row.verifier_trigger).replace("_", " ")
     completed = getattr(row, "verifier_completed", None)

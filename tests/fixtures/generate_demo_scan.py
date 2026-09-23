@@ -185,7 +185,7 @@ def check_planted_signals(store: Path, regime: str) -> None:
     frames = load(str(store.relative_to(ROOT))).frames()
     phases, turns = frames["phases"], frames["phase_turns"]
     if regime == "kroll":
-        reviewed = phases[phases.verifier_reviewed.fillna(False)]
+        reviewed = phases[phases.verifier_selected.fillna(False)]
         assert len(reviewed) == 2, f"expected 2 reviewed phases: {len(reviewed)}"
         assert (reviewed.verifier_trigger == "random_sample").all()
         assert int(phases.overturned.fillna(False).sum()) == 1

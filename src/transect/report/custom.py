@@ -370,7 +370,7 @@ def _run_judge_cells(
                 ],
             )
         )
-    if carries("verifier_reviewed") and rows.verifier_reviewed.fillna(False).any():
+    if carries("verifier_selected") and rows.verifier_selected.fillna(False).any():
 
         def reviewed(p: pd.DataFrame) -> str | None:
             units = review_units(p)

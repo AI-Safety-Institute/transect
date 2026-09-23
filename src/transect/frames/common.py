@@ -51,7 +51,7 @@ CALL_STATUSES = list(get_args(CallStatus))
 # The flattened VerifierReview columns (verifier_model is excluded)
 _REVIEW_RENAMES = {"trigger": "verifier_trigger", "status": "verifier_status"}
 VERIFIER_COLS = (
-    "verifier_reviewed",
+    "verifier_selected",
     "verifier_completed",
     *(
         _REVIEW_RENAMES.get(name, name)
@@ -122,7 +122,7 @@ def judge_identity(value: dict) -> dict:
 
 def verifier_review(review: dict) -> dict:
     """A review record ({} when no review ran) flattened to the
-    `VERIFIER_COLS` cells. ``verifier_reviewed`` means a review record
+    `VERIFIER_COLS` cells. ``verifier_selected`` means a review record
     exists (failed attempts included); ``verifier_completed`` means it
     carries a usable verdict."""
     label = review.get("verifier_label")
@@ -133,7 +133,7 @@ def verifier_review(review: dict) -> dict:
         and bool(label.strip())
     )
     row: dict = {
-        "verifier_reviewed": bool(review),
+        "verifier_selected": bool(review),
         "verifier_completed": completed,
     }
     for name in VerifierReview.model_fields:

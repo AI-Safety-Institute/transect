@@ -177,15 +177,15 @@ def test_triage_judged_regimes_end_to_end(regime, demo_log, tmp_path):
     if regime == "solo":
         assert len(votes) == 0
         assert (phases.confidence_source == "single_judge").all()
-        assert not phases.verifier_reviewed.any()
+        assert not phases.verifier_selected.any()
     if regime == "solo-verified":
-        reviewed = phases[phases.verifier_reviewed]
+        reviewed = phases[phases.verifier_selected]
         assert len(reviewed) == 1
         assert (reviewed.verifier_trigger == "random_sample").all()
         assert not reviewed.overturned.any()
         spans = results.subagents
         assert spans.verifier_model.notna().all()
-        spot = spans[spans.verifier_reviewed.fillna(False)]
+        spot = spans[spans.verifier_selected.fillna(False)]
         assert len(spot) == 1
         assert (spot.verifier_trigger == "random_sample").all()
         assert not spot.overturned.any()
@@ -213,7 +213,7 @@ def test_verify_sample_zero_renders_an_armed_idle_verifier(demo_log, tmp_path):
         verify=True,
         verify_sample=0.0,
     )
-    assert not results.phases.verifier_reviewed.any()
+    assert not results.phases.verifier_selected.any()
     assert results.phases.verifier_model.notna().all()
     html = open(results.report_paths[0]).read()
     assert "Traceback" not in html

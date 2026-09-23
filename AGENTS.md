@@ -219,7 +219,7 @@ orienting.
 
 Review units: phase `verifier_reviews` retains original selected units before
 display merging; `transect.reliability.review_units` is the review-population
-read. `verifier_reviewed` is record presence, `verifier_completed` the
+read. `verifier_selected` is record presence, `verifier_completed` the
 usable-verdict flag rates condition on. Mock stores must be regenerated after
 scanner value-schema changes (no real provider calls needed). Public docs and
 fixtures must not embed local private paths.

@@ -205,7 +205,7 @@ def test_batched_solo_verifier_reviews_only_the_doubtful_turn(demo_log, tmp_path
     assert by_turn.loc[6, "label_source"] == "verifier"
     assert bool(by_turn.loc[6, "overturned"])
     others = frame[frame.turn != 6]
-    assert not others.verifier_reviewed.any()
+    assert not others.verifier_selected.any()
     assert set(others.label) == {"risky"}
     assert set(others.label_source) == {"single_judge"}
 

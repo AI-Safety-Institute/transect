@@ -321,8 +321,8 @@ def review_units(frame: pd.DataFrame) -> pd.DataFrame:
     if "verifier_reviews" not in frame.columns:
         units = frame.copy()
         selected = (
-            units.verifier_reviewed.fillna(False).astype(bool)
-            if "verifier_reviewed" in units.columns
+            units.verifier_selected.fillna(False).astype(bool)
+            if "verifier_selected" in units.columns
             else pd.Series(False, index=units.index)
         )
         if "verifier_completed" in units.columns:
@@ -406,7 +406,7 @@ def label_stats(
             ``frames["subagent_votes"]``.
         frame: The verifier-bearing frame, unfiltered. Original phase
             units come from ``verifier_reviews``; scalar reviews use
-            ``original_label`` / ``verifier_reviewed`` / ``overturned``
+            ``original_label`` / ``verifier_selected`` / ``overturned``
             / ``verifier_trigger`` and recorded status/label when present.
             Phases: ``frames["phases"]``; sub-agents: ``frames["subagents"]``.
         unit_col: The unit key joining ``decided`` and ``votes``:
@@ -436,7 +436,7 @@ def label_stats(
     )
     _require(
         frame,
-        ("original_label", "verifier_reviewed", "overturned", "verifier_trigger"),
+        ("original_label", "verifier_selected", "overturned", "verifier_trigger"),
         "label_stats's frame argument carries the flattened verifier "
         "review columns a judged frame projects",
     )
@@ -506,7 +506,7 @@ def relabel_rate(frame: pd.DataFrame, label_col: str = "original_label") -> Rela
 
     Args:
         frame: The verifier-bearing frame: ``frames["phases"]`` or
-            ``frames["subagents"]`` (columns ``verifier_reviewed``,
+            ``frames["subagents"]`` (columns ``verifier_selected``,
             ``overturned``, ``label_col``).
         label_col: The pre-verifier label column for the by-label
             breakdown; the default is the frames' own
@@ -518,7 +518,7 @@ def relabel_rate(frame: pd.DataFrame, label_col: str = "original_label") -> Rela
     """
     _require(
         frame,
-        ("verifier_reviewed", "overturned", label_col),
+        ("verifier_selected", "overturned", label_col),
         "relabel_rate reads the flattened verifier review columns a "
         "judged frame projects",
     )

@@ -31,7 +31,7 @@ Columns (identity prefix explained in common.py):
   mean; overturn = the verifier's).
 - judge_agreement: vote agreement (NaN unless >= 2 voted).
 - n_voting / n_members: vote participation.
-- verifier_reviewed: a review record exists, failed attempts included.
+- verifier_selected: a review record exists, failed attempts included.
 - verifier_completed: a usable verifier verdict was returned.
 - overturned: the verifier replaced the label.
 - verifier_trigger / verifier_label / verifier_confidence /
@@ -41,7 +41,7 @@ Columns (identity prefix explained in common.py):
   ran; verifier_status is the review call's ok / refusal / error).
 - verifier_model: the verifier judge whenever the verifier was armed
   for the run, reviews or not (the armed stamp); None when the
-  verifier was off. "A review happened" is verifier_reviewed, never
+  verifier was off. "A review happened" is verifier_selected, never
   this column's presence.
 - judge_regime / n_models / k_rolls / verifier_armed /
   verifier_same_model: the scanner-stamped judge-identity columns
@@ -134,7 +134,7 @@ def subagents_df(
         "verifier_model",
     ]
     merged = merged[[c for c in ordered if c in merged.columns]]
-    merged["verifier_reviewed"] = merged.verifier_reviewed.fillna(False).astype(bool)
+    merged["verifier_selected"] = merged.verifier_selected.fillna(False).astype(bool)
     merged["overturned"] = merged.overturned.fillna(False).astype(bool)
     return with_schema(
         merged.sort_values(

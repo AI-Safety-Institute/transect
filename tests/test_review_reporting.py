@@ -61,7 +61,7 @@ def test_audit_shows_completion_coverage_beside_conditional_rate():
 def test_failed_review_is_not_described_as_an_unchanged_verdict():
     row = pd.Series(
         {
-            "verifier_reviewed": True,
+            "verifier_selected": True,
             "verifier_completed": False,
             "verifier_status": "error",
             "verifier_trigger": "random_sample",

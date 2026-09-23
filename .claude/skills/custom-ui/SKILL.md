@@ -65,7 +65,7 @@ Grains and join keys, in one table:
 The judged vocabulary to respect everywhere: `label_source` (who
 decided: single_judge / majority_vote / verifier), `basis` (how a
 turn's label arose: judged / filled / attributed / unjudged
-reasons), the flattened verifier columns (`verifier_reviewed`,
+reasons), the flattened verifier columns (`verifier_selected`,
 `overturned`, `original_label`, `verifier_trigger`, ...), the raw
 `members` column (per-member ballots), and `label_definitions` (the
 declared rubric per surface - unused labels included).

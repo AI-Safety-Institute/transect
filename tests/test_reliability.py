@@ -198,7 +198,7 @@ def test_label_stats_cover_overturned_away_and_minority_labels():
         [
             {
                 "original_label": "a",
-                "verifier_reviewed": True,
+                "verifier_selected": True,
                 "overturned": True,
                 "verifier_trigger": "random_sample",
             }
@@ -347,7 +347,7 @@ def test_detect_regime_names_the_missing_columns_and_the_fix():
     ("call", "missing"),
     [
         (lambda df: cohort_agreement(df, "turn", "phase"), "phase"),
-        (lambda df: relabel_rate(df), "verifier_reviewed"),
+        (lambda df: relabel_rate(df), "verifier_selected"),
         (lambda df: spot_check_overturns(df), "verifier_trigger"),
         (lambda df: member_coverage(df, "basis", "judged", ()), "model"),
         (lambda df: label_stats(df, df, df, "turn", "phase"), "judge_agreement"),
@@ -392,7 +392,7 @@ def test_units_never_pool_across_transcripts():
     frame = pd.DataFrame(
         {
             "original_label": [None, None],
-            "verifier_reviewed": [False, False],
+            "verifier_selected": [False, False],
             "overturned": [False, False],
             "verifier_trigger": [None, None],
         }

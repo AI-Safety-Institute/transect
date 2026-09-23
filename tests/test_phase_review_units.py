@@ -54,7 +54,7 @@ def scalar_frame(**columns):
     """A minimal scalar (sub-agent/custom) reviewed row."""
     return pd.DataFrame(
         {
-            "verifier_reviewed": [True],
+            "verifier_selected": [True],
             "overturned": [True],
             "original_label": ["A"],
             "verifier_trigger": ["random_sample"],
@@ -150,7 +150,7 @@ def test_explicit_scalar_failures_do_not_dilute_completed_relabel_rate(failure):
     """Failed attempts do not dilute one usable scalar overturn's denominator."""
     frame = pd.DataFrame(
         {
-            "verifier_reviewed": [True] * 10,
+            "verifier_selected": [True] * 10,
             "overturned": [True] + [False] * 9,
             "original_label": ["A"] * 10,
             "verifier_trigger": ["random_sample"] * 10,

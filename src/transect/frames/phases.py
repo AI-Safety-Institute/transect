@@ -14,7 +14,7 @@ Columns (identity prefix explained in common.py):
 - min_confidence: minimum per-turn confidence in the phase.
 - min_agreement: minimum per-turn vote agreement (voting regimes).
 - explanation: the first contributing segment's explanation.
-- verifier_reviewed: a review record exists for this phase's representative
+- verifier_selected: a review record exists for this phase's representative
   review.
 - verifier_completed: that representative review returned a usable verdict.
   Original-unit counts must use verifier_reviews, not these display flags.

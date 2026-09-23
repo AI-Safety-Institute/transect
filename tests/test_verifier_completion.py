@@ -18,7 +18,7 @@ def test_missing_verdict_preserves_review_presence_without_completion(status):
     if status not in ("ok", None):
         review.update(original_label="a", trigger="random_sample", overturned=False)
     row = verifier_review(review)
-    assert row["verifier_reviewed"] is (status is not None)
+    assert row["verifier_selected"] is (status is not None)
     assert row["verifier_completed"] is False
     if status not in ("ok", None):
         assert row["overturned"] is False
@@ -55,7 +55,7 @@ def test_persisted_subagent_failures_do_not_dilute_overturn_rate(tmp_path):
     path = tmp_path / "results.parquet"
     pd.DataFrame(rows).to_parquet(path)
     frame = subagents_df(pd.read_parquet(path))
-    assert frame.verifier_reviewed.sum() == 10
+    assert frame.verifier_selected.sum() == 10
     assert frame.verifier_completed.sum() == 1
     assert relabel_rate(frame).overall.rate == 1.0
     assert spot_check_overturns(frame).of == 1

@@ -320,7 +320,7 @@ exporting frames is not text removal or anonymization.
 Phase rows retain a representative `verifier` projection for display and a
 `verifier_reviews` collection of all original selected review units;
 `reliability.review_units(frames["phases"])` returns those units.
-`verifier_reviewed` means a review record exists (failed attempts included);
+`verifier_selected` means a review record exists (failed attempts included);
 `verifier_completed` requires a usable verdict. Relabel rates condition on
 completed verdicts and are not accuracy estimates.
 
@@ -398,7 +398,7 @@ erDiagram
         float confidence
         float judge_agreement
         string confidence_source
-        bool verifier_reviewed
+        bool verifier_selected
         bool verifier_completed
         bool overturned
     }
@@ -431,7 +431,7 @@ erDiagram
         string label FK
         float confidence
         string label_source
-        bool verifier_reviewed
+        bool verifier_selected
         bool verifier_completed
         bool overturned
     }
