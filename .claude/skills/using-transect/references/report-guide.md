@@ -21,12 +21,16 @@ viewer is wired. Global reading rules:
 
 ## Analysis status
 
-Read the always-visible status block before interpreting sections. Execution
-completion is separate from usable labels: failed, refused, missing and filled
-outputs are shown separately. Unknown custom coverage is not evidence of either
-success or failure. The status describes the whole stored scan, including epochs
-outside the selected report; empty sections do not establish an absence of activity.
-Original review coverage is also shown next to verifier rates in the audit.
+A red flag at the very top appears only when the stored scan carries
+execution failures; it links to the run-wide "Scan execution & coverage"
+section at the bottom (transcripts scanned per scanner, recorded errors,
+stored-but-unmounted scanners), which covers the whole stored scan
+including epochs outside the selected report. Execution completion does
+not establish usable labels: judgement quality (abstentions, filled
+labels, member and verifier degradation, the unjudged-units flag) is the
+reliability audit's territory. Empty sections do not establish an
+absence of activity. Original review coverage is also shown next to
+verifier rates in the audit.
 
 ## 0. Eval setup
 

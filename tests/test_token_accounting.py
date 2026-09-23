@@ -48,7 +48,6 @@ def test_normalized_input_excludes_cache_even_when_reads_are_smaller(cache_read)
             )
         ]
     ).iloc[0]
-    assert row.cache_semantics == "exclusive"
     assert row.context == 1000 + cache_read
     assert row.turn_total == 1050 + cache_read
     assert row.new_work == row.billable == 1050
@@ -68,7 +67,7 @@ def test_later_cache_usage_cannot_change_earlier_derived_values():
         input_tokens_cache_read=2000,
         total_tokens=2150,
     )
-    columns = ["context", "new_work", "billable", "turn_total", "cache_semantics"]
+    columns = ["context", "new_work", "billable", "turn_total"]
     pd.testing.assert_series_equal(
         timeline([first]).iloc[0][columns],
         timeline([first, later]).iloc[0][columns],

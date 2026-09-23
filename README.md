@@ -245,13 +245,12 @@ still raise an error. `load()` preserves the same status without judging.
 
 ## Reading the report
 
-![Transect report from the synthetic house-price demo, using scripted mock judges to illustrate the interface; labels and reliability signals are not empirical measurements](docs/images/transect_report.png)
+![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
 
-The status block comes first, followed by sections on a shared turn axis:
+Top to bottom, everything on a shared turn axis (a red flag at the very
+top marks scan execution failures; the run-wide "Scan execution &
+coverage" section it links to sits at the bottom):
 
-- **Analysis status**: run-wide execution and coverage, above the timeline sections.
-  Failed requested work stays visible even when its section has no usable rows.
-  Epoch-specific reports label this status as covering the whole stored scan.
 - **Eval setup**: model, scaffold, verbatim prompts, limits, run summary.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.

@@ -152,7 +152,6 @@ def test_token_timeline_reconstructs_context_and_new_work(demo_results):
     total pin the derived token views against the committed log."""
     timeline = demo_results.token_timeline.sort_values("turn")
     assert sorted(timeline.turn) == list(range(16))
-    assert (timeline.cache_semantics == "exclusive").all()
     assert set(timeline.agent_lane.dropna()) == {"eda", "alt_model", "reviewer"}
     spots = timeline.set_index("turn")
     assert (spots.loc[0, "new_work"], spots.loc[0, "context"]) == (879, 785)
@@ -466,7 +465,6 @@ def test_normalized_cache_usage_is_not_subtracted_twice():
         [model_turn(f"t{i}", usage=u) for i, u in enumerate(usages)],
     )
     frame = token_timeline_df(pd.DataFrame([raw_row(result)])).sort_values("turn")
-    assert (frame.cache_semantics == "exclusive").all()
     # Uncached input and cache breakdowns are disjoint in ModelUsage.
     r0 = frame.iloc[0]
     assert (r0.context, r0.new_work, r0.billable, r0.turn_total) == (

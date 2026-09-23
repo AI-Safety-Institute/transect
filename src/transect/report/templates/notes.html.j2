@@ -49,7 +49,7 @@
 {#- No bold "Token telemetry" lead-in: the section's own header names
     it, and repeating it two lines apart reads as a duplicate. -#}
 {% macro token_intro_derived() -%}
-<p class="meta explainer">Three measures of the per-turn token stream, selectable below:</p>
+<p class="meta explainer">Three measures of the per-turn token stream, selectable below (Inspect input_tokens excludes cache reads and writes; output includes reasoning; missing optional breakdowns count as zero in derived views):</p>
 <ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: an estimate of new content from uncached input, output and context growth; not a measure of effort</li><li><strong>cumulative (excluding cache reads)</strong>: uncached input, output and cache-write tokens summed over turns; excludes cache reads and is not monetary cost</li></ul>
 {%- endmacro %}
 
@@ -60,10 +60,6 @@
 
 {#- This fact belongs with the chart whose measures it explains, not on
     a judge-reliability surface. -#}
-{% macro token_cache_semantics(value) -%}
-<p class="meta explainer">Token cache semantics: {{ value }} (Inspect input_tokens excludes cache reads and writes; output includes reasoning). Missing optional breakdowns count as zero in derived views; raw counters remain available.</p>
-{%- endmacro %}
-
 {#- Both event lists below are a <details class="event event-list">
     whose <summary> is just the count and whose body is one <li> per
     event, turn-ordered (the builders in sections.py sort explicitly, so

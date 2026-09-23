@@ -446,21 +446,6 @@ def token_intro(derived: bool) -> Markup:
     return _notes.token_intro_derived() if derived else _notes.token_intro_raw()
 
 
-def token_cache_semantics_line(one: pd.DataFrame) -> Markup:
-    """One meta line near the Token telemetry intro, naming this
-    transcript's token cache semantics. ``one`` is this transcript's own
-    token_timeline slice.
-    """
-    cache_semantics = (
-        one.cache_semantics.dropna().iloc[0]
-        if one.cache_semantics.notna().any()
-        else None
-    )
-    return _notes.token_cache_semantics(
-        cache_semantics or "unknown (no token-timeline data)"
-    )
-
-
 def event_legend(has_context_chart: bool) -> Markup:
     """Legend for the flush-event glyph."""
     return _notes.event_legend(has_context_chart)

@@ -218,7 +218,6 @@ def render_report(
         )
         if flush_turns:
             token_blocks.append(sections.event_legend(derived))
-        token_blocks.append(sections.token_cache_semantics_line(one))
         if flush_turns:
             token_blocks.append(sections.flush_line(my_flushes))
         add(("token_telemetry", sections.section("Token telemetry", token_blocks)))

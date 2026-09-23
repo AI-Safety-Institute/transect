@@ -10,8 +10,6 @@ Columns (identity prefix explained in common.py):
   input_tokens_cache_read / input_tokens_cache_write /
   reasoning_tokens: inspect-ai ModelUsage fields verbatim; None =
   the provider did not report.
-- cache_semantics: "exclusive" under the supported Inspect ModelUsage
-  contract: input_tokens excludes cache reads and writes.
 - context: context-window size at this turn.
 - new_work: new content processed this turn.
 - billable: legacy column name for tokens excluding cache reads
@@ -40,8 +38,7 @@ _TOKEN_FIELDS = (
     "reasoning_tokens",
 )
 
-_DERIVED_NUMERIC = ("context", "new_work", "billable", "turn_total")
-_DERIVED_FIELDS = ("cache_semantics", *_DERIVED_NUMERIC)
+_DERIVED_FIELDS = ("context", "new_work", "billable", "turn_total")
 
 
 def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
@@ -77,7 +74,7 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
         # an empty run still carries the full documented schema
         df = df.reindex(columns=[*columns, *_DERIVED_FIELDS])
     # pin nullable numerics: token counts as Int64
-    df = df.astype(dict.fromkeys([*_TOKEN_FIELDS, *_DERIVED_NUMERIC], "Int64"))
+    df = df.astype(dict.fromkeys([*_TOKEN_FIELDS, *_DERIVED_FIELDS], "Int64"))
     return with_schema(df)
 
 
@@ -88,7 +85,6 @@ def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
     reasoning_tokens. Preserve those raw counters and count output once.
     Importers with other conventions must normalize before this frame.
 
-    - cache_semantics: "exclusive" (uncached input).
     - context: input + cache writes + cache reads.
     - new_work: input + output + cache writes capped at context growth
       since the previous non-gap turn in this lane. This is a heuristic
@@ -111,7 +107,6 @@ def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
                 row = {
                     "transcript_id": transcript_id,
                     "turn": t["turn"],
-                    "cache_semantics": "exclusive",
                     "context": None,
                     "new_work": None,
                     "billable": None,
