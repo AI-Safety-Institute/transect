@@ -10,7 +10,6 @@ import pytest
 import transect
 from transect import load, render
 from transect.api import _run
-from transect.frames.phases import _AUDIT_COUNTS
 from transect.report import charts, sections
 from transect.report.embed import (
     _TIP_EXTRA_LINE_PX,
@@ -19,7 +18,6 @@ from transect.report.embed import (
     _tip_floor,
     wrap_row_px,
 )
-from transect.report.sections import _verifier_audit_rows
 from transect.spec import Spec
 
 SCENARIOS = {
@@ -435,22 +433,3 @@ def test_layer_audit_block_names_an_unauditable_frame_instead_of_crashing():
     )
     assert "could not be audited" in out
     assert "KeyError" in out
-
-
-def test_verifier_audit_rows_sum_only_transcripts_where_the_verifier_ran():
-    """The audit reads the stamped verifier_n_* counts once per
-    transcript; a transcript whose verifier never ran (all-NA counts)
-    contributes nothing rather than poisoning the sum."""
-
-    armed = {f"verifier_{k}": 1 for k in _AUDIT_COUNTS}
-    off = {f"verifier_{k}": None for k in _AUDIT_COUNTS}
-    frame = pd.DataFrame(
-        [
-            {"transcript_id": "a", "verifier_model": "v", **armed},
-            {"transcript_id": "a", "verifier_model": "v", **armed},
-            {"transcript_id": "b", "verifier_model": None, **off},
-        ]
-    )
-    selection, outcomes = _verifier_audit_rows(frame)
-    assert selection["value"].startswith("1 low-confidence")
-    assert "1 no verdict" in outcomes["value"]

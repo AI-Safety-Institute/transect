@@ -143,7 +143,7 @@
 {%- endmacro %}
 
 {% macro phase_meta_line(n_phases, judge_label, judge, cohort, verifier_note, unjudged_count) -%}
-<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier_note %} · verifier: {% if verifier_note.unavailable %}{{ verifier_note.unavailable }}{% else %}{{ verifier_note.overturned }} of {{ verifier_note.verified }} completed original phase reviews relabelled ({{ verifier_note.selected }} selected){% if verifier_note.same_model %} <span class="meta">(verifier = the same model; self-revision under a different prompt)</span>{% endif %}{% endif %}{% endif %}{% if unjudged_count %} · <span class="meta">{{ unjudged_count }} unjudged turn(s) greyed</span>{% endif %} · turn indices are 0-based (the Scout viewer numbers turns from 1)</p>
+<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier_note %} · verifier: {{ verifier_note.overturned }} of {{ verifier_note.verified }} completed original phase reviews relabelled ({{ verifier_note.selected }} selected){% if verifier_note.same_model %} <span class="meta">(verifier = the same model; self-revision under a different prompt)</span>{% endif %}{% endif %}{% if unjudged_count %} · <span class="meta">{{ unjudged_count }} unjudged turn(s) greyed</span>{% endif %} · turn indices are 0-based (the Scout viewer numbers turns from 1)</p>
 {%- endmacro %}
 
 {% macro label_definitions(title, entries) -%}

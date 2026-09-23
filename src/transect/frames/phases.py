@@ -19,8 +19,9 @@ Columns (identity prefix explained in common.py):
   Original-unit counts must use verifier_reviews, not these display flags.
 - verifier_reviews: list of original phase review units, with their original
   phase index, turn range and nested review fields; [] means none selected,
-  None means historical units were not preserved. Use these for review counts;
-  the flattened verifier fields describe only a representative review.
+  None only on a store predating unit preservation (no units recorded).
+  Use these for review counts; the flattened verifier fields describe
+  only a representative review.
 - overturned: the verifier relabelled it.
 - verifier_trigger / verifier_label / verifier_confidence /
   verifier_explanation / verifier_status / original_label /

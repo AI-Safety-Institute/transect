@@ -155,8 +155,8 @@ class StitchedPhase(BaseModel):
         default=None,
         description=(
             "Original phase review units overlapping this displayed phase. "
-            "An empty list means none selected; None means historical records "
-            "were not preserved. The singular verifier is representative only."
+            "An empty list means none selected. The singular verifier is "
+            "representative only."
         ),
     )
     headline: str = Field(

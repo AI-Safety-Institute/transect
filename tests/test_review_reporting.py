@@ -1,4 +1,4 @@
-"""Report consumers expose original review counts, completion and unknown history."""
+"""Report consumers expose original review counts and completion."""
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -46,23 +46,16 @@ def test_phase_metadata_counts_original_reviews_after_merging():
 
 def test_audit_shows_completion_coverage_beside_conditional_rate():
     frame, _ = reviewed_frame(missing=(0, 2))
-    rows = {row["label"]: row for row in audit(frame)["rows"]}
-    assert rows["Verifier review coverage"]["value"] == (
-        "3 selected units · 1 completed verdicts · 2 without usable verdict"
+    rows = {
+        row["label"]: row
+        for row in sections._span_verifier_rows(frame, unit_word="phase")
+    }
+    assert "3 random sample" in rows["Verifier selection"]["value"]
+    assert (
+        "1 completed · 2 without usable verdict" in (rows["Verifier outcomes"]["value"])
     )
-    assert "1/1 examined" in rows["Verifier re-label rate (overall)"]["value"]
-    assert "unrepresentative" in rows["Verifier review coverage"]["definition"]
-
-
-def test_historical_unknown_is_visible_in_overall_and_per_label_cells():
-    frame, _ = reviewed_frame()
-    frame["verifier_reviews"] = None
-    block = audit(frame)
-    rows = {row["label"]: row for row in block["rows"]}
-    assert rows["Verifier re-label rate (overall)"]["value"] == "unavailable"
-    assert "unavailable" in rows["Verifier review coverage"]["value"].lower()
-    note = sections._verifier_notes(frame)
-    assert note["unavailable"]
+    audit_rows = {row["label"]: row for row in audit(frame)["rows"]}
+    assert "1/1 examined" in audit_rows["Verifier re-label rate (overall)"]["value"]
 
 
 def test_failed_review_is_not_described_as_an_unchanged_verdict():

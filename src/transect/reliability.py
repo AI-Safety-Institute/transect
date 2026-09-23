@@ -18,7 +18,12 @@ from typing import get_args
 import numpy as np
 import pandas as pd
 
-from transect.frames.common import IDENTITY_COLS, JUDGE_COLS
+from transect.frames.common import (
+    IDENTITY_COLS,
+    JUDGE_COLS,
+    VERIFIER_COLS,
+    verifier_review,
+)
 from transect.scanners.cohort import LabelSource
 
 __all__ = [
@@ -94,10 +99,6 @@ class Rate:
     ci: tuple[float, float] | None
     """Wilson 95% interval on the rate; None when the denominator is
     zero."""
-
-    unavailable_reason: str | None = None
-    """Why the population could not be recovered; counts are placeholders
-    when set, not an assertion that zero reviews occurred."""
 
 
 NO_RATE = Rate(0, 0, None, None)
@@ -307,149 +308,81 @@ def cohort_agreement(
     return CohortAgreement(percent, alpha, ac1, n)
 
 
-def review_units(frame: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
-    """Return original selected review units and any population limitation.
+def review_units(frame: pd.DataFrame) -> pd.DataFrame:
+    """Original selected review units, one row per reviewed unit.
 
-    Phase ``verifier_reviews`` sequences, including Parquet ndarray cells,
-    are expanded and deduplicated by transcript identity and original phase
-    index. Historical phase frames are recognized by their phase index,
-    label and turn-range columns even when the list column is absent.
-    Missing historical lists
-    make the combined population unavailable; known rows are retained for
-    inspection, but must not be presented as complete counts. Scalar custom
-    and subagent frames keep their row grain. ``verifier_completed`` identifies
-    usable verdicts; explicit failures and missing verdict labels are excluded.
-    Wholly legacy scalar frames without status or completion columns retain
-    their reviewed flag. Otherwise explicit completion is respected unless
-    contradicted by a failed status; ambiguous selected rows have nullable
-    completion and make the population unavailable.
-    ``verifier_reviewed`` and ``verifier_selected`` describe record presence;
-    ``verifier_completed`` is the separate usable-verdict flag.
+    A phase frame explodes its ``verifier_reviews`` lists (Parquet
+    round-trips them as ndarrays) and deduplicates by transcript
+    identity and original phase index, so display merging cannot
+    change the population. A phase row without a recorded list (a
+    store predating unit preservation) contributes no units. Scalar
+    judged frames (sub-agents, custom layers) keep their row grain,
+    filtered to reviewed rows. ``verifier_completed`` marks usable
+    verdicts; rates condition on it.
     """
-    unavailable = None
-    phase_frame = "verifier_reviews" in frame.columns or {
-        "phase_index",
-        "phase",
-        "turn_start",
-        "turn_end",
-    }.issubset(frame.columns)
-    if not phase_frame:
+    if "verifier_reviews" not in frame.columns:
         units = frame.copy()
-    else:
-        records: dict[tuple, dict] = {}
-        for _, row in frame.iterrows():
-            reviews = row.get("verifier_reviews")
-            if isinstance(reviews, np.ndarray):
-                if reviews.ndim != 1:
-                    raise ValueError("malformed original phase review sequence")
-                reviews = reviews.tolist()
-            if not isinstance(reviews, (list, tuple)):
-                armed = row.get("verifier_armed")
-                if isinstance(armed, (bool, np.bool_)) and not armed:
-                    continue
-                unavailable = (
-                    "Original phase review units were not preserved for all "
-                    "transcripts in this population."
-                )
-                continue
-            identity = {
-                name: None if pd.isna(row.get(name)) else row.get(name)
-                for name in IDENTITY_COLS
-            }
-            for record in reviews:
-                if (
-                    not isinstance(record, dict)
-                    or not isinstance(
-                        record.get("original_phase_index"), (int, np.integer)
-                    )
-                    or not isinstance(record.get("review"), dict)
-                ):
-                    raise ValueError("malformed original phase review unit")
-                review = dict(record["review"])
-                flattened = {
-                    **identity,
-                    "original_phase_index": record["original_phase_index"],
-                    "turn_start": record.get("turn_start"),
-                    "turn_end": record.get("turn_end"),
-                    **review,
-                    "verifier_trigger": review.get("trigger"),
-                    "verifier_status": review.get("status"),
-                    "verifier_selected": True,
-                }
-                key = (*identity.values(), record["original_phase_index"])
-                if key in records and records[key] != flattened:
-                    raise ValueError("conflicting duplicate original phase reviews")
-                records[key] = flattened
-        units = pd.DataFrame(
-            list(records.values()),
-            columns=[
-                *IDENTITY_COLS,
-                "original_phase_index",
-                "turn_start",
-                "turn_end",
-                "original_label",
-                "original_confidence",
-                "original_explanation",
-                "verifier_label",
-                "verifier_confidence",
-                "verifier_explanation",
-                "verifier_model",
-                "overturned",
-                "verifier_trigger",
-                "verifier_status",
-                "verifier_selected",
-            ],
+        selected = (
+            units.verifier_reviewed.fillna(False).astype(bool)
+            if "verifier_reviewed" in units.columns
+            else pd.Series(False, index=units.index)
         )
-    selected = (
-        units.verifier_selected.fillna(False).astype(bool)
-        if "verifier_selected" in units.columns
-        else units.verifier_reviewed.fillna(False).astype(bool)
-        if "verifier_reviewed" in units.columns
-        else units.verifier_trigger.notna()
-        if "verifier_trigger" in units.columns
-        else pd.Series(False, index=units.index)
-    )
-    legacy_scalar = (
-        not phase_frame
-        and "verifier_status" not in units.columns
-        and "verifier_completed" not in units.columns
-    )
-    if "verifier_status" in units.columns:
-        selected = selected | units.verifier_status.notna()
-    if "verifier_completed" in units.columns:
-        selected = selected | units.verifier_completed.eq(True).fillna(False)
-    completion: list[bool | None] = []
-    for is_selected, (_, row) in zip(selected, units.iterrows(), strict=True):
-        status = row.get("verifier_status")
-        status = status if isinstance(status, str) and status else None
-        declared = row.get("verifier_completed")
-        label = row.get("verifier_label")
-        usable_label = isinstance(label, str) and bool(label.strip())
-        if not is_selected or (status is not None and status != "ok"):
-            completion.append(False)
-        elif isinstance(declared, (bool, np.bool_)):
-            completion.append(bool(declared) and (status != "ok" or usable_label))
-        elif legacy_scalar:
-            completion.append(True)
-        elif status == "ok":
-            completion.append(usable_label)
-        elif usable_label:
-            completion.append(True)
-        else:
-            completion.append(None)
-            unavailable = unavailable or (
-                "Completion provenance is unavailable for one or more selected reviews."
+        if "verifier_completed" in units.columns:
+            completed = units.verifier_completed.fillna(False).astype(bool)
+        elif "verifier_status" in units.columns or "verifier_label" in units.columns:
+            # a hand-rolled layer frame: derive with the frames' one rule
+            completed = pd.Series(
+                [
+                    verifier_review(
+                        {
+                            "status": row.get("verifier_status"),
+                            "verifier_label": row.get("verifier_label"),
+                        }
+                    )["verifier_completed"]
+                    for _, row in units.iterrows()
+                ],
+                index=units.index,
+                dtype=bool,
             )
-    units["verifier_selected"] = selected
-    units["verifier_completed"] = pd.Series(
-        completion, index=units.index, dtype="boolean"
+        else:
+            completed = selected
+        units["verifier_completed"] = completed
+        return units[selected].reset_index(drop=True)
+    records: dict[tuple, dict] = {}
+    for _, row in frame.iterrows():
+        reviews = row.get("verifier_reviews")
+        if isinstance(reviews, np.ndarray):
+            reviews = reviews.tolist()
+        if not isinstance(reviews, (list, tuple)):
+            continue
+        identity = {
+            name: None if pd.isna(row.get(name)) else row.get(name)
+            for name in IDENTITY_COLS
+        }
+        for record in reviews:
+            review = dict(record["review"])
+            key = (*identity.values(), record["original_phase_index"])
+            records[key] = {
+                **identity,
+                "original_phase_index": record["original_phase_index"],
+                "turn_start": record.get("turn_start"),
+                "turn_end": record.get("turn_end"),
+                **verifier_review(review),
+                "verifier_model": review.get("verifier_model"),
+            }
+    units = pd.DataFrame(
+        list(records.values()),
+        columns=[
+            *IDENTITY_COLS,
+            "original_phase_index",
+            "turn_start",
+            "turn_end",
+            *VERIFIER_COLS,
+            "verifier_model",
+        ],
     )
-    units["verifier_reviewed"] = selected
-    return units[selected].reset_index(drop=True), unavailable
-
-
-def _unavailable_rate(reason: str) -> Rate:
-    return Rate(0, 0, None, None, unavailable_reason=reason)
+    units["verifier_completed"] = units.verifier_completed.fillna(False).astype(bool)
+    return units.reset_index(drop=True)
 
 
 def label_stats(
@@ -511,7 +444,7 @@ def label_stats(
     )
     decided_of = decided[decided[label_col].notna()] if len(decided) else decided
     voted = votes[votes[label_col].notna()] if len(votes) else votes
-    units, unavailable = review_units(frame)
+    units = review_units(frame)
     examined = units[units.verifier_completed]
     observed = sorted(
         {str(v) for v in (decided_of[label_col] if len(decided_of) else [])}
@@ -547,17 +480,13 @@ def label_stats(
                 n=len(mine),
                 agreement=mean_stat(mine.judge_agreement if len(mine) else []),
                 confidence=mean_stat(mine.confidence if len(mine) else []),
-                relabelled=_unavailable_rate(unavailable)
-                if unavailable
-                else rate(
+                relabelled=rate(
                     int(examined_mine.overturned.fillna(False).sum())
                     if len(examined_mine)
                     else 0,
                     len(examined_mine),
                 ),
-                spot_checked=_unavailable_rate(unavailable)
-                if unavailable
-                else rate(
+                spot_checked=rate(
                     int(sampled.overturned.fillna(False).sum()) if len(sampled) else 0,
                     len(sampled),
                 ),
@@ -576,8 +505,6 @@ def relabel_rate(frame: pd.DataFrame, label_col: str = "original_label") -> Rela
     """Verifier re-label rate = applied relabels / completed usable reviews.
 
     Phase review lists preserve original units before display merging.
-    Missing historical units return an unavailable rate, not a reconstructed
-    denominator from representative display rows.
 
     Args:
         frame: The verifier-bearing frame: ``frames["phases"]`` or
@@ -597,9 +524,7 @@ def relabel_rate(frame: pd.DataFrame, label_col: str = "original_label") -> Rela
         "relabel_rate reads the flattened verifier review columns a "
         "judged frame projects",
     )
-    units, unavailable = review_units(frame)
-    if unavailable:
-        return RelabelRate(_unavailable_rate(unavailable), {})
+    units = review_units(frame)
     examined = units[units.verifier_completed]
     if not len(examined):
         return RelabelRate(NO_RATE, {})
@@ -631,9 +556,7 @@ def spot_check_overturns(frame: pd.DataFrame) -> Rate:
         "spot_check_overturns reads the flattened verifier review "
         "columns a judged frame projects",
     )
-    units, unavailable = review_units(frame)
-    if unavailable:
-        return _unavailable_rate(unavailable)
+    units = review_units(frame)
     completed = units[units.verifier_completed]
     overturned = completed.overturned.fillna(False).astype(bool)
     sampled = completed.verifier_trigger == "random_sample"

@@ -1,7 +1,6 @@
 """Verifier populations retain original phase units through display merging."""
 
 import asyncio
-import copy
 
 import pandas as pd
 import pytest
@@ -52,7 +51,7 @@ def reviewed_frame(*, reasons=None, missing=(), transcript_id="t1"):
 
 
 def scalar_frame(**columns):
-    """Legacy row defaults leave status, label and completion provenance absent."""
+    """A minimal scalar (sub-agent/custom) reviewed row."""
     return pd.DataFrame(
         {
             "verifier_reviewed": [True],
@@ -121,25 +120,11 @@ def test_selected_missing_verdicts_are_recorded_without_diluting_rate():
         "ok",
         "no_answer",
     ]
-    units, unavailable = reliability.review_units(frame)
-    assert unavailable is None and len(units) == 3
-    assert units.verifier_reviewed.all()
+    units = reliability.review_units(frame)
+    assert len(units) == 3
     assert int(units.verifier_completed.sum()) == 1
     measured = reliability.relabel_rate(frame)
     assert (measured.overall.count, measured.overall.of) == (1, 1)
-
-
-def test_historical_missing_units_are_unknown_even_when_mixed_with_new_data():
-    """Historical representative reviews cannot provide original-unit denominators."""
-    current, value = reviewed_frame()
-    old = copy.deepcopy(value)
-    for phase in old["phases"]:
-        phase.pop("verifier_reviews", None)
-    historical = phases_df(pd.DataFrame([{"transcript_id": "old", "value": old}]))
-    for frame in (historical, pd.concat([current, historical], ignore_index=True)):
-        rate = reliability.relabel_rate(frame).overall
-        assert rate.rate is None and rate.unavailable_reason
-        assert reliability.spot_check_overturns(frame).unavailable_reason
 
 
 def test_review_identity_is_scoped_to_transcript_and_deduplicated():
@@ -152,12 +137,12 @@ def test_review_identity_is_scoped_to_transcript_and_deduplicated():
     assert reliability.relabel_rate(combined).overall.of == 6
 
 
-def test_known_empty_reviews_are_distinct_from_historical_unknown():
-    """A known empty list states that no original phase reviews were selected."""
+def test_store_predating_unit_preservation_contributes_no_units():
+    """A phase row without a recorded review list yields no review population."""
     frame, _ = reviewed_frame()
-    frame["verifier_reviews"] = [[]]
-    measured = reliability.relabel_rate(frame).overall
-    assert measured.of == 0 and measured.unavailable_reason is None
+    frame["verifier_reviews"] = None
+    assert reliability.relabel_rate(frame).overall.of == 0
+    assert not len(reliability.review_units(frame))
 
 
 @pytest.mark.parametrize("failure", ["error", "refusal", "no_answer"])
@@ -178,64 +163,14 @@ def test_explicit_scalar_failures_do_not_dilute_completed_relabel_rate(failure):
     assert reliability.spot_check_overturns(frame).of == 1
 
 
-@pytest.mark.parametrize("with_phase_column", [False, True])
-def test_legacy_scalar_frames_without_status_keep_their_existing_contract(
-    with_phase_column,
-):
-    """Legacy rows stay scalar even with a custom label column named phase."""
-    frame = pd.DataFrame(
-        {
-            "verifier_reviewed": [True, True],
-            "overturned": [True, False],
-            "original_label": ["A", "A"],
-            "verifier_trigger": ["random_sample"] * 2,
-        }
-    )
-    if with_phase_column:
-        frame["phase"] = ["A", "A"]
-    measured = reliability.relabel_rate(frame).overall
-    assert (measured.count, measured.of) == (1, 2)
-    assert measured.unavailable_reason is None
-
-
-def test_conflicting_duplicate_original_reviews_raise():
-    """Conflicting associations cannot silently choose one original review outcome."""
-    frame, _ = reviewed_frame()
-    other = frame.copy(deep=True)
-    other["verifier_reviews"] = [copy.deepcopy(frame.verifier_reviews.iloc[0])]
-    other.verifier_reviews.iloc[0][0]["review"]["overturned"] = True
-    with pytest.raises(ValueError, match="conflicting"):
-        reliability.review_units(pd.concat([frame, other], ignore_index=True))
-
-
-@pytest.mark.parametrize("label, expected", [("B", 1), (None, 0), ("", 0)])
-def test_scalar_missing_status_requires_a_usable_recorded_verdict(label, expected):
-    """A legacy null status is usable only when its verdict label survived."""
-    frame = scalar_frame(
-        verifier_selected=[True], verifier_status=[None], verifier_label=[label]
-    )
+@pytest.mark.parametrize(
+    "status, label, expected",
+    [(None, "B", 1), (None, None, 0), (None, "", 0), ("ok", None, 0)],
+)
+def test_scalar_completion_requires_a_usable_recorded_verdict(status, label, expected):
+    """Without an explicit completion column, the frames' one rule applies."""
+    frame = scalar_frame(verifier_status=[status], verifier_label=[label])
     assert reliability.relabel_rate(frame).overall.of == expected
-
-
-def test_explicit_ok_without_label_is_not_a_completed_verdict():
-    """An ok status alone cannot create a usable verifier answer."""
-    frame = scalar_frame(
-        verifier_selected=[True], verifier_status=["ok"], verifier_label=[None]
-    )
-    units, reason = reliability.review_units(frame)
-    assert reason is None and len(units) == 1
-    assert not units.verifier_completed.any()
-    assert reliability.relabel_rate(frame).overall.of == 0
-
-
-def test_historical_verifier_off_does_not_imply_lost_review_units():
-    """An explicitly unarmed historical verifier has no review population."""
-    frame, _ = reviewed_frame()
-    frame["verifier_reviews"] = None
-    frame["verifier_armed"] = False
-    frame["verifier_reviewed"] = False
-    rate = reliability.relabel_rate(frame).overall
-    assert rate.of == 0 and rate.unavailable_reason is None
 
 
 @pytest.mark.parametrize("outcome", ["refusal", "no_answer"])
@@ -282,25 +217,6 @@ def test_weak_differing_verdict_is_completed_without_applied_relabel():
     assert audit.n_weak_relabel == 1 and audit.n_relabelled == 0
 
 
-def test_unknown_review_population_marks_each_label_rate_unavailable():
-    """Label statistics cannot silently narrow a mixed historical population."""
-    frame, _ = reviewed_frame()
-    frame["verifier_reviews"] = None
-    decided = pd.DataFrame(
-        {
-            "turn": [0],
-            "phase": ["A"],
-            "judge_agreement": [None],
-            "confidence": [0.9],
-            "label_source": ["single_judge"],
-        }
-    )
-    votes = pd.DataFrame(columns=["turn", "phase"])
-    stats = reliability.label_stats(decided, votes, frame, "turn", "phase")
-    assert stats[0].relabelled.unavailable_reason
-    assert stats[0].spot_checked.unavailable_reason
-
-
 @pytest.mark.parametrize("verify", [False, True])
 def test_scanner_stamps_known_empty_reviews_when_none_selected(verify):
     """Fresh output records an empty list for off or untriggered verification."""
@@ -317,79 +233,12 @@ def test_scanner_stamps_known_empty_reviews_when_none_selected(verify):
     assert value["phases"][0]["verifier_reviews"] == []
 
 
-def test_historical_export_without_review_list_column_is_unavailable():
-    """Dropping the new column cannot turn old display phases into review units."""
-    frame, _ = reviewed_frame()
-    historical = frame.drop(columns=["verifier_reviews", "verifier_completed"])
-    rate = reliability.relabel_rate(historical).overall
-    assert rate.rate is None and rate.unavailable_reason
-    assert reliability.spot_check_overturns(historical).unavailable_reason
-
-
 def test_review_ledger_survives_actual_parquet_round_trip(tmp_path):
     """Arrow's ndarray representation retains the original three-review population."""
     frame, _ = reviewed_frame()
     path = tmp_path / "phases.parquet"
     frame.to_parquet(path)
     restored = pd.read_parquet(path)
-    units, unavailable = reliability.review_units(restored)
-    assert unavailable is None and len(units) == 3
+    assert len(reliability.review_units(restored)) == 3
     rate = reliability.relabel_rate(restored).overall
     assert (rate.count, rate.of) == (1, 3)
-
-
-def test_mixed_scalar_contracts_do_not_silently_exclude_legacy_rows():
-    """Concatenation cannot erase a legacy overturn through newly nullable columns."""
-    legacy = scalar_frame()
-    modern = scalar_frame(
-        overturned=[False], verifier_status=["ok"], verifier_label=["A"]
-    )
-    assert reliability.relabel_rate(legacy).overall.count == 1
-    combined = pd.concat([legacy, modern], ignore_index=True)
-    units, unavailable = reliability.review_units(combined)
-    assert unavailable and len(units) == 2
-    assert pd.isna(units.verifier_completed.iloc[0])
-    rate = reliability.relabel_rate(combined).overall
-    assert rate.rate is None and rate.unavailable_reason
-
-
-@pytest.mark.parametrize("completion", [False, pd.NA])
-def test_nullable_explicit_completion_is_not_overwritten_by_review_presence(completion):
-    """False means incomplete, while absent completion provenance stays unknown."""
-    frame = scalar_frame(
-        verifier_reviewed=pd.Series([True], dtype="boolean"),
-        verifier_completed=pd.Series([completion], dtype="boolean"),
-    )
-    units, unavailable = reliability.review_units(frame)
-    rate = reliability.relabel_rate(frame).overall
-    if completion is False:
-        assert not units.verifier_completed.iloc[0]
-        assert unavailable is None and rate.of == 0
-    else:
-        assert pd.isna(units.verifier_completed.iloc[0]) and unavailable
-        assert rate.unavailable_reason
-
-
-@pytest.mark.parametrize("failure", ["error", "refusal", "no_answer"])
-def test_explicit_completion_cannot_override_recorded_failure(failure):
-    """A contradictory completion flag cannot promote an explicit failed verdict."""
-    frame = scalar_frame(
-        verifier_reviewed=pd.Series([True], dtype="boolean"),
-        verifier_completed=pd.Series([True], dtype="boolean"),
-        verifier_status=[failure],
-        verifier_label=["B"],
-    )
-    assert reliability.relabel_rate(frame).overall.of == 0
-
-
-@pytest.mark.parametrize("completion", [False, True])
-def test_explicit_completion_remains_authoritative_with_usable_raw_verdict(completion):
-    """A usable raw label cannot promote an explicitly incomplete review."""
-    frame = scalar_frame(
-        verifier_completed=pd.Series([completion], dtype="boolean"),
-        overturned=[completion],
-        verifier_status=["ok"],
-        verifier_label=["B"],
-    )
-    rate = reliability.relabel_rate(frame).overall
-    assert rate.of == int(completion) and rate.unavailable_reason is None

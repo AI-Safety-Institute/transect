@@ -373,9 +373,7 @@ def _run_judge_cells(
     if carries("verifier_reviewed") and rows.verifier_reviewed.fillna(False).any():
 
         def reviewed(p: pd.DataFrame) -> str | None:
-            units, unavailable = review_units(p)
-            if unavailable:
-                return f"review coverage unavailable: {unavailable}"
+            units = review_units(p)
             if not len(units):
                 return None
             completed = units[units.verifier_completed]
