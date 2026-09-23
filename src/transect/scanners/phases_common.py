@@ -114,7 +114,7 @@ class StitchedPhase(BaseModel):
         description="Mean over member judgements (fills included, at 0.3)."
     )
     min_confidence: float = Field(
-        description="Minimum over members — the verifier's selection signal."
+        description="Minimum over members - the verifier's selection signal."
     )
     min_agreement: float | None = Field(
         default=None,

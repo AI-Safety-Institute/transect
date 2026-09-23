@@ -103,7 +103,7 @@ def test_blank_headline_keeps_template_without_changing_group_status():
     value = scan_narrative([narrative(0, " \n ", SUMMARY, [group(0, 3)])])
     assert value["phases"][0]["headline"] == "Setup (4 turns)"
     assert value["phases"][0]["narration_group_status"] == "accepted"
-    assert value["phases"][0]["summary"] == SUMMARY
+    assert value["phases"][0]["summary"] == SUMMARY.strip()
 
 
 @pytest.fixture
@@ -132,13 +132,13 @@ def test_complete_narration_survives_public_load_and_render(reloaded_narration):
     """The real Parquet store and public reload preserve complete narrator output."""
     result, loaded, report = reloaded_narration
     assert len(loaded.phases) == 1
-    assert loaded.phases.iloc[0].headline == HEADLINE
-    assert loaded.phases.iloc[0].summary == SUMMARY
+    assert loaded.phases.iloc[0].headline == HEADLINE.strip()
+    assert loaded.phases.iloc[0].summary == SUMMARY.strip()
     assert loaded.phases.iloc[0].narration_group_status == "empty_groups"
     pd.testing.assert_frame_equal(result.phases, loaded.phases)
     html = Path(report).read_text()
     assert escape(HEADLINE.strip()) in html
-    assert escape(SUMMARY) in html
+    assert escape(SUMMARY.strip()) in html
     assert "<script>alert(1)</script>" not in html
     assert "Neutral grouping: no groups supplied." in html
 
@@ -162,7 +162,7 @@ def test_full_narration_and_fallback_note_in_browser(reloaded_narration):
             assert note.inner_text() == "Neutral grouping: no groups supplied."
             assert HEADLINE.strip() in card.locator(":scope > summary").inner_text()
             card.locator(":scope > summary").click()
-            assert card.locator(":scope > p").first.text_content() == SUMMARY
+            assert card.locator(":scope > p").first.text_content() == SUMMARY.strip()
             assert card.locator("script").count() == 0
             assert card.evaluate("e => e.scrollWidth <= e.clientWidth + 1")
             page.close()

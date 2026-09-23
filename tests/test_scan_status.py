@@ -69,7 +69,7 @@ def test_nullable_scout_errors_preserve_identity(error_type):
     )
     status = build_scan_status(raw, {"test"})
     assert status.has_failures
-    assert status.scanners[0].execution_errors == 1
+    assert status.scanners[0].errors == 1
     assert status.errors[0].transcript_id == "t1"
     assert status.errors[0].message == "provider unavailable"
     assert status.errors[0].refusal == (isinstance(error_type, str))
@@ -106,12 +106,22 @@ def test_worklist_narrows_transcript_snapshot():
     assert coverage.total_transcripts == 1 and coverage.missing_scans == 0
 
 
-def test_missing_table_despite_recorded_scans_is_an_integrity_error():
+def test_missing_table_despite_recorded_scans_is_an_error():
     """The execution summary and the stored tables must agree."""
     raw = raw_scan("transect/subagent_classification", [])
     raw.scanners = {}
     status = build_scan_status(raw, set())
     coverage = status.scanners[0]
-    assert coverage.has_failures and coverage.integrity_errors == 1
-    assert coverage.execution_errors == 0
+    assert coverage.has_failures and coverage.errors == 1
     assert any("table is missing" in error.message for error in status.errors)
+
+
+def test_resumed_scan_counts_stay_within_scope():
+    """A retry-resume can inflate summary counters; the record caps the
+    scan count at the known scope and counts recorded errors only."""
+    raw = raw_scan(
+        "transect/decision_phases", [{"transcript_id": "t1"}], scanned=2, errors=1
+    )
+    coverage = build_scan_status(raw, set()).scanners[0]
+    assert coverage.scanned_transcripts == coverage.total_transcripts == 1
+    assert coverage.errors == 0 and not coverage.has_failures

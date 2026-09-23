@@ -58,6 +58,28 @@ def test_audit_shows_completion_coverage_beside_conditional_rate():
     assert "1/1 examined" in audit_rows["Verifier re-label rate (overall)"]["value"]
 
 
+def test_unjudged_flag_excludes_attributed_turns_from_its_denominator():
+    """Attributed turns the judge never saw do not dilute the unjudged share."""
+    frame, _ = reviewed_frame()
+    turns = pd.DataFrame(
+        {
+            "transcript_id": ["t1"] * 4,
+            "turn": [0, 1, 2, 3],
+            "phase": ["A", None, "A", "A"],
+            "basis": ["judged", "refusal", "attributed", "attributed"],
+            "judge_agreement": [None] * 4,
+            "confidence": [0.9, None, None, None],
+            "label_source": ["single_judge", None, None, None],
+        }
+    )
+    _, flags = sections._entity_audit(
+        "Phases", frame, phase_turn_votes_df(pd.DataFrame()), "turn", "phase", turns
+    )
+    (unjudged,) = [f for f in flags if f.metric.startswith("unjudged")]
+    assert unjudged.value == "1 of 2 (50%)"
+    assert unjudged.level == "red"
+
+
 def test_failed_review_is_not_described_as_an_unchanged_verdict():
     row = pd.Series(
         {

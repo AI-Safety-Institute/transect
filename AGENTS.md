@@ -27,9 +27,8 @@ kinds of extraction, deliberately separated: **structural** ($0, no API
 key - token timeline, context flushes, human interventions, sub-agent
 activity, transcript info, eval setup) and **judged** (LLM - decision
 phases and sub-agent classification, run solo, k-roll, or cohort,
-with an optional second-round verifier). The code says "structural"
-everywhere; the README calls the same thing "mechanical" for lay
-readers - grep for `structural`.
+with an optional second-round verifier). Code and docs both say
+"structural" - grep for `structural`.
 
 ## Architecture
 
@@ -94,7 +93,7 @@ scanner change take effect; run a new scan and retain both results for compariso
   a classifier that joined zero spans warns loudly.
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
   stored scan on every load. It records execution only: scanned vs total
-  transcripts, recorded errors and store integrity per requested scanner;
+  transcripts and recorded errors per requested scanner;
   judgement quality belongs to the reliability audit. The report always shows
   this run-wide status outside optional sections. Keep it in custom UIs,
   including when an epoch filter hides other scan transcripts.

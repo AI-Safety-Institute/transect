@@ -41,8 +41,7 @@ custom layers.
 
 A YAML/JSON file (or `transect.Spec`) holding the vocabularies the judges
 classify against. The worked example is
-[examples/spec.yaml](https://github.com/AI-Safety-Institute/transect/blob/main/examples/spec.yaml);
-section 8 shows a minimal starting configuration:
+[examples/spec.yaml](https://github.com/AI-Safety-Institute/transect/blob/main/examples/spec.yaml):
 
 - `phases`: expected activity phases, each `label` + `description`
   (the description is rendered into the judge's rubric - write it as
@@ -137,7 +136,7 @@ per-call ledger).
 
 Inspect `results.scan_status` on both new and reloaded results. Its `outer_complete`
 describes scanner execution, while its per-scanner records describe scanned vs
-total transcripts, recorded errors, store integrity and custom results not mounted
+total transcripts, recorded errors and custom results not mounted
 into the report. It records execution only: a cleanly executed scan can still
 carry failed or refused judgements, which surface in the reliability audit.
 The HTML status block remains visible even when a failed section is empty; it
@@ -191,7 +190,7 @@ means "not judged", never "fine"; absence is stated, never faked.
 | No phases / sub-agent sections in the report | inspect `scan_status` for failed or missing requested work; also check `judge_models` and the spec's enabled vocabularies |
 | `sample= required` error | multi-sample log; the error lists the available ids |
 | "values outside the declared vocabulary ... coerced to NaN" warning on `load()` | the store's recorded values do not match the current scanner schema - run a new scan, retain the old one, and account for any fresh judge calls |
-| Loud "classification joined zero lanes" warning in the report | span identity mismatch between scan and render - treat as a bug, not cosmetics |
+| Loud "none joined this transcript's lanes" warning in the report | span identity mismatch between scan and render - treat as a bug, not cosmetics |
 | Charts render blank | the report's charts are CDN-loaded - it is an online document; check network |
 | Scanner change has no effect | `load()` reads saved results; call `transect()` for a new scan, and check the separate model-response cache when judging |
 | Label definitions expandable says the definitions are not recorded in the store | the rubric is embedded at scan time - run a new scan to record it and retain the old store |
@@ -223,9 +222,9 @@ too, but nothing here requires it.)
   `subagent_votes`, `label_definitions` (judged); `subagents` is
   both - every span's structural facts on any run, label columns
   filled only when judged.
-- Two column gotchas: `phases.n_turns` counts judged reasoning turns
-  only (fewer than the `turn_start..turn_end` width - tool-only and
-  sub-agent turns in range are not counted); `new_work` sums are
+- Two column gotchas: `phases.n_turns` counts the reasoning turns the
+  judge saw, judged and filled (fewer than the `turn_start..turn_end`
+  width - tool-only and sub-agent turns in range are not counted); `new_work` sums are
   new-content tokens, not billable cost.
 
 Starter recipes:

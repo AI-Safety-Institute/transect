@@ -71,7 +71,7 @@ _STORE_CONTENT = {
         ("Flagged above 0.95", 2),
         ("verifier spot-check overturns = 1 of 2 sampled", 2),
         ("verifier re-label rate (model_development) = 100%", 2),
-        ("Verifier selection", 1),
+        ("Verifier selection</span>: 2 random sample", 1),
         ("Member coverage", 1),
         # the audit groups flags under the entity sub-heading
         ("Phase segmentation and labelling", 1),
@@ -410,6 +410,26 @@ def test_layer_audit_block_skips_quietly_when_the_judge_never_ran():
     )
     assert "No judged surfaces" in out
     assert "x labelling" not in out
+
+
+def test_structural_only_subagents_raise_no_unjudged_flag():
+    """Spans a judge never saw are not flagged as an unjudged share."""
+    frames = load(str(Path(__file__).parent / "fixtures" / "demo_scan")).frames()
+    subagents = frames["subagents"].copy()
+    for column in (
+        "label",
+        "confidence",
+        "judge_regime",
+        "judge_models",
+        "n_models",
+        "k_rolls",
+        "verifier_armed",
+        "verifier_same_model",
+        "verifier_model",
+    ):
+        subagents[column] = None
+    votes = frames["subagent_votes"].iloc[:0]
+    assert sections.subagent_reliability_flags(subagents, votes) == []
 
 
 def test_layer_audit_block_names_an_unauditable_frame_instead_of_crashing():

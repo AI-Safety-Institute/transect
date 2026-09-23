@@ -473,7 +473,7 @@ reliability.member_coverage(
     frames["phase_turn_votes"],
     "basis",
     "judged",
-    ("refusal", "no_answer", "missing_turn"),
+    ("refusal", "no_answer", "missing_turn", "filled"),
 )  # usable judgements per (model, roll), with miss reasons
 reliability.label_stats(
     frames["phase_turns"][frames["phase_turns"].basis == "judged"],  # decided units

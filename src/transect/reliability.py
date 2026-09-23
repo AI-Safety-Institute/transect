@@ -333,7 +333,9 @@ def review_units(frame: pd.DataFrame) -> pd.DataFrame:
                 [
                     verifier_review(
                         {
-                            "status": row.get("verifier_status"),
+                            "status": None
+                            if pd.isna(row.get("verifier_status"))
+                            else row.get("verifier_status"),
                             "verifier_label": row.get("verifier_label"),
                         }
                     )["verifier_completed"]
@@ -577,7 +579,7 @@ def member_coverage(
             "judged" for phases, "ok" for sub-agents.
         reasons: The miss reasons to count, fixed so every member
             carries the same set (phases: refusal / no_answer /
-            missing_turn / filled; sub-agents: refusal / error).
+            missing_turn / filled; sub-agents: refusal / error / no_answer).
 
     Returns:
         One `MemberCoverage` per (model, roll).

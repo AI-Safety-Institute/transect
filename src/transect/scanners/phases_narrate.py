@@ -130,12 +130,10 @@ async def narrate_phases(
             p.summary = ""
             p.turn_groups = validate_turn_groups([], p, default_title)
             continue
-        p.headline = (
-            narrative.headline
-            if narrative.headline.strip()
-            else f"{default_title} ({p.n_turns} turns)"
+        p.headline = narrative.headline.strip() or (
+            f"{default_title} ({p.n_turns} turns)"
         )
-        p.summary = narrative.summary
+        p.summary = narrative.summary.strip()
         p.turn_groups, p.narration_group_status = _validated_groups(
             narrative.groups, p, default_title
         )

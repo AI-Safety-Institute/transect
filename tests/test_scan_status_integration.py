@@ -36,6 +36,12 @@ def _status_element(path):
     return ElementTree.fromstring(html[start:end])
 
 
+def _status_text(path):
+    """The section's text with whitespace collapsed away, for equality
+    across renders that differ only in element boundaries."""
+    return "".join("".join(_status_element(path).itertext()).split())
+
+
 def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
     """A failed requested judge stays distinct from a scan with judging disabled."""
 
@@ -56,14 +62,15 @@ def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
     phase = next(
         s for s in result.scan_status.scanners if s.scanner == "decision_phases"
     )
-    assert phase.execution_errors == 1
+    assert phase.errors == 1
     assert result.phases.empty
     assert 'see <a href="#scan-status">' in Path(result.report_paths[0]).read_text()
     element = _status_element(result.report_paths[0])
-    text = " ".join(element.itertext())
-    assert "decision_phases" in text
-    assert "Synthetic judge failure" in text
+    readable = " ".join(element.itertext())
+    assert "decision_phases" in readable
+    assert "Synthetic judge failure" in readable
     assert element.find(".//script") is None
+    text = _status_text(result.report_paths[0])
     restored = transect.load(result.scan_location)
     assert restored.scan_status == result.scan_status
     transect.render(
@@ -73,7 +80,7 @@ def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
         open_report=False,
         section_order=["phase_cards"],
     )
-    assert " ".join(_status_element(restored.report_paths[0]).itertext()) == text
+    assert _status_text(restored.report_paths[0]) == text
     empty = replace(restored, token_timeline=restored.token_timeline.iloc[:0])
     transect.render(
         empty,
@@ -81,7 +88,7 @@ def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
         viewer=False,
         open_report=False,
     )
-    assert " ".join(_status_element(empty.report_paths[0]).itertext()) == text
+    assert _status_text(empty.report_paths[0]) == text
 
 
 @loader(messages="all")

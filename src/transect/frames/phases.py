@@ -36,6 +36,8 @@ Columns (identity prefix explained in common.py):
   "+"-joined string (one name solo; the cohort's distinct models
   joined; a k-roll judge appears once).
 - verifier_model: the verifier's resolved model name.
+- narrator_model: the narrator's resolved model name; None when
+  narration never ran.
 - n_members: voting members (models x rolls; voting regimes).
 - verifier_n_low_confidence / _n_low_agreement / _n_wedge /
   _n_random_sample / _n_no_verdict / _n_relabelled /

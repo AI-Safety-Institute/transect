@@ -187,8 +187,8 @@ def test_changed_input_preserves_prior_scan_source(openclaw_log, tmp_path):
         == first.token_timeline.output_tokens.sum() + 1
     )
     restored = load(first.scan_location)
-    historical = asyncio.run(_stored_transcripts(restored.transcripts_location))[0]
-    assert historical.model_dump() == original.model_dump()
+    stored = asyncio.run(_stored_transcripts(restored.transcripts_location))[0]
+    assert stored.model_dump() == original.model_dump()
     pd.testing.assert_frame_equal(restored.token_timeline, first.token_timeline)
 
 
@@ -232,7 +232,7 @@ def test_new_import_preserves_existing_database(openclaw_log, tmp_path):
         str(p.relative_to(existing)): p.read_bytes()
         for p in existing.rglob("*.parquet")
     }
-    historical = _run(str(existing), Spec(), scans_dir=str(scans))
+    from_existing = _run(str(existing), Spec(), scans_dir=str(scans))
     fresh = _run(str(openclaw_log), Spec(), scans_dir=str(scans))
     assert not Path(fresh.transcripts_location).is_relative_to(existing)
     assert {
@@ -240,7 +240,7 @@ def test_new_import_preserves_existing_database(openclaw_log, tmp_path):
         for p in existing.rglob("*.parquet")
     } == before
     old = asyncio.run(
-        _stored_transcripts(load(historical.scan_location).transcripts_location)
+        _stored_transcripts(load(from_existing.scan_location).transcripts_location)
     )
     assert len(old) == 1
     assert old[0].messages[-1].text == "Wrapping up."

@@ -1232,7 +1232,7 @@ def scan_status_view(status) -> dict:
                 "name": scanner.scanner,
                 "sub": None if scanner.mounted else "not mounted",
                 "scanned": scanned,
-                "errors": _status_count(scanner.execution_errors),
+                "errors": _status_count(scanner.errors),
             }
         )
     return {
@@ -1929,7 +1929,10 @@ def _entity_audit(
         cohort,
         relabel,
         spot_check,
-        unjudged=reliability.rate(unjudged_count, attempted),
+        # a surface the judge never ran on has no unjudged share to flag
+        unjudged=reliability.rate(unjudged_count, attempted)
+        if regime.kind != "none"
+        else reliability.NO_RATE,
     )
     stats = reliability.label_stats(
         decided, members, entity, unit_col, value_col, vocabulary=vocabulary
@@ -2130,8 +2133,6 @@ def _status_cell(text: str, bad: bool) -> dict:
     return {"text": text, "bg": bg, "fg": cell_text_color(bg)}
 
 
-def _status_count(count: int | None) -> dict:
+def _status_count(count: int) -> dict:
     """A failure-count cell: red when positive, plain otherwise."""
-    if count is None:
-        return _status_cell("-", bad=False)
     return _status_cell(str(count), bad=count > 0)

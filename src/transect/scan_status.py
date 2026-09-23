@@ -27,7 +27,8 @@ class ScanError:
 class ScannerCoverage:
     """One requested scanner's run-wide execution record.
 
-    ``integrity_errors`` counts store anomalies: a results table
+    ``errors`` counts this scanner's entries in the run's error list:
+    recorded scan errors plus store anomalies such as a results table
     missing despite recorded scans (e.g. a partially copied store).
     """
 
@@ -35,8 +36,7 @@ class ScannerCoverage:
     mounted: bool
     total_transcripts: int | None = None
     scanned_transcripts: int = 0
-    execution_errors: int = 0
-    integrity_errors: int = 0
+    errors: int = 0
 
     @property
     def missing_scans(self) -> int | None:
@@ -48,9 +48,7 @@ class ScannerCoverage:
     @property
     def has_failures(self) -> bool:
         """Whether stored evidence identifies incomplete or errored execution."""
-        return bool(
-            self.missing_scans or self.execution_errors or self.integrity_errors
-        )
+        return bool(self.missing_scans or self.errors)
 
 
 @dataclass
@@ -106,6 +104,11 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
         elif raw.spec.transcripts and raw.spec.transcripts.transcript_ids:
             total = len(raw.spec.transcripts.transcript_ids)
         summary = raw.summary.scanners.get(key)
+        # summary.scans counts scan events, which a retry-resume can
+        # inflate past the transcript count; cap at the known scope
+        scanned = summary.scans if summary else 0
+        if total is not None:
+            scanned = min(scanned, total)
         coverage = ScannerCoverage(
             scanner=key,
             mounted=key in mounted_scanners
@@ -113,8 +116,7 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
             or spec.name
             in ("transect/decision_phases", "transect/subagent_classification"),
             total_transcripts=total,
-            scanned_transcripts=summary.scans if summary else 0,
-            execution_errors=summary.errors if summary else 0,
+            scanned_transcripts=scanned,
         )
         table = raw.scanners.get(key)
         if table is not None:
@@ -130,12 +132,7 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
                 )
                 if record not in status.errors:
                     status.errors.append(record)
-        # Execution errors are Scout-recorded scan failures only, so
-        # count them before appending any integrity entries below.
-        recorded_errors = sum(error.scanner == key for error in status.errors)
-        coverage.execution_errors = max(coverage.execution_errors, recorded_errors)
-        if table is None and coverage.scanned_transcripts:
-            coverage.integrity_errors += 1
+        elif coverage.scanned_transcripts:
             status.errors.append(
                 ScanError(
                     key,
@@ -144,6 +141,9 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
                     "table is missing.",
                 )
             )
+        # count recorded entries, not the summary counter: a resume can
+        # leave a stale summary errors count behind resolved retries
+        coverage.errors = sum(error.scanner == key for error in status.errors)
         status.scanners.append(coverage)
     return status
 

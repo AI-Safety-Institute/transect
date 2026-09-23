@@ -111,7 +111,7 @@ armed (the Sub-agent activity summary line does the same).
 
 ## 2. Human interventions
 
-Purple rules on their own strip - mid-run human interactions. Hover
+Solid navy rules on their own strip - mid-run human interactions. Hover
 for channel and a content preview; the expandable lists them in full.
 The channel names the source - explain them when asked:
 
