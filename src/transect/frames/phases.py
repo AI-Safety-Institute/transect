@@ -18,8 +18,7 @@ Columns (identity prefix explained in common.py):
 - verifier_completed: that representative review returned a usable verdict.
   Original-unit counts must use verifier_reviews, not these display flags.
 - verifier_reviews: list of original phase review units, with their original
-  phase index, turn range and nested review fields; [] means none selected,
-  None only on a store predating unit preservation (no units recorded).
+  phase index, turn range and nested review fields; [] means none selected.
   Use these for review counts; the flattened verifier fields describe
   only a representative review.
 - overturned: the verifier relabelled it.

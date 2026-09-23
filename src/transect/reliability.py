@@ -313,12 +313,10 @@ def review_units(frame: pd.DataFrame) -> pd.DataFrame:
 
     A phase frame explodes its ``verifier_reviews`` lists (Parquet
     round-trips them as ndarrays) and deduplicates by transcript
-    identity and original phase index, so display merging cannot
-    change the population. A phase row without a recorded list (a
-    store predating unit preservation) contributes no units. Scalar
-    judged frames (sub-agents, custom layers) keep their row grain,
-    filtered to reviewed rows. ``verifier_completed`` marks usable
-    verdicts; rates condition on it.
+    identity and original phase index. Scalar judged frames
+    (sub-agents, custom layers) keep their row grain, filtered to
+    reviewed rows. ``verifier_completed`` marks usable verdicts;
+    rates condition on it.
     """
     if "verifier_reviews" not in frame.columns:
         units = frame.copy()

@@ -137,8 +137,8 @@ def test_review_identity_is_scoped_to_transcript_and_deduplicated():
     assert reliability.relabel_rate(combined).overall.of == 6
 
 
-def test_store_predating_unit_preservation_contributes_no_units():
-    """A phase row without a recorded review list yields no review population."""
+def test_missing_review_list_contributes_no_units():
+    """A phase row whose review list is missing yields no review population."""
     frame, _ = reviewed_frame()
     frame["verifier_reviews"] = None
     assert reliability.relabel_rate(frame).overall.of == 0
