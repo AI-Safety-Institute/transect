@@ -57,6 +57,17 @@ def install(project_dir: str | Path = ".", source: Path | None = None) -> list[s
     return [p.name for p in skills]
 
 
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] != "install" or len(argv) > 2:
+        print("usage: python -m transect.skills install [project_dir]", file=sys.stderr)
+        return 2
+    project_dir = Path(argv[1]) if len(argv) == 2 else Path.cwd()
+    names = install(project_dir)
+    dest = project_dir / ".claude" / "skills"
+    print(f"installed {', '.join(names)} -> {dest}")
+    return 0
+
+
 def _install_skill(source: Path, destination: Path) -> None:
     """Stage beside the destination so replacement and rollback use renames."""
     source_path, destination_path = source.resolve(), destination.resolve()
@@ -93,17 +104,6 @@ def _install_skill(source: Path, destination: Path) -> None:
     finally:
         if not retain_backup:
             shutil.rmtree(staging)
-
-
-def main(argv: list[str]) -> int:
-    if not argv or argv[0] != "install" or len(argv) > 2:
-        print("usage: python -m transect.skills install [project_dir]", file=sys.stderr)
-        return 2
-    project_dir = Path(argv[1]) if len(argv) == 2 else Path.cwd()
-    names = install(project_dir)
-    dest = project_dir / ".claude" / "skills"
-    print(f"installed {', '.join(names)} -> {dest}")
-    return 0
 
 
 if __name__ == "__main__":

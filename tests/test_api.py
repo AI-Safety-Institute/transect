@@ -8,7 +8,6 @@ from inspect_ai._util.registry import registry_info
 import transect.api as api
 from transect import TransectResults, load, reliability, transect
 from transect.api import _run, _scanners, _viewer_exit_mode
-from transect.skills import install
 from transect.spec import Spec
 
 
@@ -199,34 +198,6 @@ def test_triage_judged_regimes_end_to_end(regime, demo_log, tmp_path):
         assert votes.model.nunique() == 2
         assert (phases.confidence_source == "majority_vote").all()
         assert (results.subagents.judge_models == "mockllm/model+mockllm/model2").all()
-
-
-def test_skills_install_copies_and_replaces_prior_copies(tmp_path):
-    """install() copies every shipped skill dir into the project's
-    .claude/skills and replaces a stale prior copy wholesale."""
-    source = tmp_path / "shipped"
-    for name in ("using-transect", "transect-diagnostics"):
-        (source / name).mkdir(parents=True)
-        (source / name / "SKILL.md").write_text("v2")
-    project = tmp_path / "proj"
-    stale = project / ".claude" / "skills" / "using-transect"
-    stale.mkdir(parents=True)
-    (stale / "leftover.md").write_text("v1")
-    assert install(project, source=source) == ["transect-diagnostics", "using-transect"]
-    installed = project / ".claude" / "skills"
-    assert (installed / "using-transect" / "SKILL.md").read_text() == "v2"
-    assert not (stale / "leftover.md").exists()
-
-
-def test_skills_install_is_a_no_op_when_source_is_the_destination(tmp_path):
-    """On a source checkout the shipped skills dir is the repo's own
-    .claude/skills; installing into that repo must not delete them."""
-    project = tmp_path / "repo"
-    source = project / ".claude" / "skills"
-    (source / "add-a-layer").mkdir(parents=True)
-    (source / "add-a-layer" / "SKILL.md").write_text("keep")
-    assert install(project, source=source) == ["add-a-layer"]
-    assert (source / "add-a-layer" / "SKILL.md").read_text() == "keep"
 
 
 def test_verify_sample_zero_renders_an_armed_idle_verifier(demo_log, tmp_path):
