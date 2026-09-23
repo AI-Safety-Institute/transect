@@ -87,7 +87,7 @@ def test_batched_cohort_votes_per_turn(demo_log, tmp_path):
         )
 
     results = transect.transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=transect.Spec(),
         judge_models=[
             get_model("mockllm/model", custom_outputs=member_a, memoize=False),
@@ -186,7 +186,7 @@ def test_batched_solo_verifier_reviews_only_the_doubtful_turn(demo_log, tmp_path
         )
 
     results = transect.transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=transect.Spec(),
         judge_models=get_model("mockllm/model", custom_outputs=judge, memoize=False),
         scans_dir=str(tmp_path / "scans"),
@@ -249,7 +249,7 @@ def test_batching_is_unit_neutral(demo_log, tmp_path):
         )
 
     results = transect.transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=transect.Spec(),
         judge_models=get_model("mockllm/model", custom_outputs=judge, memoize=False),
         scans_dir=str(tmp_path / "scans"),

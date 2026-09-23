@@ -119,7 +119,7 @@ def run(store: Path, **judge_setup) -> None:
     if store.exists():
         shutil.rmtree(store)
     transect(
-        logs="examples/logs",
+        logs="examples/logs/house_price_demo.eval",
         spec="examples/spec.yaml",
         scans_dir=str(store.relative_to(ROOT)),
         viewer=False,

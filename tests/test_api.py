@@ -16,7 +16,7 @@ def test_triage_runs_the_default_path_end_to_end(demo_log, tmp_path, capsys):
     """One $0 transect() call scans the log, mounts the frames, renders the
     report at the default path, and warns that judged surfaces are off."""
     results = transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
         scans_dir=str(tmp_path / "scans"),
         viewer=False,
@@ -46,9 +46,7 @@ def test_triage_runs_the_default_path_end_to_end(demo_log, tmp_path, capsys):
 def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):
     """load() on a finished scans_dir reproduces the same frames from
     disk, with no scanning and no report render."""
-    ran = _run(
-        logs=str(demo_log.parent), spec=Spec(), scans_dir=str(tmp_path / "scans")
-    )
+    ran = _run(logs=str(demo_log), spec=Spec(), scans_dir=str(tmp_path / "scans"))
     loaded = load(str(tmp_path / "scans"))
     assert loaded.scan_location == ran.scan_location
     pd.testing.assert_frame_equal(
@@ -127,7 +125,7 @@ def test_triage_judged_regimes_end_to_end(regime, demo_log, tmp_path):
         "cohort": dict(judge_models=[demo_judge(), demo_judge(model="mockllm/model2")]),
     }
     results = transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
         scans_dir=str(tmp_path / "scans"),
         viewer=False,
@@ -205,7 +203,7 @@ def test_verify_sample_zero_renders_an_armed_idle_verifier(demo_log, tmp_path):
     """verify_sample=0.0 with confident answers arms the verifier but
     examines nothing; the audit renders without the re-label rows."""
     results = transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
         scans_dir=str(tmp_path / "scans"),
         viewer=False,

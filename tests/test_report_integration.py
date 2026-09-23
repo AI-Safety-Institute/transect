@@ -24,7 +24,7 @@ from transect.spec import Spec
 
 SCENARIOS = {
     "demo-with-subagents": (
-        "examples/logs",
+        "examples/logs/house_price_demo.eval",
         {},
         ["Eval setup", "Token telemetry", "Sub-agent activity", "Human interventions"],
     ),

@@ -64,7 +64,7 @@ def layered_run(tmp_path_factory):
     carried = pd.DataFrame({"turn": [1, 2], "shell": ["pip", "pytest"]})
     scans = tmp_path_factory.mktemp("scans")
     results = transect.transect(
-        logs=str(DEMO_LOG.parent),
+        logs=str(DEMO_LOG),
         spec=str(SPEC),
         scans_dir=str(scans),
         viewer=False,
