@@ -190,15 +190,13 @@ def decision_phases(
           - ``verifier_reviews``: every original selected phase review
             overlapping this display phase, each with original_phase_index,
             turn_start, turn_end, and a nested review. Missing verdicts carry
-            status no_answer or refusal. An empty list means none selected;
-            absent or None means historical units were not preserved.
+            status no_answer or refusal. An empty list means none selected.
           - ``headline`` / ``summary``: complete narrator text, without
             character clipping; blank headlines use a template, missing
             narratives use a template headline and empty summary.
           - ``narration_group_status``: accepted, invalid_partition,
             empty_groups, no_narrative, or not_run. Accepted describes
-            partition coordinates, not factual correctness. Historical
-            absence is unknown.
+            partition coordinates, not factual correctness.
           - ``turn_groups``: gapless partition of the phase's turn
             range - ``{turn_start, turn_end, title, gist}``.
           - ``anchor_event_id``: the first member model event's uuid
@@ -382,8 +380,6 @@ def decision_phases(
             else:
                 last_phase = tail.phase or last_phase
         phases = stitch_phases(digest_judgements)
-        for phase in phases:
-            phase.verifier_reviews = []
         audit = VerifierAudit(ran=False)
         if verify_on and phases:
             # the verifier: verifier_model when given, else the
@@ -422,8 +418,6 @@ def decision_phases(
                 ),
                 None,
             )
-        for p in phases:
-            p.narration_group_status = "not_run"
         narrator = NarratorAudit(ran=False)
         if narrate and phases:
             narrator = await narrate_phases(

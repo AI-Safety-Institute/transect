@@ -178,8 +178,6 @@ async def verify_phases(
         counts-only audit block.
     """
     reasons = select_for_verify(phases, sample=sample)
-    for phase in phases:
-        phase.verifier_reviews = []
     selected = sorted(reasons)
     triggers = list(reasons.values())
     audit = VerifierAudit(

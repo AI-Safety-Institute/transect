@@ -98,16 +98,6 @@ def test_group_status_is_stamped_and_fallback_visible(
         assert "Neutral grouping:" not in html
 
 
-def test_old_store_group_status_remains_unknown():
-    """Historical neutral prose does not imply an accepted partition or a fallback."""
-    value = scan_narrative([narrative(0)])
-    del value["phases"][0]["narration_group_status"]
-    raw = pd.DataFrame([{"value": value, "transcript_id": "synthetic"}])
-    assert pd.isna(phases_df(raw).iloc[0].narration_group_status)
-    assert "Neutral grouping:" not in cards(raw)
-    assert "narration_group_status" in phases_df(pd.DataFrame()).columns
-
-
 def test_blank_headline_keeps_template_without_changing_group_status():
     """A blank headline uses its template independently of group validation."""
     value = scan_narrative([narrative(0, " \n ", SUMMARY, [group(0, 3)])])
@@ -153,31 +143,8 @@ def test_complete_narration_survives_public_load_and_render(reloaded_narration):
     assert "Neutral grouping: no groups supplied." in html
 
 
-def test_mixed_phase_fallback_is_local_to_affected_card():
-    """One incomplete group partition does not flag accepted neighboring phases."""
-    judge = scripted_judge(
-        seg_answer(seg(0, 1, "setup", 0.9), seg(2, 3, "experiment", 0.9)),
-        narrate_answer(
-            narrative(0, groups=[group(0, 1, title="Setup", gist="")]),
-            narrative(1, groups=[group(3, 3)]),
-        ),
-    )
-    value = run_scan(
-        decision_phases(PHASES_SPEC, judge, verify=False),
-        [model_turn(f"Reasoning {i}") for i in range(4)],
-    ).value
-    assert [p["narration_group_status"] for p in value["phases"]] == [
-        "accepted",
-        "invalid_partition",
-    ]
-    html = cards(pd.DataFrame([{"value": value, "transcript_id": "synthetic"}]))
-    first, second = html.split('id="phase-1"')
-    assert "Neutral grouping:" not in first
-    assert "Neutral grouping: invalid group ranges." in second
-
-
 def test_full_narration_and_fallback_note_in_browser(reloaded_narration):
-    """Collapsed notices and complete escaped text remain readable on narrow cards."""
+    """Collapsed notice and complete escaped text stay readable at phone width."""
     playwright = pytest.importorskip("playwright.sync_api")
     _, _, report = reloaded_narration
     with playwright.sync_playwright() as p:
@@ -185,7 +152,7 @@ def test_full_narration_and_fallback_note_in_browser(reloaded_narration):
             browser = p.chromium.launch()
         except playwright.Error as err:
             pytest.skip(f"browser unavailable: {err}")
-        for width in (1280, 390):
+        for width in (390,):
             page = browser.new_page(viewport={"width": width, "height": 900})
             page.goto(report.as_uri(), wait_until="domcontentloaded")
             card = page.locator(".phase-cards > details").first

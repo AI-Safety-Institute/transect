@@ -30,7 +30,6 @@ Columns (identity prefix explained in common.py):
 - headline / summary: complete narrator output (blank headline uses a template).
 - narration_group_status: accepted (complete partition, not factual validation),
   invalid_partition / empty_groups / no_narrative (neutral grouping), or not_run.
-  Missing historical status is unknown; it is not inferred from the prose.
 - anchor_event_id: Scout-viewer deep-link anchor.
 - judge_models: the judge model(s) that segmented the run, as one
   "+"-joined string (one name solo; the cohort's distinct models

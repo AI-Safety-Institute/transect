@@ -151,8 +151,8 @@ class StitchedPhase(BaseModel):
             "live in verifier_reviews."
         ),
     )
-    verifier_reviews: list[PhaseReview] | None = Field(
-        default=None,
+    verifier_reviews: list[PhaseReview] = Field(
+        default_factory=list,
         description=(
             "Original phase review units overlapping this displayed phase. "
             "An empty list means none selected. The singular verifier is "
@@ -171,9 +171,12 @@ class StitchedPhase(BaseModel):
         default_factory=list,
         description="Narrator: gapless partition of the phase's turn range.",
     )
-    narration_group_status: NarrationGroupStatus | None = Field(
-        default=None,
-        description="Group partition outcome; None means historical status unknown.",
+    narration_group_status: NarrationGroupStatus = Field(
+        default="not_run",
+        description=(
+            "Group partition outcome; accepted describes partition "
+            "coordinates, not factual correctness."
+        ),
     )
     anchor_event_id: str | None = Field(
         default=None,
