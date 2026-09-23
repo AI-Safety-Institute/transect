@@ -61,6 +61,12 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     html = Path(results.report_paths[0]).read_text()
     for section in sections:
         assert section in html
+    if name == "openclaw-import":
+        assert "Compaction nudge" not in html
+    else:
+        assert "Compaction nudge (before compaction)" in html
+        assert "Compaction nudge (after compaction)" in html
+        assert "no identifiable text recorded in this log" in html
     assert "Traceback" not in html
     assert len(html) > 20_000
 
@@ -150,7 +156,11 @@ def test_judged_report_renders_all_sections_from_a_stored_scan(store, tmp_path):
     _assert_no_page_errors(results.report_paths[0])
 
 
-def _assert_no_page_errors(report_path: str, min_frames: int = 6) -> None:
+def _assert_no_page_errors(
+    report_path: str,
+    min_frames: int = 6,
+    setup_prompts: dict[str, str] | None = None,
+) -> None:
     """Load the report in a real browser and require zero page errors
     (inspect-viz widget failures are console-only and blank charts
     silently). Skips without playwright or without the CDN."""
@@ -174,6 +184,14 @@ def _assert_no_page_errors(report_path: str, min_frames: int = 6) -> None:
         page.goto(Path(report_path).resolve().as_uri())
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(2000)
+        if setup_prompts:
+            page.get_by_text("Core setup", exact=True).click()
+            for label, text in setup_prompts.items():
+                summary = page.locator("summary").filter(has_text=label)
+                summary.click()
+                content = summary.locator("..").locator(".prompt-verbatim")
+                assert content.is_visible()
+                assert content.inner_text() == text
         n_frames = len(page.frames)
         browser.close()
     if cdn_failures:

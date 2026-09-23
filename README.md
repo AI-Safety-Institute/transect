@@ -206,6 +206,11 @@ without API calls); `render(results)` re-renders the report.
 Top to bottom, everything on a shared turn axis:
 
 - **Eval setup**: model, scaffold, verbatim prompts, limits, run summary.
+  Inspect `.eval` reports also show the compaction prompt and the nudges
+  before and after compaction below the system/task prompts in Core setup.
+  Each distinct recorded text appears once. A configured prompt
+  template is shown only when no recorded prompt is available.
+  Missing text reads "data not found".
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions marked.

@@ -106,7 +106,7 @@ def render_report(
                 "eval_setup",
                 sections.section(
                     "Eval setup",
-                    [sections.eval_setup_blocks(my_info)],
+                    [sections.eval_setup_blocks(my_info, my_flushes)],
                 ),
             )
         )

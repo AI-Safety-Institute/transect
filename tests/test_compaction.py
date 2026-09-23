@@ -4,18 +4,25 @@ import pandas as pd
 import pytest
 from helpers import StubTranscript, model_turn, run_item
 from inspect_ai.event import CompactionEvent
+from inspect_ai.log import read_eval_log, write_eval_log
 from inspect_ai.model import (
     ChatMessageAssistant,
     ChatMessageSystem,
     ChatMessageUser,
     ContentData,
+    ModelUsage,
 )
 from inspect_scout import Transcript
 from test_frames import raw_row
+from test_report_integration import _assert_no_page_errors
 
+from transect import load, render
+from transect.api import _run
 from transect.frames.flushes import flushes_df
 from transect.frames.transcript_info import transcript_info_df
+from transect.report.sections import eval_setup_blocks
 from transect.scanners.base import context_flush, eval_setup
+from transect.spec import Spec
 
 PROMPT = (
     "Summarize the work completed so far. Include the user's request, decisions, "
@@ -183,7 +190,7 @@ def test_native_compaction_extracts_only_the_recorded_resume(case):
 
 @pytest.mark.parametrize("source_type", ["eval_log", "openclaw"])
 def test_configured_compaction_template_is_not_a_runtime_default(source_type):
-    """Only an explicitly configured Inspect template is stored and projected."""
+    """An explicit Inspect template supplies the card when observed text is absent."""
     for args, expected in (({}, None), ({"compaction": {"prompt": PROMPT}}, PROMPT)):
         result = run_item(
             eval_setup(),
@@ -194,7 +201,55 @@ def test_configured_compaction_template_is_not_a_runtime_default(source_type):
         )
         raw = {**raw_row(result), "transcript_source_type": source_type}
         info = transcript_info_df(pd.DataFrame([raw]))
-        assert info.compaction_prompt.iloc[0] == result.value["compaction_prompt"]
+        flushes = flushes_df(pd.DataFrame(), pd.DataFrame(columns=["transcript_id"]))
+        html = str(eval_setup_blocks(info, flushes))
+        assert ("Compaction prompt (configured template)" in html) == (
+            source_type == "eval_log" and expected is not None
+        )
+
+
+def test_compaction_cards_survive_loading_without_the_source_log(demo_log, tmp_path):
+    """An eval scan stores both nudges and the prompt for escaped HTML replay."""
+    log = read_eval_log(str(demo_log))
+    assert log.samples
+    sample = log.samples[0]
+    sample.events = compaction_events()
+    sample.messages = sample.messages[:2]
+    for event in sample.events:
+        if event.event == "model":
+            event.output.usage = ModelUsage(
+                input_tokens=300, output_tokens=10, total_tokens=310
+            )
+    log.plan.steps[-1].params["compaction"] = {"prompt": "Template: {addendums}"}
+    path = tmp_path / "compaction.eval"
+    write_eval_log(log, str(path))
+    scans = tmp_path / "scan"
+    results = _run(logs=str(path), spec=Spec(), scans_dir=str(scans))
+    path.unlink()
+    reloaded = load(str(scans))
+    pd.testing.assert_frame_equal(results.flushes, reloaded.flushes)
+    reloaded.transcripts_location = None
+    report = tmp_path / "report.html"
+    render(reloaded, report_path=str(report), viewer=False, open_report=False)
+    html = report.read_text()
+    assert "Keep &lt;constraints&gt; &amp; next steps." in html
+    assert "Respect &lt;constraints&gt;." in html
+    assert html.index("Task message (verbatim") < html.index("Compaction prompt")
+    assert "Compaction prompt (configured template)" not in html
+    assert "Template: {addendums}" not in html
+    assert "Compaction nudge (before compaction)" in html
+    assert "Compaction nudge (after compaction)" in html
+    assert "<summary>Compaction prompt (verbatim)</summary>" in html
+    assert html.count("Keep &lt;constraints&gt; &amp; next steps.") == 1
+    _assert_no_page_errors(
+        str(report),
+        min_frames=2,
+        setup_prompts={
+            "Compaction prompt (verbatim)": PROMPT,
+            "Compaction nudge (before compaction)": NUDGE,
+            "Compaction nudge (after compaction)": RESUME,
+        },
+    )
 
 
 def test_empty_flushes_keep_the_new_columns():

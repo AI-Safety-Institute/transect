@@ -203,7 +203,8 @@ too, but nothing here requires it.)
   A native summary is output, not the prompt that produced it.
   Unrecorded or unidentifiable text is
   missing, including on OpenClaw and synthesized drops. The separately
-  recorded template is `transcript_info.compaction_prompt`. These fields
+  recorded template is `transcript_info.compaction_prompt`; the report
+  uses it only when no observed prompt is available. These fields
   require a fresh scan; old stores cannot recover them by re-rendering.
 
 Starter recipes:

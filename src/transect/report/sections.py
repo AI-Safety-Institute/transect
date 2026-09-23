@@ -8,6 +8,7 @@ templates - autoescape escapes at interpolation time, so never
 pre-escape a value here (it would double-escape).
 """
 
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -110,7 +111,7 @@ def run_intro_line(info: pd.DataFrame) -> Markup | None:
     return _notes.intro_line(text + ".")
 
 
-def eval_setup_blocks(info: pd.DataFrame) -> Markup:
+def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     """The intro's three default-collapsed expandables: Core Setup,
     Additional Config Details, Run Summary. Every row renders even
     when its fact is absent, wording "data not found" (never recorded)
@@ -158,6 +159,14 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
     compaction = cell(srow, "compaction")
     if compaction is not None:
         compaction_text = str(compaction)
+        if cell(srow, "compaction_prompt") is not None:
+            config = json.loads(compaction_text)
+            config.pop("prompt")
+            compaction_text = (
+                f"{json.dumps(config)}; prompt shown below"
+                if config
+                else "prompt shown below"
+            )
     elif args_recorded:
         compaction_text = "scaffold default"
     else:
@@ -223,6 +232,8 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
         )
         if (value := cell(srow, name)) is not None
     ]
+    if len(info) and irow["source_type"] == "eval_log":
+        prompts.extend(_compaction_prompts(flushes, irow["compaction_prompt"]))
     config_rows = [
         ("task args", found(srow, "task_args"), None),
         (
@@ -277,6 +288,38 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
         {"title": "Run summary", "rows": summary_rows, "prompts": []},
     ]
     return _notes.setup_blocks(blocks)
+
+
+def _compaction_prompts(
+    flushes: pd.DataFrame, configured_prompt: str | None
+) -> list[tuple[str, str]]:
+    """Distinct recorded texts, or explicit absence."""
+    prompts = []
+    for field, label in (
+        ("compaction_prompt", "Compaction prompt"),
+        ("compaction_nudge", "Compaction nudge (before compaction)"),
+        ("compaction_resume", "Compaction nudge (after compaction)"),
+    ):
+        recorded = [
+            text
+            for text in flushes.sort_values("turn")[field].dropna().unique()
+            if text
+        ]
+        for text in recorded:
+            prompts.append((f"{label} (verbatim)", text))
+        if recorded:
+            continue
+        if (
+            field == "compaction_prompt"
+            and pd.notna(configured_prompt)
+            and configured_prompt
+        ):
+            prompts.append((f"{label} (configured template)", configured_prompt))
+        else:
+            prompts.append(
+                (label, "data not found - no identifiable text recorded in this log")
+            )
+    return prompts
 
 
 def phase_explanation() -> Markup:

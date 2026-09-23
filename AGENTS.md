@@ -90,10 +90,11 @@ scan into a fresh directory (or delete the existing store) to see it.
   role and metadata and extracts recorded summary prompts and pre/post
   nudges for `eval_log` transcripts. `flushes` carries the per-event text;
   `transcript_info.compaction_prompt` carries the configured template.
+  The report uses that template only when no recorded prompt is available.
   Native Anthropic resume messages are extracted from the first post-flush
   model input; native summary output is never treated as a prompt.
   Never substitute the installed Inspect version's default prompt for
-  unrecorded text.
+  unrecorded text. The report places these below the system/task prompts.
 
 ## Report code: read before touching
 
