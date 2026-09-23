@@ -20,6 +20,7 @@ Columns (identity prefix explained in common.py):
 - error: the run's error text when it errored (None otherwise).
 - limit: which limit terminated the run, when one did.
 - source_file: the source log's path as recorded.
+- source_type: Scout's source kind (eval_log for Inspect .eval files).
 - task_name: the eval task/benchmark name when the source recorded one
   (``TranscriptInfo.task_set``); falls back to the source file's stem
   (``TranscriptInfo.source_uri``).
@@ -47,6 +48,8 @@ Columns (identity prefix explained in common.py):
   actually saw. Deliberately the last columns: they can be multi-KB
   text blobs, and everything else should stay readable when the
   frame is printed.
+- compaction_prompt: the recorded Inspect compaction prompt template,
+  before substitution; None if unrecorded or not an Inspect eval log.
 - schema_version: the frames contract version.
 
 None means the source never recorded the fact; the empty strings
@@ -71,6 +74,7 @@ _RAW_FIELDS = {
     "error": "transcript_error",
     "limit": "transcript_limit",
     "source_file": "transcript_source_uri",
+    "source_type": "transcript_source_type",
 }
 
 _HEADER_CONFIG_FIELDS = (
@@ -104,6 +108,7 @@ _SETUP_COLUMNS = [
     "scorers",
     "system_prompt",
     "task_message",
+    "compaction_prompt",
 ]
 
 
@@ -134,6 +139,7 @@ def _setup_columns(value: dict) -> dict:
     row: dict = {}
     row["system_prompt"] = value.get("system_prompt")
     row["task_message"] = value.get("task_message")
+    row["compaction_prompt"] = value["compaction_prompt"]
     agent_args = value.get("agent_args") or {}
     row["scaffold_prompt"] = agent_args.get("prompt")
     row["tools"] = _tool_names(agent_args.get("tools"))

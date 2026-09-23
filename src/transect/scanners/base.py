@@ -7,6 +7,7 @@ from inspect_ai.log import read_eval_log
 from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
+from transect.scanners.compaction import compaction_texts
 from transect.scanners.helpers import main_lane_id, model_turns, nearest_agent_span
 
 # inspect-ai ModelUsage attribute names, used verbatim as dataframe columns
@@ -75,6 +76,8 @@ def eval_setup() -> Scanner[Transcript]:
       (``Transcript.agent_args``: scaffold prompt, tool roster,
       attempts, submit, compaction, truncation, approval), None when
       the source recorded none.
+    - ``compaction_prompt``: the configured Inspect compaction prompt
+      template from agent_args.compaction.prompt, not a resolved default.
     - ``task_args`` / ``generate_config`` / ``model_roles``: from the
       importer's per-sample transcript metadata; None where absent.
     - ``header``: the source log's header subset (eval config incl.
@@ -107,25 +110,41 @@ def eval_setup() -> Scanner[Transcript]:
             "generate_config": meta.get("generate_config"),
             "model_roles": meta.get("model_roles"),
             "header": header,
+            "compaction_prompt": None,
         }
+        if transcript.source_type == "eval_log":
+            compaction = (transcript.agent_args or {}).get("compaction")
+            if isinstance(compaction, dict):
+                prompt = compaction.get("prompt")
+                if isinstance(prompt, str):
+                    value["compaction_prompt"] = prompt
         return Result(value=cast(JsonValue, value), explanation="eval setup")
 
     return execute
 
 
-@scanner(events=["model", "compaction"])
+@scanner(messages=["user"], events=["model", "compaction"])
 def context_flush() -> Scanner[Transcript]:
     """Context-window compactions (flushes), from explicit compaction events.
 
     value = {"flushes": [entry, ...]} with one entry per compaction:
     turn (count of model turns preceding the flush), type, source,
-    tokens_before, tokens_after - recorded as the event reports them
-    (tokens_after may be absent).
+    tokens_before, tokens_after, role, metadata - recorded as the event
+    reports them (optional facts remain None). Inspect eval logs also
+    carry compaction_prompt (the summary call's final user input),
+    compaction_nudge (the pre-compaction memory warning), and
+    compaction_resume (the instruction after the recorded summary or
+    Anthropic native compaction block).
+    Missing text stays None, including on OpenClaw imports.
     """
 
     async def execute(transcript: Transcript) -> Result:
         flushes: list[dict[str, Any]] = []
-        for turn, event in _non_model_events(transcript):
+        texts = iter(await compaction_texts(transcript))
+        turn = 0
+        for event in transcript.events:
+            if event.event == "model" and event.output:
+                turn += 1
             if event.event != "compaction":
                 continue
             flushes.append(
@@ -135,6 +154,12 @@ def context_flush() -> Scanner[Transcript]:
                     "source": event.source,
                     "tokens_before": event.tokens_before,
                     "tokens_after": event.tokens_after,
+                    "role": event.role,
+                    "metadata": event.model_dump(mode="json")["metadata"],
+                    "compaction_prompt": None,
+                    "compaction_nudge": None,
+                    "compaction_resume": None,
+                    **next(texts, {}),
                 }
             )
         return Result(

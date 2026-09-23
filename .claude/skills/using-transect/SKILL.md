@@ -195,6 +195,16 @@ too, but nothing here requires it.)
   only (fewer than the `turn_start..turn_end` width - tool-only and
   sub-agent turns in range are not counted); `new_work` sums are
   new-content tokens, not billable cost.
+- `flushes` preserves compaction `role`, full `metadata`, `strategy`,
+  `messages_before`, `messages_after`, and `trigger`. For Inspect `.eval`
+  logs it also carries `compaction_prompt` (summary-call input),
+  `compaction_nudge` (save-context warning), and `compaction_resume`
+  (instruction after a summary or Anthropic native compaction block).
+  A native summary is output, not the prompt that produced it.
+  Unrecorded or unidentifiable text is
+  missing, including on OpenClaw and synthesized drops. The separately
+  recorded template is `transcript_info.compaction_prompt`. These fields
+  require a fresh scan; old stores cannot recover them by re-rendering.
 
 Starter recipes:
 
@@ -223,9 +233,9 @@ f["subagents"].groupby("label").new_work.sum()
 ```
 
 When a question needs transcript text (not just labels), point the
-user at the report's phase-card excerpts and Scout-viewer deep links
-rather than reconstructing text from frames - the frames deliberately
-carry no message content.
+user at the report's phase-card excerpts and Scout-viewer deep links.
+Frames carry selected text (setup prompts, compaction prompts/nudges,
+and interventions), not the full message history.
 
 ## 7. Extending
 

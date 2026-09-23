@@ -491,6 +491,11 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
                     "source": "inspect",
                     "tokens_before": 900,
                     "tokens_after": 350,
+                    "role": None,
+                    "metadata": None,
+                    "compaction_prompt": None,
+                    "compaction_nudge": None,
+                    "compaction_resume": None,
                 }
             ]
         },
@@ -529,6 +534,11 @@ def test_a_recorded_flush_without_tokens_after_infers_it():
                     "source": "inspect",
                     "tokens_before": 850,
                     "tokens_after": 0,
+                    "role": None,
+                    "metadata": None,
+                    "compaction_prompt": None,
+                    "compaction_nudge": None,
+                    "compaction_resume": None,
                 }
             ]
         },

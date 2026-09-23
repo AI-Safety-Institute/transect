@@ -40,6 +40,8 @@ class StubTranscript:
         self.events = list(events)
         self.messages = list(messages)
         self.timelines = []
+        self.source_type = "eval_log"
+        self.source_uri = None
 
 
 def model_turn(text, span_id=None, input=(), usage=None):

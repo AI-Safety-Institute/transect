@@ -234,7 +234,7 @@ object, ready for a notebook or your own Python:
 frames = results.frames()  # dict of name -> DataFrame
 frames["transcript_info"]  # one row per transcript: task, model, outcome, setup
 frames["token_timeline"]  # per-turn token usage + context size
-frames["flushes"]  # context compactions, tokens before/after
+frames["flushes"]  # compaction tokens, role, metadata, and Inspect prompt/nudges
 frames["interventions"]  # mid-run human interventions
 frames["lane_activity"]  # per-turn sub-agent tool activity
 frames["phases"]  # stitched phases + reliability
@@ -285,9 +285,11 @@ erDiagram
         string error "None unless the run errored"
         string limit "the terminating limit, if one"
         string scaffold_prompt
+        string source_type "eval_log for Inspect"
         bool header_available "False on OpenClaw imports"
         int message_limit "None = not set / not found"
         string system_prompt "verbatim; the long prompts sit last"
+        string compaction_prompt "configured Inspect template, if recorded"
     }
     token_timeline["token_timeline (one row per model turn)"] {
         int turn PK
@@ -301,6 +303,15 @@ erDiagram
         string type
         int tokens_before
         int tokens_after
+        string role
+        string strategy
+        int messages_before
+        int messages_after
+        string trigger
+        object metadata "complete event metadata"
+        string compaction_prompt "recorded summary-call input"
+        string compaction_nudge "save-context warning before compaction"
+        string compaction_resume "resume instruction after summary or native compaction"
     }
     interventions["interventions (one row per human intervention)"] {
         int turn FK

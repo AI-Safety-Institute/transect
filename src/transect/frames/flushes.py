@@ -11,6 +11,17 @@ Columns (identity prefix explained in common.py):
   not reported and not inferrable.
 - tokens_after_inferred: tokens_after came from the first non-gap
   main-lane turn after the flush, not the event itself.
+- role: the model role whose conversation was compacted, when recorded.
+- metadata: the complete recorded compaction event metadata, or None.
+- strategy: the recorded strategy name (e.g. CompactionSummary).
+- messages_before / messages_after: recorded message counts, nullable integers.
+- trigger: the recorded trigger (e.g. forced / threshold).
+- compaction_prompt: the verbatim summary model call's final user input.
+- compaction_nudge: the verbatim pre-compaction save-context warning.
+- compaction_resume: the resume instruction following a recorded summary
+  or Anthropic native compaction block.
+  These three text columns are Inspect eval-only; None means unrecorded
+  or not structurally identifiable. Synthesized drops carry no such facts.
 - schema_version: the frames contract version.
 """
 
@@ -57,6 +68,9 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
         identity_cols = identity(r)
         turns = per_turn_of.get(identity_cols["transcript_id"])
         for f in result_value(r["value"]).get("flushes") or []:
+            metadata = f["metadata"] or {}
+            details = {name: f[name] for name in _RECORDED_COLUMNS}
+            details.update({name: metadata.get(name) for name in _METADATA_COLUMNS})
             f = {**f, "tokens_after_inferred": False}
             if (
                 not f.get("tokens_after")
@@ -71,7 +85,7 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
                 if len(observed):
                     f["tokens_after"] = int(observed.context.iloc[0])
                     f["tokens_after_inferred"] = True
-            rows.append({**identity_cols, **f})
+            rows.append({**identity_cols, **f, **details})
     # Synthesize flushes from context drops: a drop counts when context
     # falls below 0.6x the previous non-gap turn and stays below.
     recorded_turns: dict[str, set[int]] = {}
@@ -96,11 +110,28 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
         "tokens_before",
         "tokens_after",
         "tokens_after_inferred",
+        *_METADATA_COLUMNS,
+        *_RECORDED_COLUMNS,
     ]
     df = pd.DataFrame(rows, columns=columns)
     # pin nullable numerics
-    df = df.astype({"tokens_before": "Int64", "tokens_after": "Int64"})
+    df = df.astype(
+        dict.fromkeys(
+            ("tokens_before", "tokens_after", "messages_before", "messages_after"),
+            "Int64",
+        )
+    )
     return with_schema(df)
+
+
+_METADATA_COLUMNS = ("strategy", "messages_before", "messages_after", "trigger")
+_RECORDED_COLUMNS = (
+    "role",
+    "metadata",
+    "compaction_prompt",
+    "compaction_nudge",
+    "compaction_resume",
+)
 
 
 def _synthesized_drops(lane_turns: pd.DataFrame, nearby: set[int]):

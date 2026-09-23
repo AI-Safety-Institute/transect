@@ -130,6 +130,11 @@ def test_context_flush_records_compaction_events_at_their_turn():
         "source": "inspect",
         "tokens_before": 900,
         "tokens_after": 200,
+        "role": None,
+        "metadata": None,
+        "compaction_prompt": None,
+        "compaction_nudge": None,
+        "compaction_resume": None,
     }
 
 
