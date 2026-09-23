@@ -460,7 +460,7 @@ def _run(
         verify_sample=verify_sample,
     )
     if jsonl:
-        # Keep new snapshots outside the legacy database's recursive search root.
+        # Keep new snapshots outside an existing database's recursive search root.
         logs = os.path.join(scans_dir, "transcript_snapshots", uuid4().hex)
         asyncio.run(_import_openclaw(jsonl, logs))
     transcripts = transcripts_from(logs if isinstance(logs, str) else list(logs))

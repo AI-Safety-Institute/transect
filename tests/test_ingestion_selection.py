@@ -223,19 +223,21 @@ def test_empty_import_cannot_reuse_previous_input(openclaw_log, tmp_path, conten
         _run(str(source), Spec(), scans_dir=scans)
 
 
-def test_new_import_preserves_legacy_database(openclaw_log, tmp_path):
+def test_new_import_preserves_existing_database(openclaw_log, tmp_path):
     """New snapshot files stay outside the original database's recursive search root."""
     scans = tmp_path / "scans"
-    legacy = scans / "transcripts"
-    asyncio.run(_import_openclaw([openclaw_log], str(legacy)))
+    existing = scans / "transcripts"
+    asyncio.run(_import_openclaw([openclaw_log], str(existing)))
     before = {
-        str(p.relative_to(legacy)): p.read_bytes() for p in legacy.rglob("*.parquet")
+        str(p.relative_to(existing)): p.read_bytes()
+        for p in existing.rglob("*.parquet")
     }
-    historical = _run(str(legacy), Spec(), scans_dir=str(scans))
+    historical = _run(str(existing), Spec(), scans_dir=str(scans))
     fresh = _run(str(openclaw_log), Spec(), scans_dir=str(scans))
-    assert not Path(fresh.transcripts_location).is_relative_to(legacy)
+    assert not Path(fresh.transcripts_location).is_relative_to(existing)
     assert {
-        str(p.relative_to(legacy)): p.read_bytes() for p in legacy.rglob("*.parquet")
+        str(p.relative_to(existing)): p.read_bytes()
+        for p in existing.rglob("*.parquet")
     } == before
     old = asyncio.run(
         _stored_transcripts(load(historical.scan_location).transcripts_location)

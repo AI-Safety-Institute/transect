@@ -143,7 +143,7 @@ The measure radio picks what the bars show - in the simplest terms:
 - **cumulative (excluding cache reads)**: uncached input, output, and
   full cache-write tokens summed over turns. Cache reads are excluded;
   token types are not price-weighted. This is not monetary spend.
-  The dataframe retains the legacy column name `billable` for compatibility.
+  The dataframe column is named `billable`.
 - **linear/log scale**: linear for comparing turns at a glance; log
   when a few huge turns flatten everything else - it makes the small
   turns readable again without hiding the big ones. Dashed red rules mark context flushes (compactions);

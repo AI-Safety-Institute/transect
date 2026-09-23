@@ -12,8 +12,8 @@ Columns (identity prefix explained in common.py):
   the provider did not report.
 - context: context-window size at this turn.
 - new_work: new content processed this turn.
-- billable: legacy column name for tokens excluding cache reads
-  (uncached input + output + full cache writes), not monetary cost.
+- billable: tokens excluding cache reads (uncached input + output +
+  full cache writes), not monetary cost.
 - turn_total: input + cache writes/reads + output (includes reasoning).
 - schema_version: the frames contract version.
 
@@ -89,8 +89,8 @@ def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
     - new_work: input + output + cache writes capped at context growth
       since the previous non-gap turn in this lane. This is a heuristic
       for new content, not a measurement of cognitive work or dollar cost.
-    - billable: legacy name for input + output + full cache writes;
-      excludes cache reads and has no price weighting.
+    - billable: input + output + full cache writes; excludes cache
+      reads and has no price weighting.
     - turn_total: context + output, independent of raw total_tokens.
 
     Gap turns (usage-less or all-zero usage) keep NA derived fields; the

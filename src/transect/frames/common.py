@@ -122,8 +122,9 @@ def judge_identity(value: dict) -> dict:
 
 def verifier_review(review: dict) -> dict:
     """A review record ({} when no review ran) flattened to the
-    `VERIFIER_COLS` cells. ``verifier_reviewed`` retains its legacy record-
-    presence meaning; ``verifier_completed`` requires a usable verdict."""
+    `VERIFIER_COLS` cells. ``verifier_reviewed`` means a review record
+    exists (failed attempts included); ``verifier_completed`` means it
+    carries a usable verdict."""
     label = review.get("verifier_label")
     completed = (
         bool(review)
@@ -132,7 +133,7 @@ def verifier_review(review: dict) -> dict:
         and bool(label.strip())
     )
     row: dict = {
-        "verifier_reviewed": bool(review),  # legacy record-presence flag
+        "verifier_reviewed": bool(review),
         "verifier_completed": completed,
     }
     for name in VerifierReview.model_fields:

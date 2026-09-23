@@ -271,7 +271,7 @@ coverage" section it links to sits at the bottom):
 Token views use Inspect's normalized usage: `input_tokens` excludes cache reads
 and writes; `output_tokens` includes reasoning. The raw counters are preserved.
 `turn_total` sums input, cache reads/writes and output once. `new_work` estimates
-new content using per-lane context growth; it is not a measure of effort. The legacy
+new content using per-lane context growth; it is not a measure of effort. The
 `billable` column sums uncached input, output and cache writes, excluding cache
 reads; its chart is labelled accordingly. No token view applies monetary prices.
 Missing optional breakdowns count as zero in derived views, and differing raw

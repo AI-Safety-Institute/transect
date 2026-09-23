@@ -31,7 +31,7 @@ Columns (identity prefix explained in common.py):
   mean; overturn = the verifier's).
 - judge_agreement: vote agreement (NaN unless >= 2 voted).
 - n_voting / n_members: vote participation.
-- verifier_reviewed: legacy record-presence flag, including failed reviews.
+- verifier_reviewed: a review record exists, failed attempts included.
 - verifier_completed: a usable verifier verdict was returned.
 - overturned: the verifier replaced the label.
 - verifier_trigger / verifier_label / verifier_confidence /
