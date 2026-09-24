@@ -135,8 +135,8 @@ per-call ledger).
 ## 3. Re-rendering and stored scans
 
 Inspect `results.scan_status` on both new and reloaded results. Its `outer_complete`
-describes scanner execution, while its per-scanner records describe scanned vs
-total transcripts, recorded errors and custom results not mounted
+describes scanner execution, while its per-scanner records describe completed
+vs total transcripts, recorded errors and custom results not mounted
 into the report. It records execution only: a cleanly executed scan can still
 carry failed or refused judgements, which surface in the reliability audit.
 The HTML status block remains visible even when a failed section is empty; it

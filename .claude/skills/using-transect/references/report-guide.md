@@ -23,7 +23,7 @@ viewer is wired. Global reading rules:
 
 A red flag at the very top appears only when the stored scan carries
 execution failures; it links to the run-wide "Scan execution & coverage"
-section at the bottom (transcripts scanned per scanner, recorded errors,
+section at the bottom (transcripts completed per scanner, recorded errors,
 stored-but-unmounted scanners), which covers the whole stored scan
 including epochs outside the selected report. Execution completion does
 not establish usable labels: judgement quality (abstentions, filled

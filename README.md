@@ -235,7 +235,7 @@ to reload that exact scan rather than whichever scan is latest in its parent.
 
 Inspect `results.scan_status` before interpreting partial results. It retains
 the stored execution completion, requested scanner roster, concise errors and
-scanned-vs-total transcript counts. `outer_complete` means Scout finished
+completed-vs-total transcript counts. `outer_complete` means Scout finished
 execution; `has_failures` also checks recorded errors, missing scans and store
 integrity. Neither establishes that labels are usable or correct: judgement
 quality (abstentions, filled labels, member and verifier degradation) is the

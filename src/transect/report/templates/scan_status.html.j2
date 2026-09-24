@@ -1,15 +1,19 @@
 {#- Run-wide execution record, rendered once after the last
-    transcript: which requested scanners ran, errored, or never
-    executed. Per-label coverage lives in each transcript's
-    reliability audit; this block only accounts for execution. A
-    scanner executes once per stored transcript (each epoch is its
-    own transcript), so the denominator is transcripts. -#}
+    transcript: for each requested scanner, the transcripts it
+    completed without a recorded error, of the scan's scope (each
+    epoch is its own transcript). A shortfall with errors is
+    ran-and-failed; a shortfall without errors was never reached.
+    Per-label coverage lives in each transcript's reliability
+    audit; this block only accounts for execution. -#}
 <section id="scan-status" class="section"><h3>Scan execution &amp; coverage</h3>
 <p class="meta explainer">Run-wide record for the stored scan (all epochs): <strong>execution {{ scan_status_view.execution }}</strong>. Execution completion does not establish usable labels; per-label coverage is in the {% if n_transcripts %}<a href="#reliability-audit">reliability audit</a>{% else %}reliability audit{% endif %}.</p>
 <div class="relmap-scroll"><table class="relmap">
-<tr><th>scanner</th><th>transcripts scanned</th><th>errors</th></tr>
-{% for row in scan_status_view.rows %}<tr><th>{{ row.name }}{% if row.sub %}<br/><span class="relmap-sub">{{ row.sub }}</span>{% endif %}</th>{% for cell in (row.scanned, row.errors) %}<td{% if cell.bg %} style="background:{{ cell.bg }};color:{{ cell.fg }}"{% endif %}>{{ cell.text }}</td>{% endfor %}</tr>
+<tr><th>scanner</th><th>transcripts completed</th><th>errors</th></tr>
+{% for row in scan_status_view.rows %}<tr><th>{{ row.name }}{% if row.sub %}<br/><span class="relmap-sub">{{ row.sub }}</span>{% endif %}</th>{% for cell in (row.completed, row.errors) %}<td{% if cell.bg %} style="background:{{ cell.bg }};color:{{ cell.fg }}"{% endif %}>{{ cell.text }}</td>{% endfor %}</tr>
 {% endfor %}</table></div>
+{% if scan_status_view.unattempted %}
+<p class="meta">{{ scan_status_view.unattempted|join(", ") }}: 0 of 0 means no scan was attempted and the store records no transcript scope - the scan was likely interrupted before this scanner started; re-run the scan.</p>
+{% endif %}
 {% if scan_status_view.unmounted %}
 <p class="meta">{{ scan_status_view.unmounted|join(", ") }}: stored results with no mounted report layer, so no section of this report renders them; pass the matching Layer via extra_layers to include them.</p>
 {% endif %}

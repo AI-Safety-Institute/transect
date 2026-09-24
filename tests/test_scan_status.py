@@ -11,6 +11,7 @@ from inspect_scout import (
     Worklist,
 )
 
+from transect.report.sections import scan_status_view
 from transect.scan_status import ScanStatus, build_scan_status
 
 
@@ -114,6 +115,32 @@ def test_missing_table_despite_recorded_scans_is_an_error():
     coverage = status.scanners[0]
     assert coverage.has_failures and coverage.errors == 1
     assert any("table is missing" in error.message for error in status.errors)
+
+
+def test_completed_subtracts_errored_transcripts():
+    """A transcript with a recorded scan error is attempted, not completed."""
+    raw = raw_scan(
+        "custom/scanner",
+        [{"transcript_id": "t1", "scan_error": "boom"}],
+        scanned=2,
+        errors=1,
+    )
+    raw.spec.worklist = [Worklist(scanner="test", transcripts=["t1", "t2"])]
+    coverage = build_scan_status(raw, {"test"}).scanners[0]
+    assert (coverage.scanned_transcripts, coverage.completed_transcripts) == (2, 1)
+    assert coverage.errors == 1 and coverage.has_failures
+
+
+def test_never_attempted_scanner_with_unknown_scope_is_a_failure():
+    """0 of 0 is a red cell with its own explanation, not a healthy row."""
+    raw = raw_scan("custom/scanner", [], scanned=0, snapshot=False)
+    status = build_scan_status(raw, {"test"})
+    assert status.has_failures
+    view = scan_status_view(status)
+    (row,) = view["rows"]
+    assert row["completed"]["text"] == "0 of 0"
+    assert row["completed"]["bg"] is not None
+    assert view["unattempted"] == ["test"]
 
 
 def test_resumed_scan_counts_stay_within_scope():

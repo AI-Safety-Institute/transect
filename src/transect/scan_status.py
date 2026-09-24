@@ -27,15 +27,19 @@ class ScanError:
 class ScannerCoverage:
     """One requested scanner's run-wide execution record.
 
-    ``errors`` counts this scanner's entries in the run's error list:
-    recorded scan errors plus store anomalies such as a results table
-    missing despite recorded scans (e.g. a partially copied store).
+    ``scanned_transcripts`` counts scan attempts (the scanner reached
+    the transcript, successfully or not); ``completed_transcripts``
+    subtracts the transcripts with a recorded scan error. ``errors``
+    counts this scanner's entries in the run's error list: recorded
+    scan errors plus store anomalies such as a results table missing
+    despite recorded scans (e.g. a partially copied store).
     """
 
     scanner: str
     mounted: bool
     total_transcripts: int | None = None
     scanned_transcripts: int = 0
+    completed_transcripts: int = 0
     errors: int = 0
 
     @property
@@ -48,7 +52,11 @@ class ScannerCoverage:
     @property
     def has_failures(self) -> bool:
         """Whether stored evidence identifies incomplete or errored execution."""
-        return bool(self.missing_scans or self.errors)
+        return bool(
+            self.missing_scans
+            or self.errors
+            or (self.total_transcripts is None and self.scanned_transcripts == 0)
+        )
 
 
 @dataclass
@@ -138,12 +146,22 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
                     key,
                     None,
                     "The execution summary records scans but their results "
-                    "table is missing.",
+                    "table is missing - typically an incompletely copied "
+                    "scan directory; re-copy the full store or re-run the "
+                    "scan.",
                 )
             )
         # count recorded entries, not the summary counter: a resume can
         # leave a stale summary errors count behind resolved retries
         coverage.errors = sum(error.scanner == key for error in status.errors)
+        errored = {
+            error.transcript_id
+            for error in status.errors
+            if error.scanner == key and error.transcript_id is not None
+        }
+        coverage.completed_transcripts = max(
+            0, coverage.scanned_transcripts - len(errored)
+        )
         status.scanners.append(coverage)
     return status
 

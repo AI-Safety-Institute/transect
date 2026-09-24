@@ -1214,24 +1214,27 @@ def reliability_audit(
 
 
 def scan_status_view(status) -> dict:
-    """The run-wide execution block: per-scanner execution counts
-    (audit-red on failure states, plain otherwise), the recorded
-    error list, and any stored-but-unmounted scanner names."""
+    """The run-wide execution block: per-scanner completed-of-scope
+    counts (audit-red on failure states, plain otherwise), the
+    recorded error list, and the stored-but-unmounted and
+    never-attempted scanner names."""
     rows = []
+    unattempted = []
     for scanner in status.scanners:
+        completed = scanner.completed_transcripts
+        # the denominator is the scan's scope; a store that records no
+        # scope falls back to the attempts actually made
         total = scanner.total_transcripts
-        if total:
-            scanned = _status_cell(
-                f"{scanner.scanned_transcripts} of {total}",
-                bad=scanner.scanned_transcripts < total,
-            )
-        else:
-            scanned = _status_cell(str(scanner.scanned_transcripts), bad=False)
+        of = total if total is not None else scanner.scanned_transcripts
+        if total is None and scanner.scanned_transcripts == 0:
+            unattempted.append(scanner.scanner)
         rows.append(
             {
                 "name": scanner.scanner,
                 "sub": None if scanner.mounted else "not mounted",
-                "scanned": scanned,
+                "completed": _status_cell(
+                    f"{completed} of {of}", bad=completed < of or of == 0
+                ),
                 "errors": _status_count(scanner.errors),
             }
         )
@@ -1243,6 +1246,7 @@ def scan_status_view(status) -> dict:
             False: "incomplete",
         }[status.outer_complete],
         "rows": rows,
+        "unattempted": unattempted,
         "unmounted": [s.scanner for s in status.scanners if not s.mounted],
         "errors": [
             {

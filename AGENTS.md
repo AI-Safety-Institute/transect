@@ -92,7 +92,7 @@ scanner change take effect; run a new scan and retain both results for compariso
   missing section. Unclassified spans are listed as unclassified;
   a classifier that joined zero spans warns loudly.
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
-  stored scan on every load. It records execution only: scanned vs total
+  stored scan on every load. It records execution only: completed vs total
   transcripts and recorded errors per requested scanner;
   judgement quality belongs to the reliability audit. The report always shows
   this run-wide status outside optional sections. Keep it in custom UIs,
