@@ -97,15 +97,8 @@ custom-presentation recipe (`custom-ui`). Install them into your
 project once (re-run after upgrading the package):
 
 ```bash
-python -m transect.skills install   # use the interpreter where you installed Transect
-# After uv sync in a clone: uv run python -m transect.skills install
+python -m transect.skills install
 ```
-
-Installing in the package's editable checkout leaves the source skills unchanged.
-Elsewhere, each skill is staged before replacement; a failed replacement restores
-its previous copy. If restoration also fails, the error names a retained backup.
-Other skills are untouched. This is per-skill recovery, not an all-skills transaction
-or protection against concurrent installers or process termination.
 
 ## Getting started
 
