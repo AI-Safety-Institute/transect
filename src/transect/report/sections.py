@@ -15,6 +15,7 @@ import pandas as pd
 from markupsafe import Markup
 
 from transect.frames import SCHEMA_VERSION
+from transect.frames.transcript_info import _compact
 from transect.frames.user import member_ballots
 from transect.report import reliability
 from transect.report._jinja import jinja_env
@@ -47,11 +48,15 @@ _subagent_tpl: Any = jinja_env().get_template("subagent_notes.html.j2").module
 _reliability_tpl: Any = jinja_env().get_template("reliability.html.j2").module
 
 
-def section(title: str, blocks: Sequence[Markup | None]) -> Markup:
+def section(
+    title: str, blocks: Sequence[Markup | None], anchor: str | None = None
+) -> Markup:
     """One report section: an ``<h3>`` header followed by the given
     already-rendered fragments in order; empty/`None` entries are
-    dropped, so callers can express optional blocks inline."""
-    return _notes.section(title, [block for block in blocks if block])
+    dropped, so callers can express optional blocks inline. ``anchor``
+    sets an ``id`` for in-page links; ids must stay unique, so a
+    per-transcript section takes one on its first occurrence only."""
+    return _notes.section(title, [block for block in blocks if block], anchor)
 
 
 _NOT_FOUND = "data not found"
@@ -122,7 +127,12 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
 
     def cell(row, name):
         value = row.get(name)
-        return None if value is None or pd.isna(value) else value
+        if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
+            return None
+        if isinstance(value, (list, dict)):
+            # same display rule as the frame's own _compact fields
+            return _compact(value)
+        return value
 
     def found(row, name):
         value = cell(row, name)
@@ -434,21 +444,6 @@ def token_intro(derived: bool) -> Markup:
     measures + the linear/log scale the bars chart offers.
     """
     return _notes.token_intro_derived() if derived else _notes.token_intro_raw()
-
-
-def token_cache_semantics_line(one: pd.DataFrame) -> Markup:
-    """One meta line near the Token telemetry intro, naming this
-    transcript's token cache semantics. ``one`` is this transcript's own
-    token_timeline slice.
-    """
-    cache_semantics = (
-        one.cache_semantics.dropna().iloc[0]
-        if one.cache_semantics.notna().any()
-        else None
-    )
-    return _notes.token_cache_semantics(
-        cache_semantics or "unknown (no token-timeline data)"
-    )
 
 
 def event_legend(has_context_chart: bool) -> Markup:
@@ -1047,6 +1042,11 @@ def phase_cards(
                 "card_id": f"{card_id_prefix}-{int(p.phase_index)}",
                 "color": color,
                 "headline": headline,
+                "group_note": {
+                    "invalid_partition": "Neutral grouping: invalid group ranges.",
+                    "empty_groups": "Neutral grouping: no groups supplied.",
+                    "no_narrative": "Neutral grouping: no usable narrative.",
+                }.get(p.narration_group_status),
                 "tags": tags,
                 "summary": summary,
                 "groups": group_items,
@@ -1100,28 +1100,33 @@ def reliability_audit(
             continue  # the layer's judge never ran: nothing to audit
         unit_col, label_col = audit["unit_col"], audit["label_col"]
         unit_word = unit_col.replace("_", " ")
-        decided = frame[frame[label_col].notna()]
-        extra_rows = [
-            {
-                "label": "Judged units",
-                "value": f"{len(decided)} {unit_word}(s) of {len(frame)}",
-                "definition": "This layer's frame rows carrying a decided "
-                "label, of all its rows for this transcript.",
-            }
-        ]
-        extra_rows += _span_verifier_rows(frame, unit_word=unit_word)
-        block, block_flags = _entity_audit(
-            audit["name"],
-            frame,
-            member_ballots(frame, unit_col, label_col),
-            unit_col,
-            label_col,
-            frame,
-            extra_rows=extra_rows,
-            vocabulary=declared(audit["name"]),
-            unit_word=unit_word,
-            badge=True,
-        )
+        # an arbitrary user frame may not carry the columns the audit
+        # reads; the report renders the failure instead of crashing
+        try:
+            decided = frame[frame[label_col].notna()]
+            extra_rows = [
+                {
+                    "label": "Judged units",
+                    "value": f"{len(decided)} {unit_word}(s) of {len(frame)}",
+                    "definition": "This layer's frame rows carrying a decided "
+                    "label, of all its rows for this transcript.",
+                }
+            ]
+            extra_rows += _span_verifier_rows(frame, unit_word=unit_word)
+            block, block_flags = _entity_audit(
+                audit["name"],
+                frame,
+                member_ballots(frame, unit_col, label_col),
+                unit_col,
+                label_col,
+                frame,
+                extra_rows=extra_rows,
+                vocabulary=declared(audit["name"]),
+                unit_word=unit_word,
+                badge=True,
+            )
+        except Exception as error:
+            block, block_flags = _unauditable_layer_block(audit["name"], error), []
         custom_blocks.append((audit["name"], block, block_flags))
 
     phases_ran = bool(len(phases))
@@ -1161,7 +1166,7 @@ def reliability_audit(
                 "definition": "Stitched decision-phase count for this transcript.",
             },
         ]
-        phase_extra_rows += _verifier_audit_rows(phases)
+        phase_extra_rows += _span_verifier_rows(phases, unit_word="phase")
         phases_block, phases_flags = _entity_audit(
             "Phases",
             phases,
@@ -1208,6 +1213,61 @@ def reliability_audit(
     )
 
 
+def scan_status_view(status) -> dict:
+    """The run-wide execution block: per-scanner completed-of-scope
+    counts (audit-red on failure states, plain otherwise), the
+    recorded error list, and the stored-but-unmounted and
+    never-attempted scanner names."""
+    rows = []
+    unattempted = []
+    for scanner in status.scanners:
+        completed = scanner.completed_transcripts
+        # the denominator is the scan's scope; a store that records no
+        # scope falls back to the attempts actually made
+        total = scanner.total_transcripts
+        of = total if total is not None else scanner.scanned_transcripts
+        if scanner.never_attempted:
+            unattempted.append(scanner.scanner)
+        rows.append(
+            {
+                "name": scanner.scanner,
+                "sub": None if scanner.mounted else "not mounted",
+                "completed": _status_cell(
+                    f"{completed} of {of}", bad=completed < of or of == 0
+                ),
+                "errors": _status_count(scanner.errors),
+            }
+        )
+    execution = {
+        None: "completion not recorded",
+        True: "finished",
+        False: "incomplete",
+    }[status.outer_complete]
+    # store-integrity entries are the only scanner-level (transcript-less)
+    # errors: the execution happened, but its results are not all here
+    if any(error.transcript_id is None for error in status.errors):
+        execution += "; results incomplete"
+    return {
+        "failures": status.has_failures,
+        "execution": execution,
+        "rows": rows,
+        "unattempted": unattempted,
+        "unmounted": [s.scanner for s in status.scanners if not s.mounted],
+        "errors": [
+            {
+                "scanner": e.scanner,
+                "transcript_id": e.transcript_id,
+                # Scout stores the traceback separately; this is the
+                # message alone, clipped against pathological payloads.
+                "message": e.message
+                if len(e.message) <= 300
+                else e.message[:300] + "…",
+            }
+            for e in status.errors
+        ],
+    }
+
+
 def _fmt_busy(seconds) -> str:
     if seconds is None or pd.isna(seconds):
         return "no data"
@@ -1231,15 +1291,16 @@ def _swatch_style(color: str, hatch: str | None) -> str:
 def _verifier_notes(phases: pd.DataFrame) -> dict | None:
     """Verifier tally for the phase meta line. "With a verdict", not
     "checked": a merged phase may span more turns than were reviewed."""
-    verified = phases.verifier_reviewed.fillna(False).astype(bool)
-    if not verified.any():
+    units = reliability.review_units(phases)
+    if not len(units):
         return None
-    overturned = phases.overturned.fillna(False).astype(bool)
-    same_model = bool(phases.verifier_same_model.dropna().iloc[0])
+    completed = units.verifier_completed.fillna(False).astype(bool)
+    same = phases.verifier_same_model.dropna()
     return {
-        "verified": int(verified.sum()),
-        "overturned": int(overturned.sum()),
-        "same_model": same_model,
+        "verified": int(completed.sum()),
+        "selected": len(units),
+        "overturned": int(units.loc[completed, "overturned"].fillna(False).sum()),
+        "same_model": bool(same.iloc[0]) if len(same) else False,
     }
 
 
@@ -1427,9 +1488,15 @@ def _span_confidence(row) -> str | None:
 def _span_verifier_cell(row) -> str | None:
     """One tooltip line for a reviewed span: what the verifier did -
     None (no row) for the unreviewed majority."""
-    if not bool(row.verifier_reviewed):
+    if not bool(row.verifier_selected):
         return None
     trigger = str(row.verifier_trigger).replace("_", " ")
+    completed = getattr(row, "verifier_completed", None)
+    status = getattr(row, "verifier_status", None)
+    if (completed is not None and pd.notna(completed) and not bool(completed)) or (
+        isinstance(status, str) and status in ("error", "refusal", "no_answer")
+    ):
+        return f"selected, no usable verdict ({trigger})"
     if bool(row.overturned):
         return f"overturned (was {row.original_label}; {trigger})"
     return f"reviewed, not overturned ({trigger})"
@@ -1445,7 +1512,7 @@ def _resolved_label(label_of: dict, span_id) -> str:
 
 def _verifier_text(regime: reliability.Regime) -> str:
     """The entity block's one-line verifier state, reusing the meta
-    line's "self-consistency check" wording. "off" is exact - the
+    line's self-revision wording. "off" is exact - the
     scanner stamps ``verifier_armed`` at factory time - so an armed
     verifier that never triggered still reads on; a cohort never arms
     one."""
@@ -1456,7 +1523,8 @@ def _verifier_text(regime: reliability.Regime) -> str:
     model = regime.verifier_model or "(model not recorded)"
     if regime.verifier_same_model:
         return (
-            f"on ({model}): a self-consistency check, not an independent second opinion"
+            f"on ({model}): self-revision under a different prompt; "
+            "correctness unverified"
         )
     return f"on ({model})"
 
@@ -1658,8 +1726,8 @@ def _entity_maps(
         help_text = (
             "Changes among the randomly picked double-checks only: the "
             "fraction is changed/sampled, the brackets a Wilson 95% CI. "
-            "The judge was confidently wrong there without flagging any "
-            "doubt - any overturn here flags red."
+            "An applied relabel records disagreement, not established wrongness; "
+            "any overturn here flags red for source review."
         )
         rows.append(
             {
@@ -1776,6 +1844,29 @@ def _entity_maps(
     return maps
 
 
+def _unauditable_layer_block(name: str, error: Exception) -> dict:
+    """The honest-absence fallback for a custom layer whose frame does
+    not carry the columns the audit reads: the block names the failure
+    instead of the report crashing on an arbitrary user frame."""
+    return {
+        "name": name,
+        "rows": [
+            {
+                "label": "Not audited",
+                "value": "This layer's frame could not be audited "
+                f"({type(error).__name__}: {error}).",
+                "definition": "The audit reads the judged columns "
+                "transect.turns_frame emits (the decided label plus "
+                "confidence, judge identity and agreement); a frame "
+                "without them renders as data only, its coverage "
+                "unassessed.",
+            }
+        ],
+        "maps": [],
+        "badge": True,
+    }
+
+
 def _entity_audit(
     name: str,
     entity: pd.DataFrame,
@@ -1808,11 +1899,12 @@ def _entity_audit(
     spot_check = reliability.spot_check_overturns(entity)
     confidence_stat = reliability.mean_stat(entity.confidence)
     tiers = reliability.confidence_tiers(entity.confidence)
-    flags = reliability.build_flags(regime, k_roll_stat, cohort, relabel, spot_check)
 
     # the per-classification maps: decided units, per-member coverage,
     # and deciding-provenance shares, each derived at this surface's
-    # own grain (turns for Phases, spans for Sub-agents)
+    # own grain (turns for Phases, spans for Sub-agents). The unjudged
+    # rate excludes turns the judge never saw (attributed), so it reads
+    # "of the units judging attempted, how many got no judgement".
     if name == "Phases":
         decided = (
             agreement_source[agreement_source.basis == "judged"]
@@ -1826,12 +1918,31 @@ def _entity_audit(
             ("refusal", "no_answer", "missing_turn", "filled"),
         )
         unit_word = "turn"
+        unjudged_count = sum(reliability.abstention_counts(agreement_source).values())
+        attempted = len(agreement_source) - (
+            int((agreement_source.basis == "attributed").sum())
+            if len(agreement_source)
+            else 0
+        )
     else:
         decided = entity[entity[value_col].notna()] if len(entity) else entity
         coverage = reliability.member_coverage(
             members, "status", "ok", ("refusal", "error", "no_answer")
         )
         unit_word = unit_word or "span"
+        unjudged_count = len(entity) - len(decided)
+        attempted = len(entity)
+    flags = reliability.build_flags(
+        regime,
+        k_roll_stat,
+        cohort,
+        relabel,
+        spot_check,
+        # a surface the judge never ran on has no unjudged share to flag
+        unjudged=reliability.rate(unjudged_count, attempted)
+        if regime.kind != "none"
+        else reliability.NO_RATE,
+    )
     stats = reliability.label_stats(
         decided, members, entity, unit_col, value_col, vocabulary=vocabulary
     )
@@ -1903,12 +2014,11 @@ def _entity_audit(
                     else "no data"
                 ),
                 "definition": "Percent agreement (chance-uncorrected) plus two "
-                "chance-corrected coefficients that bracket the true "
-                "agreement: Krippendorff's alpha (reads low when one label "
-                "dominates) and Gwet's AC1 (reads high in the same case). "
+                "chance-corrected coefficients with different chance models: "
+                "Krippendorff's alpha and Gwet's AC1. They are not bounds on "
+                "true agreement or correctness. "
                 "Healthy heuristic on α: ≥ 0.80 green, 0.66–0.80 amber, "
-                "< 0.66 red; flags threshold on α, AC1 is the bracket's "
-                "other end.",
+                "< 0.66 red; flags threshold on α. These are reporting conventions.",
             }
         )
     if regime.verifier_on and relabel.overall.of:
@@ -1982,91 +2092,56 @@ def _span_verifier_rows(subagents: pd.DataFrame, unit_word: str = "span") -> lis
     the custom-layer blocks, mirroring the phases rows."""
     if not len(subagents):
         return []
-    reviewed = subagents[subagents.verifier_reviewed.fillna(False)]
-    if not subagents.verifier_model.notna().any() and not len(reviewed):
+    selected = reliability.review_units(subagents)
+    if not subagents.verifier_model.notna().any() and not len(selected):
         return []
-    triggers = reviewed.verifier_trigger.value_counts()
-
-    def n(trigger: str) -> int:
-        return int(triggers.get(trigger, 0))
-
-    overturned = reviewed.overturned.fillna(False)
+    completed = selected[selected.verifier_completed] if len(selected) else selected
+    triggers = (
+        selected.verifier_trigger.value_counts()
+        if len(selected)
+        else pd.Series(dtype=int)
+    )
+    split = " · ".join(
+        f"{int(count)} {str(trigger).replace('_', ' ')}"
+        for trigger, count in triggers.items()
+    )
+    overturned = completed.overturned.fillna(False)
     weak = (
         ~overturned
-        & reviewed.verifier_label.notna()
-        & (reviewed.verifier_label != reviewed.original_label)
+        & completed.verifier_label.notna()
+        & (completed.verifier_label != completed.original_label)
     )
-    n_random = n("random_sample")
-    n_random_relabelled = int(
-        (overturned & (reviewed.verifier_trigger == "random_sample")).sum()
-    )
+    sampled = completed.verifier_trigger == "random_sample"
     return [
         {
             "label": "Verifier selection",
-            "value": (
-                f"{n('low_confidence')} low-confidence · "
-                f"{n('low_agreement')} low-agreement · "
-                f"{n_random} random sample"
-            ),
-            "definition": f"How many {unit_word}s each verifier trigger "
-            f"picked for review. Exact counts: {unit_word}s never merge, "
-            "so every review survives as a row.",
+            "value": split or "none selected",
+            "definition": f"Original {unit_word} units selected for review, "
+            "split by trigger; not API calls.",
         },
         {
             "label": "Verifier outcomes",
-            "value": (
-                f"{int(overturned.sum())} relabelled · "
-                f"{int(weak.sum())} weak relabel(s) recorded, not applied · "
-                f"{n_random_relabelled} of {n_random} random samples relabelled"
-            ),
-            "definition": f"Review outcomes over the same {unit_word}s.",
+            "value": f"{len(completed)} completed · "
+            f"{len(selected) - len(completed)} without usable verdict · "
+            f"{int(overturned.sum())} relabelled · {int(weak.sum())} "
+            "weak relabel(s) recorded, not applied · "
+            f"{int((overturned & sampled).sum())} of {int(sampled.sum())} "
+            "completed random samples relabelled",
+            "definition": "Relabel rates condition on usable completed verdicts; "
+            "missing outcomes are reported separately.",
         },
     ]
 
 
-def _verifier_audit_rows(phases: pd.DataFrame) -> list[dict]:
-    """Verifier selection/outcome lines read off the scanner-stamped
-    run-constant ``verifier_n_*`` counts, summed across transcripts -
-    exact where a row aggregation is not (no-verdict reviews and
-    relabels merged away by re-stitching are included). Arming is
-    detected from ``verifier_model``, so armed-but-never-triggered
-    renders with zero counts."""
-    if not len(phases) or not phases.verifier_model.notna().any():
-        return []
-    cols = [c for c in phases.columns if c.startswith("verifier_n_")]
-    totals = phases.groupby("transcript_id", observed=True)[cols].first().sum()
+def _status_cell(text: str, bad: bool) -> dict:
+    """One execution-table cell: the audit ramp's red on a failure
+    state, the table's default background otherwise."""
+    if not bad:
+        return {"text": text, "bg": None, "fg": None}
+    bg = health_color(0.0)
+    return {"text": text, "bg": bg, "fg": cell_text_color(bg)}
 
-    def n(field: str) -> int:
-        return int(totals[f"verifier_{field}"])
 
-    exact = (
-        "Read from the verifier's own audit counts, stamped where the "
-        "judging happened - so reviews with no verdict and relabels "
-        "merged away by phase re-stitching are counted, not lost."
-    )
-    return [
-        {
-            "label": "Verifier selection",
-            "value": (
-                f"{n('n_low_confidence')} low-confidence · "
-                f"{n('n_low_agreement')} low-agreement · "
-                f"{n('n_wedge')} wedge · "
-                f"{n('n_random_sample')} random sample"
-            ),
-            "definition": "How many phases each verifier trigger picked "
-            "for review. " + exact,
-        },
-        {
-            "label": "Verifier outcomes",
-            "value": (
-                f"{n('n_relabelled')} relabelled · "
-                f"{n('n_weak_relabel')} weak relabel(s) recorded, "
-                f"not applied · {n('n_no_verdict')} no verdict · "
-                f"{n('n_random_sample_relabelled')} of "
-                f"{n('n_random_sample')} random samples relabelled"
-            ),
-            "definition": "Review outcomes over the selected phases; "
-            '"no verdict" is a review the verifier never answered '
-            "(omitted id, refusal, no answer). " + exact,
-        },
-    ]
+def _status_count(count: int) -> dict:
+    """A failure-count cell: red when positive, plain otherwise."""
+    return _status_cell(str(count), bad=count > 0)

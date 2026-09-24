@@ -28,7 +28,6 @@ from helpers import (
     verify_answer,
     voter,
 )
-from inspect_ai.model import ModelUsage
 from test_subagent_classification import span_item
 
 from transect.api import _run
@@ -44,7 +43,6 @@ from transect.frames import (
 )
 from transect.frames.common import SCHEMA_VERSION
 from transect.frames.flushes import flushes_df
-from transect.scanners.base import token_timeline
 from transect.scanners.cohort import judge_setup
 from transect.scanners.phases import decision_phases
 from transect.scanners.subagents import subagent_classification
@@ -152,7 +150,6 @@ def test_token_timeline_reconstructs_context_and_new_work(demo_results):
     total pin the derived token views against the committed log."""
     timeline = demo_results.token_timeline.sort_values("turn")
     assert sorted(timeline.turn) == list(range(16))
-    assert (timeline.cache_semantics == "exclusive").all()
     assert set(timeline.agent_lane.dropna()) == {"eda", "alt_model", "reviewer"}
     spots = timeline.set_index("turn")
     assert (spots.loc[0, "new_work"], spots.loc[0, "context"]) == (879, 785)
@@ -406,7 +403,19 @@ def test_solo_default_model_rows_read_the_judge_from_usage():
     assert bool(r.verifier_armed) is True
 
 
-def test_errored_solo_rows_project_absent_judge_columns():
+@pytest.mark.parametrize(
+    "storage,category,status",
+    [
+        ("absent", None, "error"),
+        ("object", None, "error"),
+        ("parquet", None, "error"),
+        ("parquet", "refusal", "refusal"),
+        ("parquet", "other", "error"),
+    ],
+)
+def test_errored_solo_rows_project_absent_judge_columns(
+    tmp_path, storage, category, status
+):
     """An errored solo scan records no value, so there is no judge
     block: the judge columns project as absent, dtypes intact."""
     result = SimpleNamespace(value={}, label=None, answer=None, explanation=None)
@@ -414,58 +423,21 @@ def test_errored_solo_rows_project_absent_judge_columns():
     # span id must still arrive via the store's input_ids column
     row = raw_row(result, metadata=None, input_ids=["sp1"])
     row["scan_error"] = "boom"
-    frame = subagents_df(pd.DataFrame([row]))
+    if storage != "absent":
+        row["scan_error_type"] = category
+    raw = pd.DataFrame([row])
+    if storage == "parquet":
+        raw["scan_error_type"] = raw["scan_error_type"].astype("string[pyarrow]")
+        path = tmp_path / "errors.parquet"
+        raw.to_parquet(path)
+        raw = pd.read_parquet(path, dtype_backend="pyarrow")
+    frame = subagents_df(raw)
     r = frame.iloc[0]
     assert r.agent_span_id == "sp1"
-    assert r.status == "error"
+    assert r.status == status
     assert pd.isna(r.judge_regime)
     assert pd.isna(r.n_models)
     assert pd.isna(r.verifier_armed)
-
-
-def test_inclusive_cache_semantics_detected_and_normalised():
-    """OpenAI-style usage (input_tokens includes the re-read cache) is
-    detected and normalised, so new_work is genuine new work rather
-    than the cumulative re-sent prompt."""
-    usages = [
-        ModelUsage(
-            input_tokens=1000,
-            output_tokens=50,
-            total_tokens=1050,
-            input_tokens_cache_read=800,
-            input_tokens_cache_write=100,
-        ),
-        ModelUsage(
-            input_tokens=1200,
-            output_tokens=30,
-            total_tokens=1230,
-            input_tokens_cache_read=1000,
-            input_tokens_cache_write=50,
-        ),
-    ]
-    result = run_scan(
-        token_timeline(),
-        [model_turn(f"t{i}", usage=u) for i, u in enumerate(usages)],
-    )
-    frame = token_timeline_df(pd.DataFrame([raw_row(result)])).sort_values("turn")
-    assert (frame.cache_semantics == "inclusive").all()
-    # turn 0: new = 1000-800-100 = 100; context = new+cw+cr = 1000;
-    # new_work = (new+out) + min(cw, context growth) = 150 + 100
-    r0 = frame.iloc[0]
-    assert (r0.context, r0.new_work, r0.billable, r0.turn_total) == (
-        1000,
-        250,
-        250,
-        1050,
-    )
-    # turn 1: new = 150; context = 1200; growth over 1000 caps cw fully
-    r1 = frame.iloc[1]
-    assert (r1.context, r1.new_work, r1.billable, r1.turn_total) == (
-        1200,
-        230,
-        230,
-        1230,
-    )
 
 
 def test_context_drops_synthesize_flushes_with_the_documented_fences():

@@ -81,6 +81,25 @@ class TurnGroup(BaseModel):
     gist: str = Field(description="One-line gist of the section.")
 
 
+class PhaseReview(BaseModel):
+    """One selected original phase, preserved independently of display merging.
+
+    A missing verdict retains the original facts with status
+    ``no_answer`` or ``refusal`` and no verifier fields. This record
+    is not judge-facing.
+    """
+
+    original_phase_index: int
+    turn_start: int
+    turn_end: int
+    review: VerifierReview
+
+
+NarrationGroupStatus = Literal[
+    "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
+]
+
+
 class StitchedPhase(BaseModel):
     """One phase: consecutive same-label segments merged across chunk boundaries."""
 
@@ -95,7 +114,7 @@ class StitchedPhase(BaseModel):
         description="Mean over member judgements (fills included, at 0.3)."
     )
     min_confidence: float = Field(
-        description="Minimum over members — the verifier's selection signal."
+        description="Minimum over members - the verifier's selection signal."
     )
     min_agreement: float | None = Field(
         default=None,
@@ -127,8 +146,17 @@ class StitchedPhase(BaseModel):
     verifier: VerifierReview | None = Field(
         default=None,
         description=(
-            "The second-round review of this phase's range; None when "
-            "the verifier never saw it."
+            "A representative completed review overlapping this phase; None "
+            "when no completed verdict overlaps. Original selected units "
+            "live in verifier_reviews."
+        ),
+    )
+    verifier_reviews: list[PhaseReview] = Field(
+        default_factory=list,
+        description=(
+            "Original phase review units overlapping this displayed phase. "
+            "An empty list means none selected. The singular verifier is "
+            "representative only."
         ),
     )
     headline: str = Field(
@@ -142,6 +170,13 @@ class StitchedPhase(BaseModel):
     turn_groups: list[TurnGroup] = Field(
         default_factory=list,
         description="Narrator: gapless partition of the phase's turn range.",
+    )
+    narration_group_status: NarrationGroupStatus = Field(
+        default="not_run",
+        description=(
+            "Group partition outcome; complete describes partition "
+            "coordinates, not factual correctness."
+        ),
     )
     anchor_event_id: str | None = Field(
         default=None,

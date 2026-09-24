@@ -181,13 +181,22 @@ def decision_phases(
           - ``confidence_source``: whose confidence the phase
             carries - single_judge / majority_vote / verifier.
           - ``explanation``: the first contributing segment's explanation.
-          - ``verifier``: the second-round review (the
+          - ``verifier``: a representative second-round review (the
             ``VerifierReview`` record: trigger, original label /
             confidence / explanation, verifier label / confidence /
             explanation, verifier_model, overturned, status); None
-            when the verifier never saw the range.
-          - ``headline``: narrator, one sentence (template fallback).
-          - ``summary``: narrator, 2-3 sentences ("" on fallback).
+            when no completed verdict overlaps the range. A merged display
+            phase can contain several original review units.
+          - ``verifier_reviews``: every original selected phase review
+            overlapping this display phase, each with original_phase_index,
+            turn_start, turn_end, and a nested review. Missing verdicts carry
+            status no_answer or refusal. An empty list means none selected.
+          - ``headline`` / ``summary``: complete narrator text, without
+            character clipping; blank headlines use a template, missing
+            narratives use a template headline and empty summary.
+          - ``narration_group_status``: complete, invalid_partition,
+            empty_groups, no_narrative, or not_run. Complete describes
+            partition coordinates, not factual correctness.
           - ``turn_groups``: gapless partition of the phase's turn
             range - ``{turn_start, turn_end, title, gist}``.
           - ``anchor_event_id``: the first member model event's uuid

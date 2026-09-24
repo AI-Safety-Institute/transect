@@ -1,7 +1,13 @@
 {
-  "scan_id": "2QUSyHDW8yjSWKSkxCiK9e",
+  "scan_id": "5Xhcvyqc7hcJTgo7Ks2a8i",
   "scan_name": "transect",
-  "timestamp": "2026-09-15T14:42:07.746209+01:00",
+  "timestamp": "2026-09-24T11:50:23.281301+01:00",
+  "revision": {
+    "type": "git",
+    "origin": "git@github.com:AI-Safety-Institute/transect.git",
+    "version": "0.0.0-dev.0+unknown",
+    "commit": "73b23b0"
+  },
   "packages": {
     "inspect_ai": "0.3.263",
     "inspect_scout": "0.5.2"
@@ -14,7 +20,7 @@
     "type": "eval_log",
     "filter": [],
     "transcript_ids": {
-      "5J5JLAekZ4CUL7NuTYcuEz": "/Users/alexandraabbas/Documents/Dev/transect/examples/logs/house_price_demo.eval"
+      "5J5JLAekZ4CUL7NuTYcuEz": "examples/logs/house_price_demo.eval"
     },
     "count": 0
   },
@@ -22,31 +28,31 @@
     "token_timeline": {
       "name": "transect/token_timeline",
       "version": 0,
-      "package_version": "0.1.0",
+      "package_version": "0.1.3",
       "params": {}
     },
     "context_flush": {
       "name": "transect/context_flush",
       "version": 0,
-      "package_version": "0.1.0",
+      "package_version": "0.1.3",
       "params": {}
     },
     "human_intervention": {
       "name": "transect/human_intervention",
       "version": 0,
-      "package_version": "0.1.0",
+      "package_version": "0.1.3",
       "params": {}
     },
     "eval_setup": {
       "name": "transect/eval_setup",
       "version": 0,
-      "package_version": "0.1.0",
+      "package_version": "0.1.3",
       "params": {}
     },
     "decision_phases": {
       "name": "transect/decision_phases",
       "version": 0,
-      "package_version": "0.1.0",
+      "package_version": "0.1.3",
       "params": {
         "spec": {
           "phases": [
@@ -143,7 +149,7 @@
     "subagent_classification": {
       "name": "transect/subagent_classification",
       "version": 0,
-      "package_version": "0.1.0",
+      "package_version": "0.1.3",
       "params": {
         "spec": {
           "phases": [

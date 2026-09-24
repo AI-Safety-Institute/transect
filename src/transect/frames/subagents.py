@@ -31,8 +31,9 @@ Columns (identity prefix explained in common.py):
   mean; overturn = the verifier's).
 - judge_agreement: vote agreement (NaN unless >= 2 voted).
 - n_voting / n_members: vote participation.
-- verifier_reviewed / overturned: a second-round review happened /
-  it replaced the label.
+- verifier_selected: a review record exists, failed attempts included.
+- verifier_completed: a usable verifier verdict was returned.
+- overturned: the verifier replaced the label.
 - verifier_trigger / verifier_label / verifier_confidence /
   verifier_explanation / verifier_status / original_label /
   original_confidence / original_explanation: the flattened
@@ -40,7 +41,7 @@ Columns (identity prefix explained in common.py):
   ran; verifier_status is the review call's ok / refusal / error).
 - verifier_model: the verifier judge whenever the verifier was armed
   for the run, reviews or not (the armed stamp); None when the
-  verifier was off. "A review happened" is verifier_reviewed, never
+  verifier was off. "A review happened" is verifier_selected, never
   this column's presence.
 - judge_regime / n_models / k_rolls / verifier_armed /
   verifier_same_model: the scanner-stamped judge-identity columns
@@ -133,7 +134,7 @@ def subagents_df(
         "verifier_model",
     ]
     merged = merged[[c for c in ordered if c in merged.columns]]
-    merged["verifier_reviewed"] = merged.verifier_reviewed.fillna(False).astype(bool)
+    merged["verifier_selected"] = merged.verifier_selected.fillna(False).astype(bool)
     merged["overturned"] = merged.overturned.fillna(False).astype(bool)
     return with_schema(
         merged.sort_values(
@@ -268,7 +269,12 @@ def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:
         else:
             # solo errors surface as Scout scan errors, not value facts
             if has_error:
-                status = "refusal" if r.get("scan_error_type") == "refusal" else "error"
+                category = r.get("scan_error_type")
+                status = (
+                    "refusal"
+                    if isinstance(category, str) and category == "refusal"
+                    else "error"
+                )
             else:
                 status = "ok" if label else "error"
             stamped = value.get("judge")

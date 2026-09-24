@@ -19,6 +19,7 @@ Regenerate after a scanner value-schema or store-format change; paths
 inside the stores are relative to the repo root, so run from there.
 """
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -27,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 import re
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 from helpers import (
     demo_judge,
     narrate_answer,
@@ -127,9 +130,48 @@ def run(store: Path, **judge_setup) -> None:
         report_path=None,
         **judge_setup,
     )
+    portable_sources(store)
     for report in store.rglob("report*.html"):
         report.unlink()
     print(f"wrote {store}")
+
+
+def portable_sources(store: Path) -> None:
+    """Keep synthetic fixture source references relative to the checkout root.
+
+    Scout resolves input filenames to absolute paths during scanning. Normalize
+    only this checkout's prefix, including copies of the same source reference
+    embedded in metadata/input JSON. Raw synthetic transcript content is unchanged.
+    """
+    prefix = str(ROOT.resolve()) + "/"
+
+    def relative(value):
+        if isinstance(value, str):
+            return value.replace(prefix, "")
+        if isinstance(value, dict):
+            return {key: relative(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [relative(item) for item in value]
+        return value
+
+    for path in store.rglob("*.json"):
+        value = relative(json.loads(path.read_text()))
+        path.write_text(
+            json.dumps(value, indent=None if path.name == "_summary.json" else 2)
+        )
+    for path in store.rglob("*.parquet"):
+        table = pq.ParquetFile(path).read()
+        for index, column in enumerate(table.columns):
+            if pa.types.is_string(column.type) or pa.types.is_large_string(column.type):
+                table = table.set_column(
+                    index,
+                    table.schema.field(index),
+                    pa.array(
+                        [relative(item) for item in column.to_pylist()],
+                        type=column.type,
+                    ),
+                )
+        pq.write_table(table, path)
 
 
 def check_planted_signals(store: Path, regime: str) -> None:
@@ -143,7 +185,7 @@ def check_planted_signals(store: Path, regime: str) -> None:
     frames = load(str(store.relative_to(ROOT))).frames()
     phases, turns = frames["phases"], frames["phase_turns"]
     if regime == "kroll":
-        reviewed = phases[phases.verifier_reviewed.fillna(False)]
+        reviewed = phases[phases.verifier_selected.fillna(False)]
         assert len(reviewed) == 2, f"expected 2 reviewed phases: {len(reviewed)}"
         assert (reviewed.verifier_trigger == "random_sample").all()
         assert int(phases.overturned.fillna(False).sum()) == 1

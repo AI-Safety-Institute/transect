@@ -4,6 +4,8 @@ from dataclasses import dataclass, field, fields
 
 import pandas as pd
 
+from transect.scan_status import ScanStatus
+
 
 @dataclass
 class TransectResults:
@@ -56,6 +58,10 @@ class TransectResults:
 
     transcripts_location: str | None = None
     """Where the scan's transcripts live, the Scout viewer target."""
+
+    scan_status: ScanStatus = field(default_factory=ScanStatus, kw_only=True)
+    """The whole scan's execution record (completed vs total transcripts,
+    recorded errors); remains run-wide when rendering a selected epoch."""
 
     layer_frames: dict[str, pd.DataFrame] = field(default_factory=dict)
     """User layers' pandas frames, keyed by layer name."""

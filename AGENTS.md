@@ -21,15 +21,14 @@ re-derivation; there is no external doc to hunt for.
 
 ## What this package is
 
-`transect` triages long agent-eval transcripts into one self-contained HTML
+`transect` triages long agent-eval transcripts into one HTML
 report plus tidy pandas frames (see README.md for the full pitch). Two
 kinds of extraction, deliberately separated: **structural** ($0, no API
 key - token timeline, context flushes, human interventions, sub-agent
 activity, transcript info, eval setup) and **judged** (LLM - decision
 phases and sub-agent classification, run solo, k-roll, or cohort,
-with an optional second-round verifier). The code says "structural"
-everywhere; the README calls the same thing "mechanical" for lay
-readers - grep for `structural`.
+with an optional second-round verifier). Code and docs both say
+"structural" - grep for `structural`.
 
 ## Architecture
 
@@ -51,9 +50,15 @@ store -> frames -> report.
 
 `load()` + `render()` rebuild a report from a stored scan without
 re-scanning - keep everything the report needs inside the scan value.
-The flip side during development: scan results replay from `scans_dir`,
-so a scanner code change does not take effect on an existing store -
-scan into a fresh directory (or delete the existing store) to see it.
+`transect()` starts a new scan; identical judge requests can reuse inspect-ai's
+response cache. OpenClaw JSONL inputs are reparsed into a separate retained
+`scans_dir/transcript_snapshots/` database on each invocation. Preserve these
+databases for source viewing. To reclaim disk, delete only snapshot
+directories no kept scan references (`load(scan_location).transcripts_location`
+names the one a scan reads); a scan whose snapshot is gone still loads, but
+renders without transcript excerpts and viewer links. Duplicate transcript identities within one
+invocation are rejected before scanning. Never delete old stores to make a
+scanner change take effect; run a new scan and retain both results for comparison.
 
 ## Load-bearing contracts
 
@@ -86,6 +91,25 @@ scan into a fresh directory (or delete the existing store) to see it.
   data" / an explicit note - never a fabricated zero, never a silently
   missing section. Unclassified spans are listed as unclassified;
   a classifier that joined zero spans warns loudly.
+- **Review units.** Phase `verifier_reviews` retains the original
+  selected review units through display merging;
+  `transect.reliability.review_units` is the review-population read.
+  `verifier_selected` means a record exists (failed attempts
+  included); `verifier_completed` is the usable-verdict flag every
+  rate conditions on.
+- **Narration groups.** A narrator title/gist attaches only to its
+  exact inclusive range: groups render only as a complete,
+  non-overlapping partition of the phase, otherwise one neutral
+  whole-phase group - never clamp or extend factual prose to repair
+  coordinates. Headlines and summaries store unclipped, and
+  `narration_group_status` stamps the outcome (`complete` checks
+  partition coordinates, not factual correctness).
+- **Execution and coverage.** `results.scan_status` is reconstructed from the
+  stored scan on every load. It records execution only: completed vs total
+  transcripts and recorded errors per requested scanner;
+  judgement quality belongs to the reliability audit. The report always shows
+  this run-wide status outside optional sections. Keep it in custom UIs,
+  including when an epoch filter hides other scan transcripts.
 
 ## Report code: read before touching
 
@@ -136,7 +160,8 @@ scan into a fresh directory (or delete the existing store) to see it.
   `tests/fixtures/demo_scan_cohort/` dissenting cohort - both made by
   `tests/fixtures/generate_demo_scan.py`) must be regenerated after
   any scanner value-schema change or an inspect-scout store-format
-  change - the stored-scan report test reads them as-is.
+  change - the stored-scan report test reads them as-is. Committed
+  fixtures and public docs must not embed local private paths.
 - **Costs.** The test suite and the demo-log path are $0 (mockllm / no
   judges). `examples/transect_*.py` call real provider models - keys and
   spend. Don't "verify" a change by burning judge calls when the
@@ -189,8 +214,7 @@ the standard judge columns (`judge_regime`, `n_models`, `k_rolls`,
 `transect.reliability.detect_regime` and the report's audit read directly.
 Every `transect.reliability` function checks its required columns upfront
 and raises a `KeyError` naming the missing ones and the fix; the
-per-function contract is stated in README.md's table and each
-function's docstring, and the conformance path is pinned end to end
+per-function contract is stated in each public function's docstring, and the conformance path is pinned end to end
 by `tests/test_reliability.py`'s custom-judged-layer test.
 Workflow and release flow are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -200,7 +224,9 @@ A change to any user-facing contract - frame columns, the `transect()` /
 `load()` / `render()` signatures, report sections, spec fields -
 is not done until the docs that state that contract are re-checked:
 this file, README.md, and the skills under `.claude/skills/`. In
-particular, README.md's mermaid diagram of the frames (columns +
-how frames join) must be updated when a frame or column changes -
-it is also a good first map of how the frames connect when you are
-orienting.
+particular, README.md's mermaid diagram of the frames shows the
+joins plus a representative subset of each frame's columns (the
+full column contract is each frame module's docstring): update it
+when a join or a charted column changes, and chart a new column
+when it is load-bearing for reading the report. It is also a good
+first map of how the frames connect when you are orienting.

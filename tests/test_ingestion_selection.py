@@ -1,13 +1,16 @@
 """Transcript ingestion (.eval and OpenClaw .jsonl) and the
 one-sample/epoch selection rules."""
 
+import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
 import pytest
+from inspect_scout import TranscriptContent, transcripts_from
 
-from transect.api import _openclaw_files, _run
+from transect.api import _import_openclaw, _openclaw_files, _run, load
 from transect.selection import select_transcripts
 from transect.spec import Spec
 
@@ -118,8 +121,7 @@ def test_openclaw_jsonl_imports_and_scans_like_an_eval(openclaw_log, tmp_path):
 
 
 def test_openclaw_reimport_is_idempotent(openclaw_log, tmp_path):
-    """A second run over the same .jsonl must not duplicate transcripts
-    in the DB."""
+    """Unchanged input preserves identities and frames in independent snapshots."""
     first = _run(logs=str(openclaw_log), spec=Spec(), scans_dir=str(tmp_path / "scans"))
     second = _run(
         logs=str(openclaw_log), spec=Spec(), scans_dir=str(tmp_path / "scans")
@@ -128,6 +130,120 @@ def test_openclaw_reimport_is_idempotent(openclaw_log, tmp_path):
         second.token_timeline.reset_index(drop=True),
         first.token_timeline.reset_index(drop=True),
     )
+    assert first.transcripts_location != second.transcripts_location
+    assert load(str(tmp_path / "scans")).scan_location == second.scan_location
+
+
+async def _stored_transcripts(location):
+    async with transcripts_from(location).reader() as reader:
+        return [
+            await reader.read(info, TranscriptContent(messages="all", events="all"))
+            async for info in reader.index()
+        ]
+
+
+def test_reused_scan_directory_selects_only_current_inputs(openclaw_log, tmp_path):
+    """A later invocation never selects a transcript imported by an earlier one."""
+    other = tmp_path / "other.jsonl"
+    other.write_text(
+        openclaw_log.read_text().replace("sess-cron-0001", "sess-cron-0002")
+    )
+    scans = str(tmp_path / "scans")
+    first = _run(str(openclaw_log), Spec(), scans_dir=scans)
+    second = _run(str(other), Spec(), scans_dir=scans)
+    assert (
+        second.transcript_info.sample_id.tolist()
+        != first.transcript_info.sample_id.tolist()
+    )
+    assert second.transcript_info.task_name.tolist() == ["other"]
+    with pytest.raises(ValueError, match="unknown sample id"):
+        _run(
+            str(other),
+            Spec(),
+            scans_dir=scans,
+            sample=first.transcript_info.sample_id.iloc[0],
+        )
+
+
+def test_changed_input_preserves_prior_scan_source(openclaw_log, tmp_path):
+    """Edited inputs leave earlier scans' stored messages and events unchanged."""
+    source = tmp_path / "input.jsonl"
+    source.write_text(openclaw_log.read_text())
+    scans = str(tmp_path / "scans")
+    first = _run(str(source), Spec(), scans_dir=scans)
+    original = asyncio.run(_stored_transcripts(first.transcripts_location))[0]
+    source.write_text(
+        source.read_text()
+        .replace("Wrapping up.", "Updated conclusion.")
+        .replace('"output": 80', '"output": 81')
+    )
+    second = _run(str(source), Spec(), scans_dir=scans)
+    updated = asyncio.run(_stored_transcripts(second.transcripts_location))[0]
+    assert updated.transcript_id == original.transcript_id
+    assert updated.messages[-1].text == "Updated conclusion."
+    assert original.messages[-1].text == "Wrapping up."
+    assert (
+        second.token_timeline.output_tokens.sum()
+        == first.token_timeline.output_tokens.sum() + 1
+    )
+    restored = load(first.scan_location)
+    stored = asyncio.run(_stored_transcripts(restored.transcripts_location))[0]
+    assert stored.model_dump() == original.model_dump()
+    pd.testing.assert_frame_equal(restored.token_timeline, first.token_timeline)
+
+
+def test_conflicting_input_id_fails_before_scanning(
+    openclaw_log, tmp_path, monkeypatch
+):
+    """Different files with the same identity cannot silently replace one another."""
+    other = tmp_path / "conflict.jsonl"
+    other.write_text(
+        openclaw_log.read_text().replace("Wrapping up.", "Different conclusion.")
+    )
+
+    def unexpected_scan(**kwargs):
+        pytest.fail("duplicate input must be rejected before scanning")
+
+    monkeypatch.setattr("transect.api.scout_scan", unexpected_scan)
+    with pytest.raises(ValueError, match="duplicate transcript id") as error:
+        _run([str(openclaw_log), str(other)], Spec(), scans_dir=str(tmp_path / "scans"))
+    assert str(openclaw_log) in str(error.value)
+    assert str(other) in str(error.value)
+
+
+@pytest.mark.parametrize("content", ["", "not json\n"])
+def test_empty_import_cannot_reuse_previous_input(openclaw_log, tmp_path, content):
+    """An empty or wholly malformed input never falls back to an earlier transcript."""
+    source = tmp_path / "input.jsonl"
+    source.write_text(openclaw_log.read_text())
+    scans = str(tmp_path / "scans")
+    _run(str(source), Spec(), scans_dir=scans)
+    source.write_text(content)
+    with pytest.raises(ValueError, match="no transcripts"):
+        _run(str(source), Spec(), scans_dir=scans)
+
+
+def test_new_import_preserves_existing_database(openclaw_log, tmp_path):
+    """New snapshot files stay outside the original database's recursive search root."""
+    scans = tmp_path / "scans"
+    existing = scans / "transcripts"
+    asyncio.run(_import_openclaw([openclaw_log], str(existing)))
+    before = {
+        str(p.relative_to(existing)): p.read_bytes()
+        for p in existing.rglob("*.parquet")
+    }
+    from_existing = _run(str(existing), Spec(), scans_dir=str(scans))
+    fresh = _run(str(openclaw_log), Spec(), scans_dir=str(scans))
+    assert not Path(fresh.transcripts_location).is_relative_to(existing)
+    assert {
+        str(p.relative_to(existing)): p.read_bytes()
+        for p in existing.rglob("*.parquet")
+    } == before
+    old = asyncio.run(
+        _stored_transcripts(load(from_existing.scan_location).transcripts_location)
+    )
+    assert len(old) == 1
+    assert old[0].messages[-1].text == "Wrapping up."
 
 
 def test_mixing_openclaw_and_eval_inputs_raises(tmp_path):

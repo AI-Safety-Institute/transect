@@ -5,7 +5,7 @@ once; the majority vote across the cohort decides. No verifier.
 
 Run from the repo root (needs ANTHROPIC_API_KEY and OPENAI_API_KEY):
 
-    python examples/transect_cohort.py
+    uv run python examples/transect_cohort.py
 """
 
 from transect import transect
@@ -33,6 +33,6 @@ print(
     '    results = load("examples/scans/cohort")\n'
     "    frames = results.frames()\n"
     '    frames["phases"]           # labelled, narrated phases\n'
-    '    frames["subagent_members"] # per-judge ballots behind each label\n'
+    '    frames["subagent_votes"] # per-judge ballots behind each label\n'
     '    frames["token_timeline"]   # per-turn token usage\n'
 )

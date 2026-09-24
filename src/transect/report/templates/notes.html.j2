@@ -4,8 +4,8 @@
     self-contained HTML fragment; autoescape handles every interpolation,
     so callers pass raw (unescaped) text. -#}
 
-{% macro section(title, blocks) -%}
-<div class="section">{% if title %}<h3>{{ title }}</h3>{% endif %}{% for block in blocks %}{{ block }}{% endfor %}</div>
+{% macro section(title, blocks, anchor=None) -%}
+<div{% if anchor %} id="{{ anchor }}"{% endif %} class="section">{% if title %}<h3>{{ title }}</h3>{% endif %}{% for block in blocks %}{{ block }}{% endfor %}</div>
 {%- endmacro %}
 
 {% macro chip(swatch_style, text) -%}
@@ -49,8 +49,8 @@
 {#- No bold "Token telemetry" lead-in: the section's own header names
     it, and repeating it two lines apart reads as a duplicate. -#}
 {% macro token_intro_derived() -%}
-<p class="meta explainer">Three measures of the per-turn token stream, selectable below:</p>
-<ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: only what is new this turn; re-reads of unchanged context excluded</li><li><strong>cumulative (billable)</strong>: running total of billable spend; never drops, not even at a flush</li></ul>
+<p class="meta explainer">Three measures of the per-turn token stream, selectable below (Inspect input_tokens excludes cache reads and writes; output includes reasoning; missing optional breakdowns count as zero in derived views):</p>
+<ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: an estimate of new content from uncached input, output and context growth; not a measure of effort</li><li><strong>cumulative (excluding cache reads)</strong>: uncached input, output and cache-write tokens summed over turns; excludes cache reads and is not monetary cost</li></ul>
 {%- endmacro %}
 
 {% macro token_intro_raw() -%}
@@ -60,10 +60,6 @@
 
 {#- This fact belongs with the chart whose measures it explains, not on
     a judge-reliability surface. -#}
-{% macro token_cache_semantics(value) -%}
-<p class="meta explainer">Token cache semantics: {{ value }} (the provider's input_tokens reporting style; the measures above are already normalised for it).</p>
-{%- endmacro %}
-
 {#- Both event lists below are a <details class="event event-list">
     whose <summary> is just the count and whose body is one <li> per
     event, turn-ordered (the builders in sections.py sort explicitly, so
@@ -147,7 +143,7 @@
 {%- endmacro %}
 
 {% macro phase_meta_line(n_phases, judge_label, judge, cohort, verifier_note, unjudged_count) -%}
-<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier_note %} · verifier: {{ verifier_note.overturned }} of {{ verifier_note.verified }} phase(s) with a verdict relabelled{% if verifier_note.same_model %} <span class="meta">(verifier = the same model, a self-consistency check rather than an independent second opinion)</span>{% endif %}{% endif %}{% if unjudged_count %} · <span class="meta">{{ unjudged_count }} unjudged turn(s) greyed</span>{% endif %} · turn indices are 0-based (the Scout viewer numbers turns from 1)</p>
+<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier_note %} · verifier: {{ verifier_note.overturned }} of {{ verifier_note.verified }} completed original phase reviews relabelled ({{ verifier_note.selected }} selected){% if verifier_note.same_model %} <span class="meta">(verifier = the same model; self-revision under a different prompt)</span>{% endif %}{% endif %}{% if unjudged_count %} · <span class="meta">{{ unjudged_count }} unjudged turn(s) greyed</span>{% endif %} · turn indices are 0-based (the Scout viewer numbers turns from 1)</p>
 {%- endmacro %}
 
 {% macro label_definitions(title, entries) -%}
@@ -155,5 +151,5 @@
 {%- endmacro %}
 
 {% macro definitions_unavailable(title) -%}
-<details class="event definitions"><summary>{{ title }}</summary><p class="meta">The label definitions the judge saw are not recorded in this scan store. Re-run the scan to embed them.</p></details>
+<details class="event definitions"><summary>{{ title }}</summary><p class="meta">Label definitions are not recorded for this surface. Judging may have been disabled, or this may be an older store. If judged labels are needed, configure the intended vocabulary before a new judged run.</p></details>
 {%- endmacro %}

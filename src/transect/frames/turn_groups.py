@@ -6,7 +6,9 @@ Columns (identity prefix explained in common.py):
 - group_index: the group's position within its phase.
 - turn_start / turn_end: inclusive range; groups partition their
   phase's range gaplessly.
-- title / gist: the narrator's short name and one-line summary.
+- title / gist: the narrator's short name and one-line summary. Invalid
+  partitions use a neutral phase title and empty gist; factual prose is
+  never stretched onto a repaired range.
 - schema_version: the frames contract version.
 """
 

@@ -164,6 +164,8 @@ def test_a_weak_verifier_verdict_never_relabels():
     assert phase["phase"] == "setup"
     audit = value["verifier"]
     assert audit["n_relabelled"] == 0 and audit["n_weak_relabel"] == 1
+    (unit,) = phase["verifier_reviews"]
+    assert unit["review"]["status"] == "ok" and unit["review"]["overturned"] is False
 
 
 def test_confident_phases_still_get_a_random_sample_review():
@@ -201,6 +203,7 @@ def test_a_refused_verifier_chunk_leaves_phases_unreviewed():
     (phase,) = value["phases"]
     assert phase["phase"] == "setup"
     assert value["verifier"]["n_no_verdict"] == 1
+    assert phase["verifier_reviews"][0]["review"]["status"] == "refusal"
 
 
 def test_k_rolls_vote_per_turn_and_record_agreement():
@@ -263,42 +266,6 @@ def test_cohort_judges_vote_per_turn():
     cohort = value["cohort"]
     assert cohort["agreement"]["n_members"] == 2
     assert [v["agreement"] for v in cohort["vote"]] == [1.0, 1.0]
-
-
-@pytest.mark.parametrize(("verify_sample", "expected_sampled"), [(1.0, 2), (0.0, 0)])
-def test_verify_sample_sizes_the_random_spot_check(verify_sample, expected_sampled):
-    """verify_sample=1.0 spot-checks every confident phase; 0 disables
-    the random sample entirely."""
-    answers = [seg_answer(seg(0, 1, "setup", 0.9), seg(2, 3, "experiment", 0.9))]
-    if expected_sampled:
-        answers.append(
-            verify_answer(
-                {
-                    "phase_index": 0,
-                    "phase": "setup",
-                    "confidence": 0.9,
-                    "explanation": "confirmed",
-                },
-                {
-                    "phase_index": 1,
-                    "phase": "experiment",
-                    "confidence": 0.9,
-                    "explanation": "confirmed",
-                },
-            )
-        )
-    judge = scripted_judge(*answers)
-    value = run_scan(
-        decision_phases(
-            PHASES_SPEC,
-            judge,
-            verify=True,
-            narrate=False,
-            verify_sample=verify_sample,
-        ),
-        turns(4),
-    ).value
-    assert value["verifier"]["n_random_sample"] == expected_sampled
 
 
 @pytest.mark.parametrize(

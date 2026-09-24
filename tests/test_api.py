@@ -8,7 +8,6 @@ from inspect_ai._util.registry import registry_info
 import transect.api as api
 from transect import load, reliability, transect
 from transect.api import _run, _scanners, _viewer_exit_mode
-from transect.skills import install
 from transect.spec import Spec
 
 
@@ -71,6 +70,9 @@ def test_epochs_all_renders_one_report_per_epoch(epochs_logs, tmp_path):
     )
     assert len(results.report_paths) == 3
     assert sorted(results.token_timeline.epoch.unique()) == [1, 2, 3]
+    assert all(s.total_transcripts == 3 for s in results.scan_status.scanners)
+    for path in results.report_paths:
+        assert 'id="scan-status"' in open(path).read()
 
 
 def test_viewer_lifetime_follows_the_execution_context(monkeypatch):
@@ -150,15 +152,15 @@ def test_triage_judged_regimes_end_to_end(regime, demo_log, tmp_path):
     if regime == "solo":
         assert len(votes) == 0
         assert (phases.confidence_source == "single_judge").all()
-        assert not phases.verifier_reviewed.any()
+        assert not phases.verifier_selected.any()
     if regime == "solo-verified":
-        reviewed = phases[phases.verifier_reviewed]
+        reviewed = phases[phases.verifier_selected]
         assert len(reviewed) == 1
         assert (reviewed.verifier_trigger == "random_sample").all()
         assert not reviewed.overturned.any()
         spans = results.subagents
         assert spans.verifier_model.notna().all()
-        spot = spans[spans.verifier_reviewed.fillna(False)]
+        spot = spans[spans.verifier_selected.fillna(False)]
         assert len(spot) == 1
         assert (spot.verifier_trigger == "random_sample").all()
         assert not spot.overturned.any()
@@ -171,34 +173,6 @@ def test_triage_judged_regimes_end_to_end(regime, demo_log, tmp_path):
         assert votes.model.nunique() == 2
         assert (phases.confidence_source == "majority_vote").all()
         assert (results.subagents.judge_models == "mockllm/model+mockllm/model2").all()
-
-
-def test_skills_install_copies_and_replaces_prior_copies(tmp_path):
-    """install() copies every shipped skill dir into the project's
-    .claude/skills and replaces a stale prior copy wholesale."""
-    source = tmp_path / "shipped"
-    for name in ("using-transect", "transect-diagnostics"):
-        (source / name).mkdir(parents=True)
-        (source / name / "SKILL.md").write_text("v2")
-    project = tmp_path / "proj"
-    stale = project / ".claude" / "skills" / "using-transect"
-    stale.mkdir(parents=True)
-    (stale / "leftover.md").write_text("v1")
-    assert install(project, source=source) == ["transect-diagnostics", "using-transect"]
-    installed = project / ".claude" / "skills"
-    assert (installed / "using-transect" / "SKILL.md").read_text() == "v2"
-    assert not (stale / "leftover.md").exists()
-
-
-def test_skills_install_is_a_no_op_when_source_is_the_destination(tmp_path):
-    """On a source checkout the shipped skills dir is the repo's own
-    .claude/skills; installing into that repo must not delete them."""
-    project = tmp_path / "repo"
-    source = project / ".claude" / "skills"
-    (source / "add-a-layer").mkdir(parents=True)
-    (source / "add-a-layer" / "SKILL.md").write_text("keep")
-    assert install(project, source=source) == ["add-a-layer"]
-    assert (source / "add-a-layer" / "SKILL.md").read_text() == "keep"
 
 
 def test_verify_sample_zero_renders_an_armed_idle_verifier(demo_log, tmp_path):
@@ -214,7 +188,7 @@ def test_verify_sample_zero_renders_an_armed_idle_verifier(demo_log, tmp_path):
         verify=True,
         verify_sample=0.0,
     )
-    assert not results.phases.verifier_reviewed.any()
+    assert not results.phases.verifier_selected.any()
     assert results.phases.verifier_model.notna().all()
     html = open(results.report_paths[0]).read()
     assert "Traceback" not in html

@@ -10,7 +10,6 @@ import pytest
 import transect
 from transect import load, render
 from transect.api import _run
-from transect.frames.phases import _AUDIT_COUNTS
 from transect.report import charts, sections
 from transect.report.embed import (
     _TIP_EXTRA_LINE_PX,
@@ -19,7 +18,6 @@ from transect.report.embed import (
     _tip_floor,
     wrap_row_px,
 )
-from transect.report.sections import _verifier_audit_rows
 from transect.spec import Spec
 
 SCENARIOS = {
@@ -73,7 +71,7 @@ _STORE_CONTENT = {
         ("Flagged above 0.95", 2),
         ("verifier spot-check overturns = 1 of 2 sampled", 2),
         ("verifier re-label rate (model_development) = 100%", 2),
-        ("Verifier selection", 1),
+        ("Verifier selection</span>: 2 random sample", 1),
         ("Member coverage", 1),
         # the audit groups flags under the entity sub-heading
         ("Phase segmentation and labelling", 1),
@@ -212,6 +210,28 @@ def test_spend_bars_floor_covers_the_declared_tooltip_rows():
     )
     # single-line rows plus the bucket label's two-line allowance
     assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
+
+
+def test_eval_setup_renders_container_values():
+    """Container values in the bypass fields render as compact JSON
+    (escaped); an empty container reads as unconfigured, not []."""
+    info = pd.DataFrame(
+        [
+            {
+                "header_available": True,
+                "scaffold_prompt": ["<b>x</b>", "a & b"],
+                "sandbox": ["docker", "compose.yaml"],
+                "tools": [],
+            }
+        ],
+        dtype=object,
+    )
+    html = str(sections.eval_setup_blocks(info))
+    text = html_mod.unescape(html)
+    assert '["<b>x</b>", "a & b"]' in text
+    assert '["docker", "compose.yaml"]' in text
+    assert "<b>x</b>" not in html  # escaped, not markup
+    assert "[]" not in text
 
 
 def test_run_intro_preserves_recorded_values():
@@ -392,20 +412,44 @@ def test_layer_audit_block_skips_quietly_when_the_judge_never_ran():
     assert "x labelling" not in out
 
 
-def test_verifier_audit_rows_sum_only_transcripts_where_the_verifier_ran():
-    """The audit reads the stamped verifier_n_* counts once per
-    transcript; a transcript whose verifier never ran (all-NA counts)
-    contributes nothing rather than poisoning the sum."""
+def test_structural_only_subagents_raise_no_unjudged_flag():
+    """Spans a judge never saw are not flagged as an unjudged share."""
+    frames = load(str(Path(__file__).parent / "fixtures" / "demo_scan")).frames()
+    subagents = frames["subagents"].copy()
+    for column in (
+        "label",
+        "confidence",
+        "judge_regime",
+        "judge_models",
+        "n_models",
+        "k_rolls",
+        "verifier_armed",
+        "verifier_same_model",
+        "verifier_model",
+    ):
+        subagents[column] = None
+    votes = frames["subagent_votes"].iloc[:0]
+    assert sections.subagent_reliability_flags(subagents, votes) == []
 
-    armed = {f"verifier_{k}": 1 for k in _AUDIT_COUNTS}
-    off = {f"verifier_{k}": None for k in _AUDIT_COUNTS}
-    frame = pd.DataFrame(
-        [
-            {"transcript_id": "a", "verifier_model": "v", **armed},
-            {"transcript_id": "a", "verifier_model": "v", **armed},
-            {"transcript_id": "b", "verifier_model": None, **off},
-        ]
+
+def test_layer_audit_block_names_an_unauditable_frame_instead_of_crashing():
+    """An arbitrary user frame that stamps a judge regime but lacks the
+    audit's columns renders an honest not-audited block, never a crash."""
+    empty = pd.DataFrame()
+    subagents = pd.DataFrame({"status": []})
+    frame = pd.DataFrame({"turn": [0], "judge_regime": ["solo"]})
+    out = str(
+        sections.reliability_audit(
+            empty,
+            empty,
+            subagents,
+            empty,
+            None,
+            phase_turn_votes=empty,
+            layer_audits=[
+                {"name": "x", "frame": frame, "unit_col": "turn", "label_col": "label"}
+            ],
+        )
     )
-    selection, outcomes = _verifier_audit_rows(frame)
-    assert selection["value"].startswith("1 low-confidence")
-    assert "1 no verdict" in outcomes["value"]
+    assert "could not be audited" in out
+    assert "KeyError" in out

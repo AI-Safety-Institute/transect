@@ -1,10 +1,11 @@
 """Transcript excerpts, spawn prompts and tool counts for the report.
 
-The frames carry no message text at all - the phases scanner reads it,
-classifies with it and keeps only labels - so the text is fetched here
-instead, at render time, from the Scout transcript store.
+Phase-card turn excerpts are fetched at render time from the Scout transcript
+store. Other frames can already contain source text: setup/task prompts, operator
+interventions and subagent task text, as well as generated explanations. Neither
+dataframes nor rendered reports should be treated as text-free exports.
 
-Three properties this module exists to hold:
+This module preserves:
 
 - **Same turn axis as everything else.** `_turn_excerpts` iterates
   `helpers.model_turns`, the one iteration `token_timeline` and the
