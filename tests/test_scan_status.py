@@ -116,6 +116,7 @@ def test_missing_table_despite_recorded_scans_is_an_error():
     assert coverage.has_failures and coverage.errors == 1
     assert coverage.completed_transcripts == 0
     assert any("table is missing" in error.message for error in status.errors)
+    assert scan_status_view(status)["execution"] == "finished; results incomplete"
 
 
 def test_completed_subtracts_errored_transcripts():

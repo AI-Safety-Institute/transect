@@ -1238,13 +1238,18 @@ def scan_status_view(status) -> dict:
                 "errors": _status_count(scanner.errors),
             }
         )
+    execution = {
+        None: "completion not recorded",
+        True: "finished",
+        False: "incomplete",
+    }[status.outer_complete]
+    # store-integrity entries are the only scanner-level (transcript-less)
+    # errors: the execution happened, but its results are not all here
+    if any(error.transcript_id is None for error in status.errors):
+        execution += "; results incomplete"
     return {
         "failures": status.has_failures,
-        "execution": {
-            None: "completion not recorded",
-            True: "finished",
-            False: "incomplete",
-        }[status.outer_complete],
+        "execution": execution,
         "rows": rows,
         "unattempted": unattempted,
         "unmounted": [s.scanner for s in status.scanners if not s.mounted],
