@@ -215,16 +215,6 @@ viewer.
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
 
-Inspect `results.scan_status` before interpreting partial results. It retains
-the stored execution completion, requested scanner roster, concise errors and
-completed-vs-total transcript counts. `outer_complete` means Scout finished
-execution; `has_failures` also checks recorded errors, missing scans and store
-integrity. Neither establishes that labels are usable or correct: judgement
-quality (abstentions, filled labels, member and verifier degradation) is the
-reliability audit's territory. Partial results are returned when their required
-structural tables and mounted custom-frame contracts can be loaded; violations
-still raise an error. `load()` preserves the same status without judging.
-
 ## Reading the report
 
 ![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
