@@ -51,6 +51,16 @@ class _Verdict(BaseModel):
     explanation: str = Field(description="Why (<=14 words).")
 
 
+class _ReviewAttempt(BaseModel):
+    """One selected phase's review attempt: its trigger plus outcome.
+
+    ``verdict`` is set exactly when ``status`` is "ok"."""
+
+    trigger: Trigger
+    verdict: _Verdict | None = None
+    status: Literal["ok", "no_answer", "refusal"] = "no_answer"
+
+
 class VerifierAudit(BaseModel):
     """The verifier's counts-only audit (the value's ``verifier`` block).
 
@@ -177,9 +187,12 @@ async def verify_phases(
         original review units and representative verifier flags, and the
         counts-only audit block.
     """
-    reasons = select_for_verify(phases, sample=sample)
-    selected = sorted(reasons)
-    triggers = list(reasons.values())
+    attempts = {
+        k: _ReviewAttempt(trigger=trigger)
+        for k, trigger in select_for_verify(phases, sample=sample).items()
+    }
+    selected = sorted(attempts)
+    triggers = [attempt.trigger for attempt in attempts.values()]
     audit = VerifierAudit(
         n_low_confidence=triggers.count("low_confidence"),
         n_low_agreement=triggers.count("low_agreement"),
@@ -190,8 +203,6 @@ async def verify_phases(
         return phases, audit
     system = verify_system_prompt(spec, task_prompt)
     answer = _verify_answer_spec(phase_names)
-    verdicts: dict[int, _Verdict] = {}
-    no_verdict_status: dict[int, Literal["no_answer", "refusal"]] = {}
     ids_chunks = [
         selected[offset : offset + chunk] for offset in range(0, len(selected), chunk)
     ]
@@ -206,7 +217,8 @@ async def verify_phases(
     )
     for ids, (value, status) in zip(ids_chunks, results, strict=True):
         if status != "ok":
-            no_verdict_status.update({k: status for k in ids})
+            for k in ids:
+                attempts[k].status = status
             continue  # whole chunk stays no-verdict
         raw_verdicts = (value or {}).get("verdicts")
         for item in raw_verdicts if isinstance(raw_verdicts, list) else []:
@@ -214,17 +226,11 @@ async def verify_phases(
                 verdict = _Verdict.model_validate(item)
             except ValidationError:
                 continue
-            if verdict.phase_index in ids and verdict.phase_index not in verdicts:
-                verdicts[verdict.phase_index] = verdict
-    return _apply_verdicts(
-        digest_judgements,
-        phases,
-        verdicts,
-        reasons,
-        audit,
-        str(judge),
-        no_verdict_status=no_verdict_status,
-    )
+            attempt = attempts.get(verdict.phase_index)
+            if verdict.phase_index in ids and attempt and attempt.verdict is None:
+                attempt.verdict = verdict
+                attempt.status = "ok"
+    return _apply_verdicts(digest_judgements, phases, attempts, audit, str(judge))
 
 
 def verify_system_prompt(spec: Spec, task_prompt: str = "") -> str:
@@ -330,12 +336,9 @@ def _verify_user_prompt(
 def _apply_verdicts(
     digest_judgements: list[ConsensusJudgement],
     phases: list[StitchedPhase],
-    verdicts: dict[int, _Verdict],
-    reasons: dict[int, Trigger],
+    attempts: dict[int, _ReviewAttempt],
     audit: VerifierAudit,
     verifier_model: str | None = None,
-    *,
-    no_verdict_status: dict[int, Literal["no_answer", "refusal"]] | None = None,
 ) -> tuple[list[StitchedPhase], VerifierAudit]:
     """Apply verifier verdicts: repairs, re-stitch, flags, audit counts.
 
@@ -348,21 +351,20 @@ def _apply_verdicts(
     Args:
         digest_judgements: Phase judgements for digests; relabelled in place.
         phases: The pre-verification phases.
-        verdicts: phase index -> verdict entry.
-        reasons: phase index -> selection trigger, for every selected.
+        attempts: phase index -> review attempt, for every selected phase.
         audit: The audit to fill.
 
     Returns:
         ``(phases, audit)`` with flags attached.
     """
-    selected = sorted(reasons)
-    audit.n_no_verdict = len(selected) - len(verdicts)
+    audit.n_no_verdict = sum(attempt.status != "ok" for attempt in attempts.values())
     reviews: list[PhaseReview] = []
     applied_any = False
-    for k in selected:
-        verdict = verdicts.get(k)
+    for k in sorted(attempts):
+        attempt = attempts[k]
+        verdict = attempt.verdict
         p = phases[k]
-        trigger = reasons[k]
+        trigger = attempt.trigger
         if verdict is None:
             reviews.append(
                 PhaseReview(
@@ -376,7 +378,7 @@ def _apply_verdicts(
                         "original_explanation": p.explanation,
                         "verifier_model": verifier_model,
                         "overturned": False,
-                        "status": (no_verdict_status or {}).get(k, "no_answer"),
+                        "status": attempt.status,
                     },
                 )
             )

@@ -14,7 +14,12 @@ from transect.scanners.cohort import judge_setup
 from transect.scanners.phases import decision_phases
 from transect.scanners.phases_cohort import ConsensusJudgement
 from transect.scanners.phases_common import Digest, stitch_phases
-from transect.scanners.phases_verify import VerifierAudit, _apply_verdicts, _Verdict
+from transect.scanners.phases_verify import (
+    VerifierAudit,
+    _apply_verdicts,
+    _ReviewAttempt,
+    _Verdict,
+)
 from transect.spec import Spec
 
 
@@ -25,16 +30,22 @@ def reviewed_frame(*, reasons=None, missing=(), transcript_id="t1"):
         for i, label in enumerate(["A", "B", "A"])
     ]
     selected = reasons or {i: "random_sample" for i in range(3)}
-    verdicts = {
-        i: _Verdict(phase_index=i, phase="A", confidence=0.9, explanation="fixture")
-        for i in selected
-        if i not in missing
+    attempts = {
+        i: _ReviewAttempt(trigger=trigger)
+        if i in missing
+        else _ReviewAttempt(
+            trigger=trigger,
+            verdict=_Verdict(
+                phase_index=i, phase="A", confidence=0.9, explanation="fixture"
+            ),
+            status="ok",
+        )
+        for i, trigger in selected.items()
     }
     phases, audit = _apply_verdicts(
         rows,
         stitch_phases(rows),
-        verdicts,
-        selected,
+        attempts,
         VerifierAudit(n_random_sample=list(selected.values()).count("random_sample")),
         "m",
     )
@@ -207,8 +218,15 @@ def test_weak_differing_verdict_is_completed_without_applied_relabel():
     phases, audit = _apply_verdicts(
         rows,
         stitch_phases(rows),
-        {0: _Verdict(phase_index=0, phase="B", confidence=0.5, explanation="weak")},
-        {0: "low_confidence"},
+        {
+            0: _ReviewAttempt(
+                trigger="low_confidence",
+                verdict=_Verdict(
+                    phase_index=0, phase="B", confidence=0.5, explanation="weak"
+                ),
+                status="ok",
+            )
+        },
         VerifierAudit(n_low_confidence=1),
         "m",
     )
