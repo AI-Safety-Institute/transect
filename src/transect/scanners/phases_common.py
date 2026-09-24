@@ -84,15 +84,15 @@ class TurnGroup(BaseModel):
 class PhaseReview(BaseModel):
     """One selected original phase, preserved independently of display merging.
 
-    ``review`` carries VerifierReview fields for a completed verdict. Missing
-    verdicts retain original facts and status ``no_answer`` or ``refusal``.
-    This record is not judge-facing.
+    A missing verdict retains the original facts with status
+    ``no_answer`` or ``refusal`` and no verifier fields. This record
+    is not judge-facing.
     """
 
     original_phase_index: int
     turn_start: int
     turn_end: int
-    review: dict[str, JsonValue]
+    review: VerifierReview
 
 
 NarrationGroupStatus = Literal[

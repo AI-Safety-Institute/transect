@@ -209,7 +209,7 @@ def test_verifier_chunk_outcome_reaches_original_unit(outcome, monkeypatch):
     )
     assert audit.n_no_verdict == 1
     assert phases[0].verifier is None
-    assert phases[0].verifier_reviews[0].review["status"] == outcome
+    assert phases[0].verifier_reviews[0].review.status == outcome
 
 
 def test_weak_differing_verdict_is_completed_without_applied_relabel():
@@ -231,7 +231,7 @@ def test_weak_differing_verdict_is_completed_without_applied_relabel():
         "m",
     )
     record = phases[0].verifier_reviews[0].review
-    assert record["status"] == "ok" and record["overturned"] is False
+    assert record.status == "ok" and record.overturned is False
     assert audit.n_weak_relabel == 1 and audit.n_relabelled == 0
 
 

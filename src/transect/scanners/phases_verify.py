@@ -371,15 +371,14 @@ def _apply_verdicts(
                     original_phase_index=k,
                     turn_start=p.turn_start,
                     turn_end=p.turn_end,
-                    review={
-                        "trigger": trigger,
-                        "original_label": p.phase,
-                        "original_confidence": p.confidence,
-                        "original_explanation": p.explanation,
-                        "verifier_model": verifier_model,
-                        "overturned": False,
-                        "status": attempt.status,
-                    },
+                    review=VerifierReview(
+                        trigger=trigger,
+                        original_label=p.phase,
+                        original_confidence=p.confidence,
+                        original_explanation=p.explanation,
+                        verifier_model=verifier_model,
+                        status=attempt.status,
+                    ),
                 )
             )
             continue
@@ -419,7 +418,7 @@ def _apply_verdicts(
                     verifier_explanation=explanation,
                     verifier_model=verifier_model,
                     overturned=applied,
-                ).model_dump(),
+                ),
             )
         )
     result = stitch_phases(digest_judgements) if applied_any else phases
@@ -430,9 +429,9 @@ def _apply_verdicts(
             if review.turn_start <= p.turn_end and p.turn_start <= review.turn_end
         ]
         hits = [
-            VerifierReview.model_validate(review.review)
+            review.review
             for review in p.verifier_reviews
-            if review.review.get("status") == "ok"
+            if review.review.status == "ok"
         ]
         if not hits:
             continue
