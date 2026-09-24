@@ -42,9 +42,7 @@ recorded transcript location:
 - `results.scan_location` / `results.transcripts_location`: the
   exact scan and its transcripts (Scout viewer deep links).
 - `results.scan_status`: the run-wide execution record (completed vs total
-  transcripts, recorded errors). Keep its scope explicit when the UI
-  filters epochs or units; judgement quality is the reliability audit's
-  territory.
+  transcripts, recorded errors).
 
 Frames can carry task/setup text, intervention text, spawn instructions and
 custom metadata; they are not anonymized exports. Map source fields separately
