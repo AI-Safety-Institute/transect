@@ -50,13 +50,14 @@ class ScannerCoverage:
         return max(0, self.total_transcripts - self.scanned_transcripts)
 
     @property
+    def never_attempted(self) -> bool:
+        """Requested, but no scan ran and the store records no scope."""
+        return self.total_transcripts is None and self.scanned_transcripts == 0
+
+    @property
     def has_failures(self) -> bool:
         """Whether stored evidence identifies incomplete or errored execution."""
-        return bool(
-            self.missing_scans
-            or self.errors
-            or (self.total_transcripts is None and self.scanned_transcripts == 0)
-        )
+        return bool(self.missing_scans or self.errors or self.never_attempted)
 
 
 @dataclass
@@ -75,14 +76,6 @@ class ScanStatus:
             or bool(self.errors)
             or any(scanner.has_failures for scanner in self.scanners)
         )
-
-
-_STRUCTURAL = {
-    "transect/token_timeline",
-    "transect/context_flush",
-    "transect/human_intervention",
-    "transect/eval_setup",
-}
 
 
 def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanStatus:
@@ -119,14 +112,12 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
             scanned = min(scanned, total)
         coverage = ScannerCoverage(
             scanner=key,
-            mounted=key in mounted_scanners
-            or spec.name in _STRUCTURAL
-            or spec.name
-            in ("transect/decision_phases", "transect/subagent_classification"),
+            mounted=key in mounted_scanners or spec.name.startswith("transect/"),
             total_transcripts=total,
             scanned_transcripts=scanned,
         )
         table = raw.scanners.get(key)
+        table_missing = table is None and coverage.scanned_transcripts > 0
         if table is not None:
             for _, row in table.iterrows():
                 error_message = _text(row.get("scan_error"))
@@ -140,7 +131,7 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
                 )
                 if record not in status.errors:
                     status.errors.append(record)
-        elif coverage.scanned_transcripts:
+        elif table_missing:
             status.errors.append(
                 ScanError(
                     key,
@@ -159,13 +150,10 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
             for error in status.errors
             if error.scanner == key and error.transcript_id is not None
         }
-        coverage.completed_transcripts = max(
-            0, coverage.scanned_transcripts - len(errored)
+        # a missing results table leaves no usable output at all
+        coverage.completed_transcripts = (
+            0 if table_missing else max(0, coverage.scanned_transcripts - len(errored))
         )
-        if table is None and coverage.scanned_transcripts:
-            # a missing results table leaves no usable output at all,
-            # whichever transcripts the scan once completed
-            coverage.completed_transcripts = 0
         status.scanners.append(coverage)
     return status
 

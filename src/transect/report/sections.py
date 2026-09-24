@@ -1226,7 +1226,7 @@ def scan_status_view(status) -> dict:
         # scope falls back to the attempts actually made
         total = scanner.total_transcripts
         of = total if total is not None else scanner.scanned_transcripts
-        if total is None and scanner.scanned_transcripts == 0:
+        if scanner.never_attempted:
             unattempted.append(scanner.scanner)
         rows.append(
             {
