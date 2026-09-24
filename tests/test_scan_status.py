@@ -114,6 +114,7 @@ def test_missing_table_despite_recorded_scans_is_an_error():
     status = build_scan_status(raw, set())
     coverage = status.scanners[0]
     assert coverage.has_failures and coverage.errors == 1
+    assert coverage.completed_transcripts == 0
     assert any("table is missing" in error.message for error in status.errors)
 
 

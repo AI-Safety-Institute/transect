@@ -162,6 +162,10 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
         coverage.completed_transcripts = max(
             0, coverage.scanned_transcripts - len(errored)
         )
+        if table is None and coverage.scanned_transcripts:
+            # a missing results table leaves no usable output at all,
+            # whichever transcripts the scan once completed
+            coverage.completed_transcripts = 0
         status.scanners.append(coverage)
     return status
 
