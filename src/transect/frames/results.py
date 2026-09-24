@@ -60,11 +60,8 @@ class TransectResults:
     """Where the scan's transcripts live, the Scout viewer target."""
 
     scan_status: ScanStatus = field(default_factory=ScanStatus, kw_only=True)
-    """Stored execution state and recorded coverage for the whole scan.
-
-    This remains run-wide when rendering a selected epoch. Unknown custom
-    content contracts do not imply either complete or failed semantic coverage.
-    """
+    """The whole scan's execution record (completed vs total transcripts,
+    recorded errors); remains run-wide when rendering a selected epoch."""
 
     layer_frames: dict[str, pd.DataFrame] = field(default_factory=dict)
     """User layers' pandas frames, keyed by layer name."""
