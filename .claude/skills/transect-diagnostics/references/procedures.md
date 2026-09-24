@@ -85,7 +85,10 @@ reviews[["original_phase_index", "original_label", "verifier_label",
 ```
 
 These are original review units, which can outnumber the final merged phases.
-Inspect completion coverage separately from relabels among completed verdicts.
+`verifier_selected` means a review record exists (failed attempts included);
+`verifier_completed` requires a usable verdict - relabel rates condition on
+completed verdicts and are not accuracy estimates. The phase row's singular
+`verifier` is a representative projection for display, never the population.
 
 Small-N honesty: with a handful examined, the Wilson interval on the
 re-label rate spans most of [0, 1] - say "too few examined to

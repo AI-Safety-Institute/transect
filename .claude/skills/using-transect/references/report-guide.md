@@ -151,6 +151,13 @@ the flush list expandable gives each one's turn, type/source, and
 tokens before -> after. A context-window sawtooth drop at a flush is
 the compaction doing its job.
 
+The raw ModelUsage counters ride the frame beside the derived views,
+under Inspect's normalized contract (`input_tokens` excludes cache
+reads/writes; `output_tokens` includes reasoning) - custom importers
+must normalize to it before analysis. Missing optional breakdowns
+count as zero in derived views, and a differing raw `total_tokens`
+is retained rather than silently reconciled.
+
 Flushes are detected two ways, and the type/source cells say which -
 explain these when a user asks what they mean:
 

@@ -91,7 +91,7 @@ uv sync
 # or: pip install -e .
 ```
 
-If you work with Claude Code, the package ships four skills - a
+If you work with a coding agent like Claude Code, the package ships four skills - a
 guide to running the default pipeline and reading the report
 (`using-transect`), the reliability iteration loop (`transect-diagnostics`),
 the custom-layer authoring recipe (`add-a-layer`), and the
@@ -115,7 +115,7 @@ uv run python examples/transect_kroll.py --structural
 
 It renders `examples/scans/structural/report.html` and opens it with a
 Scout viewer wired in; structural data is populated and judged sections
-are empty. Charts require their CDN assets. The following judged
+are empty. The following judged
 examples require provider credentials and incur model charges:
 
 ```bash
@@ -219,10 +219,10 @@ to reload that exact scan rather than whichever scan is latest in its parent.
 
 ![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
 
-Top to bottom, everything on a shared turn axis (a red flag at the very
-top marks scan execution failures; the run-wide "Scan execution &
-coverage" section it links to sits at the bottom):
+Top to bottom, everything on a shared turn axis:
 
+- **Flags**: a red flag at the very top marks scan execution failures; it
+  links to the run-wide "Scan execution & coverage" section at the bottom.
 - **Eval setup**: model, scaffold, verbatim prompts, limits, run summary.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
@@ -231,24 +231,8 @@ coverage" section it links to sits at the bottom):
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
-  New scans preserve complete narration headlines and summaries; blank headlines
-  use a neutral template. Neutral grouping carries a visible reason
-  when ranges are invalid, groups are empty, or no usable narrative was returned.
-  Invalid narrative group partitions use a neutral whole-phase group; descriptions
-  are never stretched to different turn ranges. Older stored groups remain unchanged.
-
 - **Custom layers**: user layers' own sections; `section_order` rearranges the report.
 - **Reliability & provenance audit**: per judged surface, how every label was produced.
-
-Token views use Inspect's normalized usage: `input_tokens` excludes cache reads
-and writes; `output_tokens` includes reasoning. The raw counters are preserved.
-`turn_total` sums input, cache reads/writes and output once. `new_work` estimates
-new content using per-lane context growth; it is not a measure of effort. The
-`billable` column sums uncached input, output and cache writes, excluding cache
-reads; its chart is labelled accordingly. No token view applies monetary prices.
-Missing optional breakdowns count as zero in derived views, and differing raw
-`total_tokens` are retained rather than silently reconciled. Custom importers must
-normalize usage to the supported Inspect contract before analysis.
 
 ### Building your own UI
 
@@ -288,13 +272,6 @@ They are plain pandas: filter, join, and plot as usual. Frames can contain task
 prompts, system/scaffold instructions, human interventions, delegation text and
 model-generated explanations. Review dataframes and reports before sharing;
 exporting frames is not text removal or anonymization.
-
-Phase rows retain a representative `verifier` projection for display and a
-`verifier_reviews` collection of all original selected review units;
-`reliability.review_units(frames["phases"])` returns those units.
-`verifier_selected` means a review record exists (failed attempts included);
-`verifier_completed` requires a usable verdict. Relabel rates condition on
-completed verdicts and are not accuracy estimates.
 
 ### How the frames relate
 
@@ -609,7 +586,7 @@ uv run --group ui-test playwright install chromium  # one-time
 uv run --group ui-test pytest
 ```
 
-If you work on this repo with Claude Code (or another coding agent),
+If you work on this repo with a coding agent like Claude Code,
 see [AGENTS.md](AGENTS.md). For work against the wider Inspect
 ecosystem's APIs, the
 [Meridian inspect-skills plugin](https://github.com/meridianlabs-ai/inspect-skills)
