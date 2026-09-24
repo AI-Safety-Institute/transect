@@ -543,6 +543,10 @@ keeps a coding agent on current API docs. Install it once with
 
 ## Acknowledgements
 
+Transect is developed in collaboration by the
+[UK AI Security Institute](https://www.aisi.gov.uk/) and
+[Meridian Labs](https://meridianlabs.ai/).
+
 Built on the Inspect ecosystem: [Inspect
 AI](https://inspect.aisi.org.uk/) (eval framework and logs),
 [Inspect Scout](https://meridianlabs-ai.github.io/inspect_scout/)
