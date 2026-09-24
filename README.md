@@ -327,7 +327,9 @@ completed verdicts and are not accuracy estimates.
 ### How the frames relate
 
 Each box below is one frame, with its granularity in the header;
-the edges are the within-transcript join keys.
+the edges are the within-transcript join keys. Boxes list
+representative columns; each frame module's docstring is the
+complete column contract.
 
 ```mermaid
 erDiagram

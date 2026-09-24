@@ -210,10 +210,12 @@ A change to any user-facing contract - frame columns, the `transect()` /
 `load()` / `render()` signatures, report sections, spec fields -
 is not done until the docs that state that contract are re-checked:
 this file, README.md, and the skills under `.claude/skills/`. In
-particular, README.md's mermaid diagram of the frames (columns +
-how frames join) must be updated when a frame or column changes -
-it is also a good first map of how the frames connect when you are
-orienting.
+particular, README.md's mermaid diagram of the frames shows the
+joins plus a representative subset of each frame's columns (the
+full column contract is each frame module's docstring): update it
+when a join or a charted column changes, and chart a new column
+when it is load-bearing for reading the report. It is also a good
+first map of how the frames connect when you are orienting.
 
 
 Review units: phase `verifier_reviews` retains original selected units before
