@@ -49,6 +49,8 @@ UI over the frames.
 - [Custom layers](#custom-layers)
 - [Cost](#cost)
 - [Development](#development)
+- [Acknowledgements](#acknowledgements)
+- [Citation](#citation)
 
 ## Prerequisites
 
