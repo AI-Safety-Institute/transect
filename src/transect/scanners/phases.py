@@ -194,8 +194,8 @@ def decision_phases(
           - ``headline`` / ``summary``: complete narrator text, without
             character clipping; blank headlines use a template, missing
             narratives use a template headline and empty summary.
-          - ``narration_group_status``: accepted, invalid_partition,
-            empty_groups, no_narrative, or not_run. Accepted describes
+          - ``narration_group_status``: complete, invalid_partition,
+            empty_groups, no_narrative, or not_run. Complete describes
             partition coordinates, not factual correctness.
           - ``turn_groups``: gapless partition of the phase's turn
             range - ``{turn_start, turn_end, title, gist}``.

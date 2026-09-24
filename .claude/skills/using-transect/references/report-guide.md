@@ -344,6 +344,6 @@ partition. New scans replace invalid partitions with a neutral phase group rathe
 than stretching model-written descriptions to other turns. Reloading a scan
 preserves its stored groups; this check does not establish narrative correctness.
 
-`phases.narration_group_status` records `accepted`, `invalid_partition`,
-`empty_groups`, `no_narrative`, or `not_run`. Acceptance checks partition
+`phases.narration_group_status` records `complete`, `invalid_partition`,
+`empty_groups`, `no_narrative`, or `not_run`. Complete checks partition
 coordinates, not factual accuracy.

@@ -229,5 +229,5 @@ Narration groups: preserve each supplied title/gist only on its exact inclusive
 range when the groups form a complete, non-overlapping phase partition. Invalid
 partitions use a neutral whole-phase group; never clamp or extend factual prose
 to repair coordinates. Preserve complete nonblank headlines and summaries
-without character clipping, and stamp `narration_group_status`; `accepted`
+without character clipping, and stamp `narration_group_status`; `complete`
 checks a partition, not factual correctness.

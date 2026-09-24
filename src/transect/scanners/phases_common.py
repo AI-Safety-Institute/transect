@@ -96,7 +96,7 @@ class PhaseReview(BaseModel):
 
 
 NarrationGroupStatus = Literal[
-    "accepted", "invalid_partition", "empty_groups", "no_narrative", "not_run"
+    "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
 ]
 
 
@@ -174,7 +174,7 @@ class StitchedPhase(BaseModel):
     narration_group_status: NarrationGroupStatus = Field(
         default="not_run",
         description=(
-            "Group partition outcome; accepted describes partition "
+            "Group partition outcome; complete describes partition "
             "coordinates, not factual correctness."
         ),
     )

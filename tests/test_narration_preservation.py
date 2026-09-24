@@ -66,7 +66,7 @@ def cards(raw):
         (
             [narrative(0, groups=[group(0, 3, title="Setup", gist="")])],
             True,
-            "accepted",
+            "complete",
             None,
             0,
         ),
@@ -85,7 +85,7 @@ def cards(raw):
 def test_group_status_is_stamped_and_fallback_visible(
     items, narrate, status, note, fallback_count
 ):
-    """Neutral-looking accepted prose is not mistaken for missing or invalid groups."""
+    """Neutral-looking complete-group prose is not mistaken for missing groups."""
     value = scan_narrative(items, narrate=narrate)
     assert value["phases"][0]["narration_group_status"] == status
     assert value["narrator"]["n_fallback"] == fallback_count
@@ -102,7 +102,7 @@ def test_blank_headline_keeps_template_without_changing_group_status():
     """A blank headline uses its template independently of group validation."""
     value = scan_narrative([narrative(0, " \n ", SUMMARY, [group(0, 3)])])
     assert value["phases"][0]["headline"] == "Setup (4 turns)"
-    assert value["phases"][0]["narration_group_status"] == "accepted"
+    assert value["phases"][0]["narration_group_status"] == "complete"
     assert value["phases"][0]["summary"] == SUMMARY.strip()
 
 

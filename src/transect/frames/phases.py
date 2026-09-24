@@ -29,8 +29,14 @@ Columns (identity prefix explained in common.py):
   VerifierReview record (common.VERIFIER_COLS; NaN when never
   reviewed).
 - headline / summary: complete narrator output (blank headline uses a template).
-- narration_group_status: accepted (complete partition, not factual validation),
-  invalid_partition / empty_groups / no_narrative (neutral grouping), or not_run.
+- narration_group_status: the narrator groups' validation outcome:
+  - complete: the groups exactly partition the phase's turn range (checks
+    coordinates, not factual correctness); rendered with their prose.
+  - invalid_partition: groups supplied but gap/overlap/out-of-range; dropped.
+  - empty_groups: the narrator answered but proposed no groups.
+  - no_narrative: the narrator returned nothing usable for this phase.
+  - not_run: narration never ran.
+  The middle three render one neutral whole-phase group plus a card note.
 - anchor_event_id: Scout-viewer deep-link anchor.
 - judge_models: the judge model(s) that segmented the run, as one
   "+"-joined string (one name solo; the cohort's distinct models

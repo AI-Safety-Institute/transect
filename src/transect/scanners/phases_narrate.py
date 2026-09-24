@@ -204,7 +204,7 @@ def _validated_groups(
             gist=group.gist.strip(),
         )
         for group in ordered
-    ], "accepted"
+    ], "complete"
 
 
 def _narrate_answer_spec() -> AnswerStructured:
