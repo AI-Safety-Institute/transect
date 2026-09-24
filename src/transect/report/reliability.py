@@ -274,8 +274,9 @@ def build_flags(
                 "red" if serious else "amber",
                 "Flagged whenever this count is above zero: these units carry "
                 "no judgement at all (refusal, empty answer, or never reached), "
-                "so the report's greyed surfaces are unmeasured, not evidence "
-                "of absent activity."
+                "so their grey rendering means unmeasured, not absent "
+                "activity. Units unjudged by design (tool-only turns, "
+                "unrequested classifications) are not counted here."
                 + (
                     f" Red at or above {UNJUDGED_SHARE_SERIOUS:.0%}: a large "
                     "share of this surface is unmeasured."
