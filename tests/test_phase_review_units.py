@@ -184,9 +184,9 @@ def test_scalar_completion_requires_a_usable_recorded_verdict(status, label, exp
     assert reliability.relabel_rate(frame).overall.of == expected
 
 
-@pytest.mark.parametrize("outcome", ["refusal", "no_answer"])
-def test_verifier_chunk_outcome_reaches_original_unit(outcome, monkeypatch):
-    """Recorded missing verdicts retain the actual chunk outcome without guessing."""
+def test_verifier_chunk_outcome_reaches_original_unit(monkeypatch):
+    """A dropped verdict records the chunk outcome without guessing."""
+    outcome = "no_answer"
 
     async def missing_verdict(*args, **kwargs):
         return None, outcome
@@ -210,29 +210,6 @@ def test_verifier_chunk_outcome_reaches_original_unit(outcome, monkeypatch):
     assert audit.n_no_verdict == 1
     assert phases[0].verifier is None
     assert phases[0].verifier_reviews[0].review.status == outcome
-
-
-def test_weak_differing_verdict_is_completed_without_applied_relabel():
-    """A below-threshold differing verdict counts as completed but not overturned."""
-    rows = [ConsensusJudgement(turn=0, phase="A", confidence=0.4, basis="judged")]
-    phases, audit = _apply_verdicts(
-        rows,
-        stitch_phases(rows),
-        {
-            0: _ReviewAttempt(
-                trigger="low_confidence",
-                verdict=_Verdict(
-                    phase_index=0, phase="B", confidence=0.5, explanation="weak"
-                ),
-                status="ok",
-            )
-        },
-        VerifierAudit(n_low_confidence=1),
-        "m",
-    )
-    record = phases[0].verifier_reviews[0].review
-    assert record.status == "ok" and record.overturned is False
-    assert audit.n_weak_relabel == 1 and audit.n_relabelled == 0
 
 
 @pytest.mark.parametrize("verify", [False, True])

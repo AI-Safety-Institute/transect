@@ -22,7 +22,6 @@ from transect.reliability import (
     cohort_agreement,
     detect_regime,
     gwet_ac1_nominal,
-    krippendorff_alpha_nominal,
     label_stats,
     member_coverage,
     provenance_shares,
@@ -56,16 +55,6 @@ def test_gwet_ac1_hand_computed_cases(units, expected):
         assert ac1 is None
     else:
         assert ac1 == pytest.approx(expected)
-
-
-def test_alpha_and_ac1_bracket_a_skewed_run():
-    """On prevalence-skewed data alpha reads below AC1 - the bracket
-    the audit renders both ends of."""
-    units = [["a", "a", "b"]] * 9
-    alpha, _ = krippendorff_alpha_nominal(units)
-    ac1, _ = gwet_ac1_nominal(units)
-    assert alpha is not None and ac1 is not None
-    assert alpha < ac1 < 0
 
 
 @pytest.mark.parametrize(

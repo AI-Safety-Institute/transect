@@ -72,3 +72,32 @@ def test_later_cache_usage_cannot_change_earlier_derived_values():
         timeline([first]).iloc[0][columns],
         timeline([first, later]).iloc[0][columns],
     )
+
+
+def test_cache_writes_count_fully_when_context_grows():
+    """A growing context includes its full cache write in new_work."""
+    rows = timeline(
+        [
+            ModelUsage(
+                input_tokens=1000,
+                output_tokens=50,
+                total_tokens=1950,
+                input_tokens_cache_read=800,
+                input_tokens_cache_write=100,
+            ),
+            ModelUsage(
+                input_tokens=1200,
+                output_tokens=30,
+                total_tokens=2280,
+                input_tokens_cache_read=1000,
+                input_tokens_cache_write=50,
+            ),
+        ]
+    ).sort_values("turn")
+    second = rows.iloc[1]
+    assert (second.context, second.new_work, second.billable, second.turn_total) == (
+        2250,
+        1280,
+        1280,
+        2280,
+    )
