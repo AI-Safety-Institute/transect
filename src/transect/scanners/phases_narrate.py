@@ -171,9 +171,13 @@ def validate_turn_groups(
 ) -> list[TurnGroup]:
     """Preserve an exact partition, or use a neutral whole-phase fallback.
 
-    A title and gist describe the supplied inclusive range. Extending,
-    clamping or guessing that range can attach a claim to different evidence.
-    Sorting complete groups is safe; repairing their boundaries is not.
+    Args:
+        groups: The judge's proposed groups.
+        phase: The phase being partitioned.
+        default_title: Title for the whole-phase fallback group.
+
+    Returns:
+        The validated groups, in turn order.
     """
     return _validated_groups(groups, phase, default_title)[0]
 
