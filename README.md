@@ -519,10 +519,7 @@ Structural extraction is free (no LLM calls): without
 structural scanners run and the whole scan costs nothing. Custom
 scanners can make their own provider calls regardless of those
 switches. Judged surfaces cost roughly (turns + sub-agents) x judges
-x rolls calls per transcript - the demo example costs cents - but
-calls are larger than the turns they cover: phase prompts carry the
-running consensus history, and a custom layer's evidence can repeat
-large source blocks.
+x rolls calls per transcript; the demo example costs cents.
 
 Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
 with `cohort_llm_scanner(batch=True)` judges N units per call,
