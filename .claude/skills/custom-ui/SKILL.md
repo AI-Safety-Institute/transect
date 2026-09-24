@@ -177,10 +177,6 @@ Before delivering a custom artifact:
 - rendered values and source links have been checked at their actual
   destinations, including Boolean/status cells and events with similar text.
 
-A working file link, populated chart or installed skill directory does not
-establish native agent discovery, source alignment or label correctness.
-Verify those properties separately; preserve any workaround and its provenance.
-
 Anti-patterns, each a misrepresentation: a label bar chart with no
 coverage statement; confidence averaged across pooled transcripts;
 `none_of_the_above` dropped "for clarity"; unjudged turns recolored
