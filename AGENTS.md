@@ -91,6 +91,19 @@ scanner change take effect; run a new scan and retain both results for compariso
   data" / an explicit note - never a fabricated zero, never a silently
   missing section. Unclassified spans are listed as unclassified;
   a classifier that joined zero spans warns loudly.
+- **Review units.** Phase `verifier_reviews` retains the original
+  selected review units through display merging;
+  `transect.reliability.review_units` is the review-population read.
+  `verifier_selected` means a record exists (failed attempts
+  included); `verifier_completed` is the usable-verdict flag every
+  rate conditions on.
+- **Narration groups.** A narrator title/gist attaches only to its
+  exact inclusive range: groups render only as a complete,
+  non-overlapping partition of the phase, otherwise one neutral
+  whole-phase group - never clamp or extend factual prose to repair
+  coordinates. Headlines and summaries store unclipped, and
+  `narration_group_status` stamps the outcome (`complete` checks
+  partition coordinates, not factual correctness).
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
   stored scan on every load. It records execution only: completed vs total
   transcripts and recorded errors per requested scanner;
@@ -147,7 +160,8 @@ scanner change take effect; run a new scan and retain both results for compariso
   `tests/fixtures/demo_scan_cohort/` dissenting cohort - both made by
   `tests/fixtures/generate_demo_scan.py`) must be regenerated after
   any scanner value-schema change or an inspect-scout store-format
-  change - the stored-scan report test reads them as-is.
+  change - the stored-scan report test reads them as-is. Committed
+  fixtures and public docs must not embed local private paths.
 - **Costs.** The test suite and the demo-log path are $0 (mockllm / no
   judges). `examples/transect_*.py` call real provider models - keys and
   spend. Don't "verify" a change by burning judge calls when the
@@ -216,18 +230,3 @@ full column contract is each frame module's docstring): update it
 when a join or a charted column changes, and chart a new column
 when it is load-bearing for reading the report. It is also a good
 first map of how the frames connect when you are orienting.
-
-
-Review units: phase `verifier_reviews` retains original selected units before
-display merging; `transect.reliability.review_units` is the review-population
-read. `verifier_selected` is record presence, `verifier_completed` the
-usable-verdict flag rates condition on. Mock stores must be regenerated after
-scanner value-schema changes (no real provider calls needed). Public docs and
-fixtures must not embed local private paths.
-
-Narration groups: preserve each supplied title/gist only on its exact inclusive
-range when the groups form a complete, non-overlapping phase partition. Invalid
-partitions use a neutral whole-phase group; never clamp or extend factual prose
-to repair coordinates. Preserve complete nonblank headlines and summaries
-without character clipping, and stamp `narration_group_status`; `complete`
-checks a partition, not factual correctness.
