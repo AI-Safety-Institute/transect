@@ -38,7 +38,7 @@ Trigger = Literal["low_confidence", "low_agreement", "wedge", "random_sample"]
 LabelSource = Literal["single_judge", "majority_vote", "verifier"]
 
 # outcome of one judge call / review
-CallStatus = Literal["ok", "refusal", "error"]
+CallStatus = Literal["ok", "no_answer", "refusal", "error"]
 
 # verifier threshold: the selection trigger (a stated
 # confidence or vote agreement below it sends the unit to the
@@ -181,7 +181,7 @@ class VerifierReview(BaseModel):
     confidence >= 0.6 (a weak verdict is recorded, never applied)."""
 
     status: CallStatus = "ok"
-    """The review call's outcome: ok / refusal / error."""
+    """The review call's outcome: ok / no_answer / refusal / error."""
 
 
 def cohort_llm_scanner(
