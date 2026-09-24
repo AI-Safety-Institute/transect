@@ -106,29 +106,17 @@ python -m transect.skills install
 
 The repository ships a runnable worked example in `examples/`:
 
-Start with a built-in structural run that makes no model calls:
+Start with a built-in structural run - no judge, no API key, no
+model calls:
 
 ```bash
-uv run python - <<'PY'
-from transect import transect
-
-results = transect(
-    logs="examples/logs",
-    spec="examples/spec.yaml",
-    judge_models=None,
-    scans_dir="scans/demo-structural",
-    report_path="scans/demo-structural/report.html",
-    viewer=False,
-    open_report=False,
-)
-print(results.scan_location)  # save this for exact reload
-print(results.frames()["token_timeline"].head())
-PY
+uv run python examples/transect_kroll.py --structural
 ```
 
-Open `scans/demo-structural/report.html`; structural data is populated
-and judged sections are empty. Charts require their CDN assets. The following
-judged examples require provider credentials and incur model charges:
+It renders `examples/scans/structural/report.html` and opens it with a
+Scout viewer wired in; structural data is populated and judged sections
+are empty. Charts require their CDN assets. The following judged
+examples require provider credentials and incur model charges:
 
 ```bash
 uv run python examples/transect_kroll.py    # one judge, 3 rolls + verifier
@@ -151,8 +139,7 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
 - **Frames**: the results as pandas dataframes.
 - **Report + viewer**: an HTML report with embedded report data; interactive
   charts load JavaScript assets from a CDN. Full-source links require a running
-  local Scout viewer and accessible source transcripts. `viewer=False` disables
-  that viewer; it does not make the report's charts fully offline.
+  local Scout viewer and accessible source transcripts.
 
 ### Triaging your own transcripts
 

@@ -10,8 +10,9 @@ explores the data, hands off three subtasks to sub-agents (EDA, an
 alternative model family, a final review), blends the models, and
 submits.
 
-Every example needs `ANTHROPIC_API_KEY`; the cohort example also
-needs `OPENAI_API_KEY` (with each provider's SDK installed).
+Every example needs `ANTHROPIC_API_KEY` (the cohort example also
+`OPENAI_API_KEY`, with each provider's SDK installed); the $0 dry
+run below needs no key at all.
 
 ## 1. Solo k-roll judge with a verifier
 
@@ -57,6 +58,8 @@ rubric.
 
 ## $0 dry run
 
-Example 1 or 2 with `judge_models=None` (edit the script) runs the
-structural scanners only: no API key, no LLM calls. The
-custom-layer example has no $0 shape.
+    uv run python examples/transect_kroll.py --structural
+
+runs the built-in structural scanners only: no API key, no LLM
+calls, judged sections empty. The custom-layer example has no $0
+shape.
