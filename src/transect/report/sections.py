@@ -9,7 +9,9 @@ pre-escape a value here (it would double-escape).
 """
 
 import json
+import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
@@ -56,6 +58,49 @@ def section(title: str, blocks: Sequence[Markup | None]) -> Markup:
 
 
 _NOT_FOUND = "data not found"
+
+
+@dataclass(frozen=True)
+class CompactionThreshold:
+    """A recorded setting and its token count, when the unit is absolute."""
+
+    label: str
+    tokens: int | None
+
+
+def compaction_threshold(info: pd.DataFrame) -> CompactionThreshold | None:
+    """Read the saved Inspect configuration without resolving runtime defaults.
+
+    Inspect distinguishes integer token counts from fractional floats.
+    A recorded fraction alone cannot locate a line on a token axis: the
+    runtime model capacity is not recorded alongside this setting.
+    """
+    if not len(info) or info.iloc[0]["source_type"] != "eval_log":
+        return None
+    raw = info.iloc[0]["compaction"]
+    if not isinstance(raw, str):
+        return None
+    try:
+        config = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(config, dict):
+        return None
+    threshold = config.get("threshold")
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(threshold)
+        or threshold <= 0
+    ):
+        return None
+    if isinstance(threshold, int) or threshold > 1:
+        tokens = int(threshold)
+        unit = "token" if tokens == 1 else "tokens"
+        return CompactionThreshold(f"{tokens:,} {unit}", tokens)
+    return CompactionThreshold(
+        f"{threshold * 100:g}% of context window (token count not recorded)", None
+    )
 
 
 def run_intro_line(info: pd.DataFrame) -> Markup | None:
@@ -174,6 +219,7 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
             f"{_NOT_FOUND} - this report's flushes are detected from the "
             "transcript (recorded compaction events, or context-size drops)"
         )
+    threshold = compaction_threshold(info)
     core_rows = [
         ("model", found(irow, "model"), None),
         (
@@ -215,6 +261,17 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
             compaction_text,
             "The scaffold's context-compaction setting as configured; "
             "the log does not record the resolved scaffold default.",
+        ),
+        *(
+            [
+                (
+                    "compaction threshold",
+                    threshold.label,
+                    "The configured trigger for compacting input context.",
+                )
+            ]
+            if threshold is not None
+            else []
         ),
         (
             "truncation",

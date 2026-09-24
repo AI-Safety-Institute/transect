@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from inspect_ai.log import read_eval_log, write_eval_log
 
 import transect
 from transect import load, render
@@ -68,6 +69,8 @@ def test_mechanical_report_renders_whole(name, tmp_path):
         assert "Compaction nudge (after compaction)" in html
         assert "no identifiable text recorded in this log" in html
     assert "Traceback" not in html
+    assert "Compaction threshold:" not in html
+    assert "compaction threshold</span>" not in html
     assert len(html) > 20_000
 
 
@@ -160,6 +163,7 @@ def _assert_no_page_errors(
     report_path: str,
     min_frames: int = 6,
     setup_prompts: dict[str, str] | None = None,
+    compaction_threshold: int | None = None,
 ) -> None:
     """Load the report in a real browser and require zero page errors
     (inspect-viz widget failures are console-only and blank charts
@@ -192,12 +196,48 @@ def _assert_no_page_errors(
                 content = summary.locator("..").locator(".prompt-verbatim")
                 assert content.is_visible()
                 assert content.inner_text() == text
+        if compaction_threshold is not None:
+            label = f"Compaction threshold: {compaction_threshold:,} tokens (dotted)"
+            frame = next(f for f in page.frames if f.get_by_label(label).count())
+            control = frame.get_by_label(label)
+            rule = frame.locator('[stroke="#9467bd"][stroke-dasharray="2,3"] line')
+            curve = frame.locator('[aria-label="line"][stroke="#4c78a8"]')
+            playwright.expect(control).to_be_checked()
+            playwright.expect(rule).to_have_count(1)
+            playwright.expect(curve).to_have_count(1)
+            curve_path = curve.locator("path")
+            geometry = curve_path.get_attribute("d")
+            assert geometry
+            control.uncheck()
+            playwright.expect(rule).to_have_count(0)
+            assert curve_path.get_attribute("d") == geometry
+            control.check()
+            playwright.expect(rule).to_have_count(1)
         n_frames = len(page.frames)
         browser.close()
     if cdn_failures:
         pytest.skip(f"inspect-viz CDN unreachable: {cdn_failures[0]}")
     assert errors == []
     assert n_frames >= min_frames
+
+
+def test_recorded_compaction_threshold_survives_replay_and_toggles(demo_log, tmp_path):
+    """A saved absolute threshold renders in Core setup and toggles a dotted rule."""
+    log = read_eval_log(str(demo_log))
+    log.plan.steps[-1].params["compaction"] = {"type": "summary", "threshold": 4000}
+    path = tmp_path / "threshold.eval"
+    write_eval_log(log, str(path))
+    scans = tmp_path / "scan"
+    _run(logs=str(path), spec=Spec(), scans_dir=str(scans))
+    path.unlink()
+    results = load(str(scans))
+    results.transcripts_location = None
+    report = tmp_path / "report.html"
+    render(results, report_path=str(report), viewer=False, open_report=False)
+    html = report.read_text()
+    assert "compaction threshold</span>" in html
+    assert "4,000 tokens" in html
+    _assert_no_page_errors(str(report), min_frames=2, compaction_threshold=4000)
 
 
 def test_tip_floor_budgets_one_or_two_wrapping_rows():

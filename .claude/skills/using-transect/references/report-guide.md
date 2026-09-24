@@ -39,6 +39,9 @@ LLM prose), then three default-collapsed expandables:
   these cards yet.
   Native Anthropic compaction can record a resume nudge without exposing
   the summarization prompt. Its generated summary is not a prompt.
+  A recorded compaction threshold also appears here, as a token count or
+  a percentage of the context window. The threshold row is absent when
+  unrecorded.
 - **Additional config details**: task args/file/version, the
   eval-level limits as configured, epochs + reducer, fail_on_error,
   sandbox, generation config, model roles, dataset shape, scorers.
@@ -146,6 +149,14 @@ The measure radio picks what the bars show - in the simplest terms:
 the flush list expandable gives each one's turn, type/source, and
 tokens before -> after. A context-window sawtooth drop at a flush is
 the compaction doing its job.
+
+A recorded absolute compaction threshold appears as a dotted purple
+horizontal line on the context-window chart, initially visible. The
+checkbox above that chart toggles it without changing the vertical scale.
+The line and checkbox are absent when no token threshold is recorded.
+A percentage alone stays in Core setup: the report does not look up a
+model capacity to convert it. The run's total token limit and the size
+observed before a flush are not substitutes for a configured threshold.
 
 Flushes are detected two ways, and the type/source cells say which -
 explain these when a user asks what they mean:

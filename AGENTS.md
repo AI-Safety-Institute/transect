@@ -95,6 +95,12 @@ scan into a fresh directory (or delete the existing store) to see it.
   model input; native summary output is never treated as a prompt.
   Never substitute the installed Inspect version's default prompt for
   unrecorded text. The report places these below the system/task prompts.
+- **Compaction thresholds come from recorded configuration.** The report
+  reads `transcript_info.compaction` and shows absolute thresholds as an
+  optional dotted line on the context chart. Fractions appear in Core
+  setup only; never resolve them using the installed model database or
+  infer a threshold from `tokens_before`. Unrecorded thresholds render
+  no row, line, or toggle.
 
 ## Report code: read before touching
 

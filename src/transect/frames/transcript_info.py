@@ -31,6 +31,8 @@ Columns (identity prefix explained in common.py):
   scaffold's arguments as run, compact display strings; None means
   the scaffold's own default applied (when the args were recorded at
   all - see header_available for the OpenClaw case).
+  The compaction JSON retains the recorded threshold, including whether
+  it is an integer token count or a fractional context-window setting.
 - task_args / generate_config / model_roles: the importer's
   per-sample metadata, compact JSON strings (display cells for the
   intro, not analysis columns - parse the source log for analysis).

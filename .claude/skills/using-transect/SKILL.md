@@ -206,6 +206,12 @@ too, but nothing here requires it.)
   recorded template is `transcript_info.compaction_prompt`; the report
   uses it only when no observed prompt is available. These fields
   require a fresh scan; old stores cannot recover them by re-rendering.
+- `transcript_info.compaction` retains the recorded strategy configuration,
+  including its threshold when available. Re-rendering shows absolute
+  thresholds as a toggleable dotted line on the context-window chart.
+  A percentage without a recorded token count appears only in Core setup;
+  missing thresholds add no row, line, or toggle. The eval's total token
+  limit and the observed size before a flush are not compaction thresholds.
 
 Starter recipes:
 

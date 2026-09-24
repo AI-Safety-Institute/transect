@@ -20,7 +20,7 @@ from transect import load, render
 from transect.api import _run
 from transect.frames.flushes import flushes_df
 from transect.frames.transcript_info import transcript_info_df
-from transect.report.sections import eval_setup_blocks
+from transect.report.sections import compaction_threshold, eval_setup_blocks
 from transect.scanners.base import context_flush, eval_setup
 from transect.spec import Spec
 
@@ -269,3 +269,57 @@ def test_empty_flushes_keep_the_new_columns():
         "metadata",
     } <= set(frame)
     assert str(frame.messages_before.dtype) == "Int64"
+
+
+@pytest.mark.parametrize(
+    "setting, source_type, label, tokens",
+    [
+        ({"threshold": 120000}, "eval_log", "120,000 tokens", 120000),
+        ({"threshold": 120000.9}, "eval_log", "120,000 tokens", 120000),
+        (
+            {"threshold": 0.9},
+            "eval_log",
+            "90% of context window (token count not recorded)",
+            None,
+        ),
+        ({"threshold": 1}, "eval_log", "1 token", 1),
+        (
+            {"threshold": 1.0},
+            "eval_log",
+            "100% of context window (token count not recorded)",
+            None,
+        ),
+        (None, "eval_log", None, None),
+        ({}, "eval_log", None, None),
+        ({"threshold": True}, "eval_log", None, None),
+        ({"threshold": "120000"}, "eval_log", None, None),
+        ({"threshold": -1}, "eval_log", None, None),
+        ({"threshold": 120000}, "openclaw", None, None),
+    ],
+)
+def test_compaction_threshold_uses_only_the_recorded_setting(
+    setting, source_type, label, tokens
+):
+    """Stored settings retain their units; missing facts never become defaults."""
+    result = run_item(
+        eval_setup(),
+        Transcript(
+            transcript_id="t",
+            source_type=source_type,
+            agent_args={"compaction": setting},
+        ),
+    )
+    info = transcript_info_df(
+        pd.DataFrame([{**raw_row(result), "transcript_source_type": source_type}])
+    )
+    found = compaction_threshold(info)
+    if label is None:
+        assert found is None
+    else:
+        assert found is not None
+        assert (found.label, found.tokens) == (label, tokens)
+    flushes = flushes_df(pd.DataFrame(), pd.DataFrame(columns=["transcript_id"]))
+    html = str(eval_setup_blocks(info, flushes))
+    assert ("compaction threshold</span>" in html) == (label is not None)
+    if label is not None:
+        assert label in html

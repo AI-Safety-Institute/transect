@@ -210,7 +210,10 @@ def render_report(
         # 3. token telemetry
         derived = charts.has_derived_token_views(one)
         token_blocks = [sections.token_intro(derived)]
-        components, stack_height = charts.token_stack(one, my_flushes)
+        threshold = sections.compaction_threshold(my_info)
+        components, stack_height = charts.token_stack(
+            one, my_flushes, threshold.tokens if threshold is not None else None
+        )
         token_blocks.append(
             _chart(components, stack_height)
             if components

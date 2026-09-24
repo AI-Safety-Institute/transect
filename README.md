@@ -210,10 +210,14 @@ Top to bottom, everything on a shared turn axis:
   before and after compaction below the system/task prompts in Core setup.
   Each distinct recorded text appears once. A configured prompt
   template is shown only when no recorded prompt is available.
-  Missing text reads "data not found".
+  Missing text reads "data not found". Recorded compaction thresholds
+  also appear in Core setup, as token counts or context-window percentages.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions marked.
+  A recorded absolute compaction threshold adds a dotted line on the
+  context-window chart, with an on/off checkbox. Missing or percentage-only
+  thresholds do not produce a line or checkbox.
 - **Sub-agent activity**: one swimlane per spawned sub-agent, with its classified role.
 - **Token spend**: tokens by phase, by sub-agent, or by custom tag family.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
@@ -290,6 +294,7 @@ erDiagram
         string error "None unless the run errored"
         string limit "the terminating limit, if one"
         string scaffold_prompt
+        string compaction "recorded strategy config, including threshold"
         string source_type "eval_log for Inspect"
         bool header_available "False on OpenClaw imports"
         int message_limit "None = not set / not found"
