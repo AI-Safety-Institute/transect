@@ -514,57 +514,40 @@ Each `Layer` field is one surface, all optional:
 
 ## Cost
 
-Built-in structural extraction makes no LLM calls. Built-in judged scanners
-require `judge_models` and their matching Spec vocabulary; custom scanners can
-make their own provider calls regardless of those built-in switches.
+Structural extraction is free (no LLM calls): without
+`judge_models`, or without the matching Spec vocabulary, only the
+structural scanners run and the whole scan costs nothing. Custom
+scanners can make their own provider calls regardless of those
+switches. Judged surfaces cost roughly (turns + sub-agents) x judges
+x rolls calls per transcript - the demo example costs cents - but
+calls are larger than the turns they cover: phase prompts carry the
+running consensus history, and a custom layer's evidence can repeat
+large source blocks.
 
-Before spending, enumerate the actual planned calls: phase segmentation chunks,
-rolls/models, narration batches, subagent items, each custom layer's expanded units
-and batches, verifier selections/chunks, and bounded retries/refusals. Estimate each
-call's serialized input and maximum output using that model's pricing, then sum the
-calls and add an explicit contingency. Record repeated runs and verification too.
-Transcript turns alone do not determine calls or input expansion. In particular,
-phase prompts include prior consensus history, and custom evidence can repeat large
-source blocks. Set an approved spending ceiling and stopping conditions before
-launching; an application-side allowance is not a provider-enforced invoice cap.
+Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
+with `cohort_llm_scanner(batch=True)` judges N units per call,
+cutting a layer's classification calls. Each batched call returns
+one answer per unit, so votes are still counted per unit and the
+verifier still reviews individual units.
 
-`reasoning_turns(batch=N)` with `cohort_llm_scanner(batch=True)` groups custom-layer
-items per classification call. It still returns item-level judgments and can review
-selected items separately. More batching changes prompt/output sizes; it does not
-establish a universal cost reduction or preserve judgment quality automatically.
-The using-transect skill's "Adapting to a new evaluation" section covers
-source intake, custom consumers and calibration before a full run.
+Two caches sit at different levels, and neither is the provider's.
+The scan store (`scans_dir`) holds a finished scan's results:
+`load()` rebuilds the frames and the report from it without any
+model calls (each OpenClaw import also parses a new transcript
+snapshot there, so repeated imports use disk). Beneath it,
+inspect-ai keeps a machine-global response cache, shared across
+projects and venvs - a fresh output directory or virtual environment
+is not a fresh model call: a new `transect()` call always re-runs
+the scan, but any judge call identical to a cached one replays from
+disk, so repeating an unchanged analysis costs almost nothing.
+Provider-side prompt caching is separate again and is charged by the
+provider. For a stability study or a genuinely cold run, bypass or
+clear the response cache:
 
-Each OpenClaw JSONL invocation imports only the supplied files into a new parsed
-transcript snapshot under `scans_dir/transcript_snapshots/`. Edited files are read
-afresh, and earlier scans retain their original parsed content for source viewing.
-Keep these snapshots with their scans; repeated runs use additional disk space.
-Supplying multiple files with the same transcript identity raises an error before
-scanning, even if their contents match. Finish writing a log before importing it;
-the importer does not archive raw files or coordinate with a concurrent writer.
-
-Keep scan results, parsed input snapshots and model-response caches distinct:
-
-- `transect()` starts another scan. `load(results.scan_location)` reloads that exact
-  stored scan without judging; `render()` separately builds HTML. Loading a parent
-  scan directory chooses the latest scan by modification time, so save the exact
-  location for reproducibility.
-- Inspect's local response cache can replay identical calls across projects and
-  environments. A fresh output directory or virtual environment is not a fresh
-  model call. For a new-response comparison, set a new empty cache directory before
-  starting Python and retain the old cache and outputs:
-
-  ```bash
-  INSPECT_CACHE_DIR=/path/to/new-comparison-cache uv run python my_analysis.py
-  ```
-
-- Provider prompt caching is separate from local response replay and may be charged.
-  Do not promise a rerun is free: changed phase history, batch composition, narration
-  or models can cause new calls. Verify actual dispatch/cache evidence when comparing.
-- Inspect `results.scan_status` and the reliability audit before reuse or recovery.
-  Outer completion can coexist with failed inner judgements, which surface in the
-  audit. Preserve that scan and use a separate output store for a recovery run;
-  automatic retry of every failed inner item is not a package guarantee.
+```bash
+INSPECT_CACHE_DIR=$(mktemp -d) python my_analysis.py  # bypass, one run
+inspect cache clear                                   # or wipe it
+```
 
 ## Development
 
