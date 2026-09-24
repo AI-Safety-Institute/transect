@@ -233,7 +233,6 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
         for layer in extra_layers or []
         if layer.scanner is not None
     }
-    # Preserve the raw-column contract available to custom frame functions.
     results = scan_results_df(scan_location, exclude_columns=["input"])
     unclaimed = sorted(
         key
