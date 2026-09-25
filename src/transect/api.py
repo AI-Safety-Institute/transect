@@ -20,6 +20,7 @@ from uuid import uuid4
 import pandas as pd
 from inspect_ai.model import Model
 from inspect_scout import (
+    HEAVY_COLUMNS,
     columns,
     scan as scout_scan,
     scan_results_df,
@@ -233,7 +234,10 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
         for layer in extra_layers or []
         if layer.scanner is not None
     }
-    results = scan_results_df(scan_location, exclude_columns=["input"])
+    # the frames read scanner values only; the heavy columns (the item
+    # input, its message/event pool, and the scan's own event log) are
+    # left on disk
+    results = scan_results_df(scan_location, exclude_columns=list(HEAVY_COLUMNS))
     unclaimed = sorted(
         key
         for key, scanner in results.spec.scanners.items()
