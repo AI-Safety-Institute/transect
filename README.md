@@ -525,7 +525,11 @@ Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
 with `cohort_llm_scanner(batch=True)` judges N units per call,
 cutting a layer's classification calls. Each batched call returns
 one answer per unit, so votes are still counted per unit and the
-verifier still reviews individual units.
+verifier still reviews individual units. It is also the memory
+lever for per-turn layers: a transcript's items stay in memory until
+its loader finishes, each carrying its own judge-call events, so
+several hundred items per transcript adds up (the add-a-layer skill
+has the numbers).
 
 Two caches sit at different levels, and neither is the provider's.
 The scan store (`scans_dir`) holds a finished scan's results:

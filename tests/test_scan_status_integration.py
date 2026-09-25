@@ -174,15 +174,16 @@ def test_clean_execution_with_partial_labels_raises_no_alarm(demo_log, tmp_path)
 
 
 def test_status_load_preserves_custom_frame_columns(monkeypatch):
-    """Status projection keeps the raw columns available to custom frame functions."""
+    """Custom frame functions get the scanner value and usage columns, never
+    Scout's heavy columns (the item input, its pool, the scan's event log)."""
     read = api.scan_results_df
     seen = []
 
     def capture(*args, **kwargs):
         raw = read(*args, **kwargs)
         for table in raw.scanners.values():
-            assert "input" not in table.columns
-            assert "scan_events" in table.columns
+            assert not {"input", "input_data", "scan_events"} & set(table.columns)
+            assert {"value", "scan_model_usage"} <= set(table.columns)
         seen.append(True)
         return raw
 
