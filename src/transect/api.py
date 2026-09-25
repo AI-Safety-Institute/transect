@@ -236,8 +236,7 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     }
     # the frames read scanner values only; the heavy columns (the item
     # input, its message/event pool, and the scan's own event log) are
-    # left on disk - for a per-turn judged layer over a long transcript
-    # the event log alone runs to gigabytes
+    # left on disk
     results = scan_results_df(scan_location, exclude_columns=list(HEAVY_COLUMNS))
     unclaimed = sorted(
         key
