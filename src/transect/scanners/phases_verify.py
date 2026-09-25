@@ -1,8 +1,7 @@
 """Second-round verifier for decision_phases."""
 
-import asyncio
 import random
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Literal
 
 from inspect_ai.model import CachePolicy, Model
@@ -20,6 +19,7 @@ from transect.scanners.phases_common import (
     call_judge,
     context_blocks,
     digest_line,
+    gather_judge_calls,
     resolve_phases,
     stitch_phases,
     vocab_lines,
@@ -206,14 +206,13 @@ async def verify_phases(
     ids_chunks = [
         selected[offset : offset + chunk] for offset in range(0, len(selected), chunk)
     ]
+    by_turn = {d.turn: d for d in digests}
     # throttled by inspect's own connection limit
-    results = await asyncio.gather(
-        *[
-            call_judge(
-                judge, answer, system, _verify_user_prompt(phases, ids, digests), cache
-            )
-            for ids in ids_chunks
-        ]
+    results = await gather_judge_calls(
+        call_judge(
+            judge, answer, system, _verify_user_prompt(phases, ids, by_turn), cache
+        )
+        for ids in ids_chunks
     )
     for ids, (value, status) in zip(ids_chunks, results, strict=True):
         if status != "ok":
@@ -299,19 +298,18 @@ def _verify_answer_spec(phase_names: Sequence[str]) -> AnswerStructured:
 def _verify_user_prompt(
     phases: Sequence[StitchedPhase],
     ids: Sequence[int],
-    digests: Sequence[Digest],
+    by_turn: Mapping[int, Digest],
 ) -> str:
     """Render one verifier chunk: a block per selected phase.
 
     Args:
         phases: All stitched phases (neighbour labels come from here).
         ids: The phase indices in this chunk.
-        digests: All turn digests (the evidence lines).
+        by_turn: All turn digests (the evidence lines), keyed by turn.
 
     Returns:
         The chunk user prompt.
     """
-    by_turn = {d.turn: d for d in digests}
     blocks = []
     for k in ids:
         p = phases[k]

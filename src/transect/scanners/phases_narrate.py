@@ -1,7 +1,6 @@
 """Narratives for decision_phases: headline + summary + turn groups."""
 
-import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from itertools import pairwise
 
 from inspect_ai.model import CachePolicy, Model
@@ -18,6 +17,7 @@ from transect.scanners.phases_common import (
     call_judge,
     context_blocks,
     digest_line,
+    gather_judge_calls,
     humanise_phase,
 )
 from transect.spec import Spec
@@ -100,13 +100,12 @@ async def narrate_phases(
         list(range(offset, min(offset + _NARRATE_PER, len(phases))))
         for offset in range(0, len(phases), _NARRATE_PER)
     ]
-    results = await asyncio.gather(
-        *[
-            call_judge(
-                judge, answer, system, _narrate_user_prompt(phases, ids, digests), cache
-            )
-            for ids in ids_chunks
-        ]
+    by_turn = {d.turn: d for d in digests}
+    results = await gather_judge_calls(
+        call_judge(
+            judge, answer, system, _narrate_user_prompt(phases, ids, by_turn), cache
+        )
+        for ids in ids_chunks
     )
     narratives: dict[int, _PhaseNarrative] = {}
     for ids, (value, status) in zip(ids_chunks, results, strict=True):
@@ -231,19 +230,18 @@ def _narrate_answer_spec() -> AnswerStructured:
 def _narrate_user_prompt(
     phases: Sequence[StitchedPhase],
     ids: Sequence[int],
-    digests: Sequence[Digest],
+    by_turn: Mapping[int, Digest],
 ) -> str:
     """Render one narrator chunk: a block per phase.
 
     Args:
         phases: All phases.
         ids: The phase indices in this chunk.
-        digests: All turn digests.
+        by_turn: All turn digests, keyed by turn.
 
     Returns:
         The chunk user prompt.
     """
-    by_turn = {d.turn: d for d in digests}
     blocks = []
     for k in ids:
         p = phases[k]
