@@ -167,6 +167,20 @@ a new empty directory before starting the process. Preserve existing caches
 and scans for comparison. The public `transect()` call has no `cache=False`
 argument; a new scan and a cold model-response cache are different choices.
 
+A run that dies part-way (an OOM kill, a provider outage, Ctrl+C) leaves a
+store that `load()` reports as incomplete; `transect()` never resumes it.
+Rerun the same call unchanged. The structural scanners are cheap, and every
+judge call that completed replays from the response cache, so the spend is
+roughly the calls that were in flight or never started. Two conditions: keep
+`INSPECT_CACHE_DIR` where it was (a fresh directory makes the rerun pay in
+full), and change nothing that alters the requests - spec vocabulary, judge
+models, `k_rolls`, chunking - because a changed request is a new request.
+Wall-clock is paid again in full: the transcript is reparsed and each judged
+scanner re-dispatches every item, cached or not. The dead store holds no
+results for a judged scanner that had not finished its transcript (Scout
+records a scanner's results per transcript, once its loader finishes), so
+there is nothing partial to salvage from it; the cache is the only carrier.
+
 Do not assume cross-version stores are row-comparable: an importer upgrade
 can change span/sample identities and the span count for the same source.
 Check versions, schemas and unit alignment before attributing differences to
@@ -196,6 +210,7 @@ means "not judged", never "fine"; absence is stated, never faked.
 | Label definitions expandable says the definitions are not recorded in the store | the rubric is embedded at scan time - run a new scan to record it and retain the old store |
 | OpenClaw run: no score/success, task name looks like a filename, spans drawn as ticks, sub-agent spend "no data" | expected source gaps (the telemetry never records them), stated honestly in the report - not bugs |
 | Viewer link dead after a run in a coding agent | expected on a TTY (viewer dies with the process); without a TTY it detaches - use the printed URL |
+| Run died part-way (OOM kill, Ctrl+C, provider outage) | rerun the same call unchanged with the same `INSPECT_CACHE_DIR`: completed judge calls replay from the response cache, only in-flight and unstarted calls are paid; the old store loads as incomplete and holds nothing for a judged scanner that did not finish |
 
 Anything deeper belongs to the `transect-diagnostics` skill: reading the
 reliability metrics and provenance to refine the judge setup (regime,
