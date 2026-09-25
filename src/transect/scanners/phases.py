@@ -1,6 +1,5 @@
 """decision_phases: phase segmentation of a run."""
 
-import asyncio
 import logging
 from bisect import bisect_right
 from collections.abc import Sequence
@@ -41,6 +40,7 @@ from transect.scanners.phases_common import (
     call_judge,
     context_blocks,
     digest_line,
+    gather_judge_calls,
     resolve_phases,
     stitch_phases,
     vocab_lines,
@@ -341,13 +341,9 @@ def decision_phases(
         for start in range(0, len(digests), chunk):
             chunk_digests = digests[start : start + chunk]
             user = chunk_user_prompt(chunk_digests, last_phase)
-            answers = await asyncio.gather(
-                *[
-                    call_judge(
-                        judge, answer, system, user, roll_cache(cache, member.roll)
-                    )
-                    for member, judge in judges
-                ]
+            answers = await gather_judge_calls(
+                call_judge(judge, answer, system, user, roll_cache(cache, member.roll))
+                for member, judge in judges
             )
             chunk_rows: dict[tuple[str, int], list[DigestJudgement]] = {}
             for (member, _), (value, status) in zip(judges, answers, strict=True):

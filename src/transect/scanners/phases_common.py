@@ -1,7 +1,8 @@
 """Shared pieces of the decision_phases scanner family."""
 
-from collections.abc import Sequence
-from typing import Literal
+import asyncio
+from collections.abc import Coroutine, Iterable, Sequence
+from typing import Any, Literal
 
 from inspect_ai.model import (
     CachePolicy,
@@ -313,6 +314,36 @@ def vocab_lines(phase_defs: Sequence[Phase]) -> str:
         f"- {p.label}: {p.description}" if p.description else f"- {p.label}"
         for p in phase_defs
     )
+
+
+async def gather_judge_calls[T](
+    calls: Iterable[Coroutine[Any, Any, T]],
+) -> list[T]:
+    """Run judge calls concurrently, in order, all-or-nothing.
+
+    When one call raises, the others are cancelled and awaited before
+    the error leaves, so no judge call keeps spending (or keeps
+    emitting scan events) after its operation has failed;
+    ``asyncio.gather`` would leave them running. Cancellation of the
+    caller cancels every call the same way. The first failure is
+    re-raised as itself, not wrapped in an ExceptionGroup.
+
+    Args:
+        calls: The judge-call coroutines, in result order.
+
+    Returns:
+        The results, in the order the calls were given.
+    """
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks = [group.create_task(call) for call in calls]
+    except BaseExceptionGroup as failures:
+        # the group has already cancelled and awaited the siblings
+        first: BaseException = failures
+        while isinstance(first, BaseExceptionGroup):
+            first = first.exceptions[0]
+        raise first from first.__cause__
+    return [task.result() for task in tasks]
 
 
 async def call_judge(
