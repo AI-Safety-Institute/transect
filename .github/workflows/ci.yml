@@ -25,6 +25,7 @@ jobs:
       - name: Install chromium for the browser test
         run: uv run --group ui-test playwright install chromium --with-deps
       - name: Browser test (must run, not skip)
+        shell: bash
         run: |
           uv run --group ui-test pytest tests/test_report_integration.py \
             -v | tee pytest-ui.out
