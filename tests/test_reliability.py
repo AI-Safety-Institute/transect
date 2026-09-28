@@ -22,7 +22,6 @@ from transect.reliability import (
     cohort_agreement,
     detect_regime,
     gwet_ac1_nominal,
-    krippendorff_alpha_nominal,
     label_stats,
     member_coverage,
     provenance_shares,
@@ -56,16 +55,6 @@ def test_gwet_ac1_hand_computed_cases(units, expected):
         assert ac1 is None
     else:
         assert ac1 == pytest.approx(expected)
-
-
-def test_alpha_and_ac1_bracket_a_skewed_run():
-    """On prevalence-skewed data alpha reads below AC1 - the bracket
-    the audit renders both ends of."""
-    units = [["a", "a", "b"]] * 9
-    alpha, _ = krippendorff_alpha_nominal(units)
-    ac1, _ = gwet_ac1_nominal(units)
-    assert alpha is not None and ac1 is not None
-    assert alpha < ac1 < 0
 
 
 @pytest.mark.parametrize(
@@ -113,6 +102,26 @@ def test_cohort_alpha_flag_bands(alpha, level):
         (flag,) = flags
         assert flag.level == level
         assert flag.metric.startswith("cohort inter-judge agreement")
+
+
+@pytest.mark.parametrize(
+    ("count", "of", "level"),
+    # any unjudged unit flags amber; red starts at exactly 25%
+    [(0, 8, None), (1, 8, "amber"), (2, 8, "red"), (8, 8, "red")],
+)
+def test_unjudged_units_flag_bands(count, of, level):
+    """Any unjudged unit flags amber; a quarter or more of the surface red."""
+    solo = Regime("solo", 1, 1, ("m",), False, None, False)
+    flags = build_flags(
+        solo, NO_MEAN, NO_COHORT, NO_RELABEL, NO_RATE, unjudged=rate(count, of)
+    )
+    if level is None:
+        assert flags == []
+    else:
+        (flag,) = flags
+        assert flag.level == level
+        assert flag.metric == "unjudged units (no delivered judgement)"
+        assert flag.value == f"{count} of {of} ({count / of:.0%})"
 
 
 def test_relabel_and_spot_check_flags_with_same_model_caveat():
@@ -178,7 +187,7 @@ def test_label_stats_cover_overturned_away_and_minority_labels():
         [
             {
                 "original_label": "a",
-                "verifier_reviewed": True,
+                "verifier_selected": True,
                 "overturned": True,
                 "verifier_trigger": "random_sample",
             }
@@ -327,7 +336,7 @@ def test_detect_regime_names_the_missing_columns_and_the_fix():
     ("call", "missing"),
     [
         (lambda df: cohort_agreement(df, "turn", "phase"), "phase"),
-        (lambda df: relabel_rate(df), "verifier_reviewed"),
+        (lambda df: relabel_rate(df), "verifier_selected"),
         (lambda df: spot_check_overturns(df), "verifier_trigger"),
         (lambda df: member_coverage(df, "basis", "judged", ()), "model"),
         (lambda df: label_stats(df, df, df, "turn", "phase"), "judge_agreement"),
@@ -372,7 +381,7 @@ def test_units_never_pool_across_transcripts():
     frame = pd.DataFrame(
         {
             "original_label": [None, None],
-            "verifier_reviewed": [False, False],
+            "verifier_selected": [False, False],
             "overturned": [False, False],
             "verifier_trigger": [None, None],
         }

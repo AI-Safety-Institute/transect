@@ -1,6 +1,5 @@
 """decision_phases: phase segmentation of a run."""
 
-import asyncio
 import logging
 from bisect import bisect_right
 from collections.abc import Sequence
@@ -41,6 +40,7 @@ from transect.scanners.phases_common import (
     call_judge,
     context_blocks,
     digest_line,
+    gather_judge_calls,
     resolve_phases,
     stitch_phases,
     vocab_lines,
@@ -181,13 +181,22 @@ def decision_phases(
           - ``confidence_source``: whose confidence the phase
             carries - single_judge / majority_vote / verifier.
           - ``explanation``: the first contributing segment's explanation.
-          - ``verifier``: the second-round review (the
+          - ``verifier``: a representative second-round review (the
             ``VerifierReview`` record: trigger, original label /
             confidence / explanation, verifier label / confidence /
             explanation, verifier_model, overturned, status); None
-            when the verifier never saw the range.
-          - ``headline``: narrator, one sentence (template fallback).
-          - ``summary``: narrator, 2-3 sentences ("" on fallback).
+            when no completed verdict overlaps the range. A merged display
+            phase can contain several original review units.
+          - ``verifier_reviews``: every original selected phase review
+            overlapping this display phase, each with original_phase_index,
+            turn_start, turn_end, and a nested review. Missing verdicts carry
+            status no_answer or refusal. An empty list means none selected.
+          - ``headline`` / ``summary``: complete narrator text, without
+            character clipping; blank headlines use a template, missing
+            narratives use a template headline and empty summary.
+          - ``narration_group_status``: complete, invalid_partition,
+            empty_groups, no_narrative, or not_run. Complete describes
+            partition coordinates, not factual correctness.
           - ``turn_groups``: gapless partition of the phase's turn
             range - ``{turn_start, turn_end, title, gist}``.
           - ``anchor_event_id``: the first member model event's uuid
@@ -332,13 +341,9 @@ def decision_phases(
         for start in range(0, len(digests), chunk):
             chunk_digests = digests[start : start + chunk]
             user = chunk_user_prompt(chunk_digests, last_phase)
-            answers = await asyncio.gather(
-                *[
-                    call_judge(
-                        judge, answer, system, user, roll_cache(cache, member.roll)
-                    )
-                    for member, judge in judges
-                ]
+            answers = await gather_judge_calls(
+                call_judge(judge, answer, system, user, roll_cache(cache, member.roll))
+                for member, judge in judges
             )
             chunk_rows: dict[tuple[str, int], list[DigestJudgement]] = {}
             for (member, _), (value, status) in zip(judges, answers, strict=True):

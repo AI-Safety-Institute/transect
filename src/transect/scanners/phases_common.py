@@ -1,7 +1,8 @@
 """Shared pieces of the decision_phases scanner family."""
 
-from collections.abc import Sequence
-from typing import Literal
+import asyncio
+from collections.abc import Coroutine, Iterable, Sequence
+from typing import Any, Literal
 
 from inspect_ai.model import (
     CachePolicy,
@@ -81,6 +82,25 @@ class TurnGroup(BaseModel):
     gist: str = Field(description="One-line gist of the section.")
 
 
+class PhaseReview(BaseModel):
+    """One selected original phase, preserved independently of display merging.
+
+    A missing verdict retains the original facts with status
+    ``no_answer`` or ``refusal`` and no verifier fields. This record
+    is not judge-facing.
+    """
+
+    original_phase_index: int
+    turn_start: int
+    turn_end: int
+    review: VerifierReview
+
+
+NarrationGroupStatus = Literal[
+    "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
+]
+
+
 class StitchedPhase(BaseModel):
     """One phase: consecutive same-label segments merged across chunk boundaries."""
 
@@ -95,7 +115,7 @@ class StitchedPhase(BaseModel):
         description="Mean over member judgements (fills included, at 0.3)."
     )
     min_confidence: float = Field(
-        description="Minimum over members — the verifier's selection signal."
+        description="Minimum over members - the verifier's selection signal."
     )
     min_agreement: float | None = Field(
         default=None,
@@ -127,8 +147,17 @@ class StitchedPhase(BaseModel):
     verifier: VerifierReview | None = Field(
         default=None,
         description=(
-            "The second-round review of this phase's range; None when "
-            "the verifier never saw it."
+            "A representative completed review overlapping this phase; None "
+            "when no completed verdict overlaps. Original selected units "
+            "live in verifier_reviews."
+        ),
+    )
+    verifier_reviews: list[PhaseReview] = Field(
+        default_factory=list,
+        description=(
+            "Original phase review units overlapping this displayed phase. "
+            "An empty list means none selected. The singular verifier is "
+            "representative only."
         ),
     )
     headline: str = Field(
@@ -142,6 +171,13 @@ class StitchedPhase(BaseModel):
     turn_groups: list[TurnGroup] = Field(
         default_factory=list,
         description="Narrator: gapless partition of the phase's turn range.",
+    )
+    narration_group_status: NarrationGroupStatus = Field(
+        default="not_run",
+        description=(
+            "Group partition outcome; complete describes partition "
+            "coordinates, not factual correctness."
+        ),
     )
     anchor_event_id: str | None = Field(
         default=None,
@@ -278,6 +314,36 @@ def vocab_lines(phase_defs: Sequence[Phase]) -> str:
         f"- {p.label}: {p.description}" if p.description else f"- {p.label}"
         for p in phase_defs
     )
+
+
+async def gather_judge_calls[T](
+    calls: Iterable[Coroutine[Any, Any, T]],
+) -> list[T]:
+    """Run judge calls concurrently, in order, all-or-nothing.
+
+    When one call raises, the others are cancelled and awaited before
+    the error leaves, so no judge call keeps spending (or keeps
+    emitting scan events) after its operation has failed;
+    ``asyncio.gather`` would leave them running. Cancellation of the
+    caller cancels every call the same way. The first failure is
+    re-raised as itself, not wrapped in an ExceptionGroup.
+
+    Args:
+        calls: The judge-call coroutines, in result order.
+
+    Returns:
+        The results, in the order the calls were given.
+    """
+    try:
+        async with asyncio.TaskGroup() as group:
+            tasks = [group.create_task(call) for call in calls]
+    except BaseExceptionGroup as failures:
+        # the group has already cancelled and awaited the siblings
+        first: BaseException = failures
+        while isinstance(first, BaseExceptionGroup):
+            first = first.exceptions[0]
+        raise first from first.__cause__
+    return [task.result() for task in tasks]
 
 
 async def call_judge(

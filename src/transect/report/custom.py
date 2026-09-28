@@ -18,6 +18,7 @@ from markdown_it import MarkdownIt
 from markupsafe import Markup, escape
 
 import transect.report.blocks as b
+from transect.reliability import review_units
 from transect.report import sections
 from transect.report.charts import (
     _BAND_BODY,
@@ -369,18 +370,23 @@ def _run_judge_cells(
                 ],
             )
         )
-    if carries("verifier_reviewed") and rows.verifier_reviewed.fillna(False).any():
+    if carries("verifier_selected") and rows.verifier_selected.fillna(False).any():
 
         def reviewed(p: pd.DataFrame) -> str | None:
-            n = int(p.verifier_reviewed.fillna(False).sum())
-            if not n:
+            units = review_units(p)
+            if not len(units):
                 return None
+            completed = units[units.verifier_completed]
             overturned = (
-                int(p.overturned.fillna(False).sum())
-                if "overturned" in p.columns
+                int(completed.overturned.fillna(False).sum())
+                if "overturned" in completed.columns
                 else 0
             )
-            return f"{n} reviewed · {overturned} overturned"
+            return (
+                f"{len(units)} selected · {len(completed)} completed · "
+                f"{len(units) - len(completed)} without usable verdict · "
+                f"{overturned} overturned"
+            )
 
         cells.append(("verifier", "verifier_text", [reviewed(p) for p in pieces]))
     return cells

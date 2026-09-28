@@ -15,10 +15,12 @@ import sys
 import webbrowser
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 import pandas as pd
 from inspect_ai.model import Model
 from inspect_scout import (
+    HEAVY_COLUMNS,
     columns,
     scan as scout_scan,
     scan_results_df,
@@ -53,6 +55,7 @@ from transect.layers import (
 from transect.report import render_report
 from transect.report.blocks import validate_section
 from transect.report.render import validate_section_order
+from transect.scan_status import build_scan_status
 from transect.scanners.base import (
     context_flush,
     eval_setup,
@@ -116,7 +119,8 @@ def transect(
             sample's earliest successful epoch (the earliest epoch
             when none succeeded).
         judge_models: One model (solo), or several (majority-vote
-            cohort). ``None`` = $0 structural-only run (zero LLM calls).
+            cohort). ``None`` disables built-in judged scanners; custom
+            ``extra_layers`` may still call models and incur charges.
         k_rolls: Repeated rolls of one model (mutually exclusive with
             a multi-model list).
         verify: The second-round verifier, a re-review of doubtful
@@ -153,7 +157,8 @@ def transect(
             first, in this order; unnamed ones follow in the default
             reading order. Keys are ``transect.report.SECTION_KEYS`` plus
             each custom layer's name; the reliability audit always
-            renders last.
+            renders last, and the run-wide Scan execution & coverage
+            block renders once after all transcripts.
         sensitivity: A protective marking (e.g. "OFFICIAL SENSITIVE")
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``
@@ -209,8 +214,11 @@ def transect(
 
 
 def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectResults:
-    """Re-read an existing scan into frames - no scanning, no
-    API calls, no report render.
+    """Re-read an existing scan into frames and run-wide scan_status.
+
+    No scanning, API calls or report render. Available partial results keep
+    their recorded errors and coverage, provided required structural tables and
+    any mounted custom-frame contracts can be loaded. Otherwise loading raises.
 
     Args:
         scans_dir: A transect() ``scans_dir`` (the latest scan in it is
@@ -226,12 +234,14 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
         for layer in extra_layers or []
         if layer.scanner is not None
     }
-    # the results tables' `input` column carries the entire transcript)
-    results = scan_results_df(scan_location, exclude_columns=["input"])
+    # the frames read scanner values only; the heavy columns (the item
+    # input, its message/event pool, and the scan's own event log) are
+    # left on disk
+    results = scan_results_df(scan_location, exclude_columns=list(HEAVY_COLUMNS))
     unclaimed = sorted(
         key
-        for key, table in results.scanners.items()
-        if not _is_builtin(table) and key not in claimed
+        for key, scanner in results.spec.scanners.items()
+        if not scanner.name.startswith("transect/") and key not in claimed
     )
     if unclaimed:
         print(
@@ -250,6 +260,7 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     transect_results = TransectResults(
         scan_location=scan_location,
         transcripts_location=_transcripts_location(transcripts),
+        scan_status=build_scan_status(results, mounted_scanners=claimed),
         token_timeline=token_timeline,
         flushes=flushes_df(results.scanners["context_flush"], token_timeline),
         interventions=interventions_df(results.scanners["human_intervention"]),
@@ -342,7 +353,8 @@ def render(
             first, in this order; unnamed ones follow in the default
             reading order. Keys are ``transect.report.SECTION_KEYS`` plus
             each custom layer's name; the reliability audit always
-            renders last.
+            renders last, and the run-wide Scan execution & coverage
+            block renders once after all transcripts.
         sensitivity: A protective marking (e.g. "OFFICIAL SENSITIVE")
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``
@@ -428,7 +440,7 @@ def _run(
 
     ``logs`` may be Inspect ``.eval`` logs (scanned directly) or OpenClaw
     telemetry ``.jsonl`` files, which are first imported into a transcript
-    database under ``scans_dir`` and scanned from there.
+    retained snapshot database under ``scans_dir`` and scanned from there.
     """
     extra_layers = resolve_scanner_factories(
         list(extra_layers or []),
@@ -451,7 +463,8 @@ def _run(
         verify_sample=verify_sample,
     )
     if jsonl:
-        logs = os.path.join(scans_dir, "transcripts")
+        # Keep new snapshots outside an existing database's recursive search root.
+        logs = os.path.join(scans_dir, "transcript_snapshots", uuid4().hex)
         asyncio.run(_import_openclaw(jsonl, logs))
     transcripts = transcripts_from(logs if isinstance(logs, str) else list(logs))
     # one-sample rule + epoch selection
@@ -476,15 +489,6 @@ def _run(
         max_processes=max_processes,
     )
     return load(status.location, extra_layers=extra_layers)
-
-
-def _is_builtin(table: pd.DataFrame) -> bool:
-    """Whether a results table came from a packaged scanner: the
-    store records each scanner's full registry name, and ours carry
-    the transect/ namespace."""
-    if not len(table):
-        return True
-    return str(table["scanner_name"].iloc[0]).startswith("transect/")
 
 
 def _scanners(
@@ -570,20 +574,27 @@ def _is_inspect_json_log(path: Path) -> bool:
 
 
 async def _import_openclaw(files: list[Path], db_dir: str) -> None:
-    """Import OpenClaw telemetry files into a transcript DB."""
+    """Import the supplied telemetry into a new DB, rejecting ambiguous identities."""
     from transect.ingestion.openclaw_telemetry_hal import openclaw_telemetry_hal
 
+    fresh = []
+    sources: dict[str, Path] = {}
+    for file in files:
+        async for transcript in openclaw_telemetry_hal(file):
+            previous = sources.get(transcript.transcript_id)
+            if previous is not None:
+                raise ValueError(
+                    f"duplicate transcript id {transcript.transcript_id!r} in "
+                    f"{previous} and {file}; supply only one file for this identity"
+                )
+            sources[transcript.transcript_id] = file
+            fresh.append(transcript)
+    if not fresh:
+        raise ValueError("no transcripts found in the supplied OpenClaw files")
     db = transcripts_db(db_dir)
     await db.connect()
     try:
-        existing = set(await db.transcript_ids())
-        fresh = []
-        for file in files:
-            async for transcript in openclaw_telemetry_hal(file):
-                if transcript.transcript_id not in existing:
-                    fresh.append(transcript)
-        if fresh:
-            await db.insert(fresh)
+        await db.insert(fresh)
     finally:
         await db.disconnect()
 

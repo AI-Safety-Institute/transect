@@ -19,23 +19,35 @@ discipline travels with the data. It is a property of the results,
 not of our HTML - a custom UI that drops it is misrepresenting the
 scan.
 
-Before building anything, render and read the shipped report for
-the same scan (`transect.render`, guide in the using-transect skill). It is
-the worked answer to every presentation question below.
+Use the shipped report for the same scan as a presentation reference
+(`transect.render`, guide in the using-transect skill), and check the source
+for any claims the custom artifact will make. For a new evaluation, read the
+using-transect skill's "Adapting to a new evaluation" section.
+The shipped report can contain incomplete or mistaken judgments; its presence
+does not validate a custom presentation.
 
 ## 1. The data contract
 
-Everything renderable lives on `TransectResults` (from `transect.transect`
-or `transect.load`):
+`TransectResults` (from `transect.transect` or an exact-scan `transect.load`)
+carries frames and status. Source excerpts and navigation also depend on the
+recorded transcript location:
 
 - `results.frames()`: the built-in frames, plain pandas. The column
-  contract for each is its module docstring
-  (`src/transect/frames/<name>.py`); the README's mermaid diagram maps
-  the joins.
+  contract for each is its module docstring; the
+  [frame sources](https://github.com/AI-Safety-Institute/transect/tree/main/src/transect/frames)
+  and [README diagram](https://github.com/AI-Safety-Institute/transect/blob/main/README.md)
+  map the joins.
 - `results.layer_frames[name]` / `results.turn_tags`: custom
   layers' frames and their tag families.
 - `results.scan_location` / `results.transcripts_location`: the
-  store and the transcripts (Scout viewer deep links).
+  exact scan and its transcripts (Scout viewer deep links).
+- `results.scan_status`: the run-wide execution record (completed vs total
+  transcripts, recorded errors).
+
+Frames can carry task/setup text, intervention text, spawn instructions and
+custom metadata; they are not anonymized exports. Map source fields separately
+to judge questions and recipient-visible content, and inspect exports for the
+intended sharing scope. Preserve native values behind any display formatting.
 
 Grains and join keys, in one table:
 
@@ -51,13 +63,16 @@ Grains and join keys, in one table:
 The judged vocabulary to respect everywhere: `label_source` (who
 decided: single_judge / majority_vote / verifier), `basis` (how a
 turn's label arose: judged / filled / attributed / unjudged
-reasons), the flattened verifier columns (`verifier_reviewed`,
+reasons), the flattened verifier columns (`verifier_selected`,
 `overturned`, `original_label`, `verifier_trigger`, ...), the raw
 `members` column (per-member ballots), and `label_definitions` (the
 declared rubric per surface - unused labels included).
 
 ## 2. The rules any rendering must keep
 
+- **Failure status survives filtering.** Show run-wide incomplete execution,
+  missing requested work and unassessed coverage even when an empty section
+  is omitted. A completed scanner can still contain failed item judgments.
 - **Provenance beside every label.** A judged label shown without
   who decided it, at what confidence, with what agreement (where
   voting ran) presents a judgement as a fact. Inline, in a tooltip,
@@ -74,9 +89,13 @@ declared rubric per surface - unused labels included).
   `none_of_the_above` are information; hiding them inflates what
   remains.
 - **Numbers come from `transect.reliability`.** Agreement coefficients
-  (alpha and AC1 read together as a bracket), label stats, member
+  (alpha and AC1 under different chance models), label stats, member
   coverage, re-label rates, Wilson intervals - all public, all
-  keyed per transcript. Hand-rolled means over pooled transcripts.
+  keyed per transcript. Keep transcript scope explicit rather than silently
+  pooling units.
+- Preserve complete narration text and surface neutral-group reasons from
+  `phases.narration_group_status`; do not infer acceptance or fallback from
+  prose. See the report guide for the values.
 - **Descriptive, not validated.** Labels and narration are an LLM
   judge's output against the user's vocabulary. Keep a framing
   sentence to that effect; the shipped report's explanation lines
@@ -100,6 +119,8 @@ embedded page) must include a compact annex stating:
 - verifier selection and outcomes (triggered, spot-checked,
   overturned);
 - any fired reliability flags;
+- run-wide execution and coverage from `results.scan_status`, distinguished
+  from the artifact's selected units and any unresolved custom coverage;
 - provenance of the run itself: Transect and its version
   (`transect.__version__`), the scan location or id, and when it ran.
 
@@ -119,9 +140,12 @@ column contracts, `transect.reliability` (every statistic the audit
 shows), `transect.member_ballots`, `transect.judge_identity`, `transect.load` /
 `transect.render`.
 
-Private but readable - the report's own presentation logic. These
-carry no stability contract; read the module and decide whether to
-import or copy deliberately:
+Private but readable: the report's own presentation logic. The following
+`src/` paths require a matching source checkout; they are not installed skill
+resources. Browse the public
+[report sources](https://github.com/AI-Safety-Institute/transect/tree/main/src/transect/report)
+or inspect the installed Python modules. They carry no stability contract;
+decide whether to import or copy deliberately:
 
 - `src/transect/report/reliability.py`: the flag thresholds and wording
   (`build_flags`), `confidence_tiers`, `describe_regime`,
@@ -141,6 +165,7 @@ import or copy deliberately:
 
 Before delivering a custom artifact:
 
+- run-wide failures and unknown coverage remain visible after filtering;
 - every judged label has provenance within reach;
 - every agreement/rate states its denominator and N;
 - unjudged/no_answer mass is visible or explicitly counted;
@@ -148,7 +173,9 @@ Before delivering a custom artifact:
 - statistics computed via `transect.reliability`, keyed per transcript;
 - the descriptive-not-validated framing sentence is present;
 - the reliability annex is embedded (standalone artifacts);
-- Transect is referenced with its version.
+- Transect is referenced with its version;
+- rendered values and source links have been checked at their actual
+  destinations, including Boolean/status cells and events with similar text.
 
 Anti-patterns, each a misrepresentation: a label bar chart with no
 coverage statement; confidence averaged across pooled transcripts;

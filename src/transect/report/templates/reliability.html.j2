@@ -32,7 +32,7 @@
     they carry the regime/verifier context the maps assume. -#}
 {% macro entity_block(entity) -%}
 <h4>{{ entity.name }}{% if entity.badge %} <span class="custom-layer-badge">custom</span>{% endif %}</h4>
-{% if entity.rows %}<details class="event definitions relmap-legend"><summary>Run-level details</summary>{% for row in entity.rows %}{{ metric_row(row.label, row.value, row.definition) }}{% endfor %}</details>{% endif %}
+{% if entity.rows %}<details class="event definitions relmap-legend"><summary>Run-level details</summary><p class="meta explainer">Agreement and revision statistics describe the judging procedure, not correctness; the intervals assume independence that dependent turns, shared batches and correlated judges may violate.</p>{% for row in entity.rows %}{{ metric_row(row.label, row.value, row.definition) }}{% endfor %}</details>{% endif %}
 {% for map in entity.maps %}{{ relmap(map) }}{% endfor %}
 {%- endmacro %}
 

@@ -7,22 +7,45 @@ agreement across rolls).
 
 Run from the repo root (needs ANTHROPIC_API_KEY):
 
-    python examples/transect_kroll.py
+    uv run python examples/transect_kroll.py
+
+`--structural` runs the built-in structural scanners only - no
+judge, no API key, no model calls; the judged report sections
+render empty:
+
+    uv run python examples/transect_kroll.py --structural
 """
+
+import argparse
 
 from transect import transect
 
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    "--structural", action="store_true", help="run without judges or model charges"
+)
+structural = parser.parse_args().structural
+scans_dir = "examples/scans/structural" if structural else "examples/scans/kroll"
+judge = (
+    {}
+    if structural
+    else {
+        "judge_models": "anthropic/claude-sonnet-4-6",
+        "k_rolls": 3,
+        "verify": True,
+        "verifier_model": "anthropic/claude-opus-4-7",
+    }
+)
 results = transect(
     "examples/logs",
     "examples/spec.yaml",
     sample="house-price",
     epochs=1,
-    judge_models="anthropic/claude-sonnet-4-6",
-    k_rolls=3,
-    verify=True,
-    verifier_model="anthropic/claude-opus-4-7",
-    scans_dir="examples/scans/kroll",
-    title="House-price demo - solo k-roll + verifier",
+    scans_dir=scans_dir,
+    title="House-price demo - structural only"
+    if structural
+    else "House-price demo - solo k-roll + verifier",
+    **judge,
 )
 
 print("\nreport:", results.report_paths[0])
@@ -31,7 +54,7 @@ if results.viewer_url:
 print(
     "\nexplore the dataframes in a notebook:\n\n"
     "    from transect import load\n"
-    '    results = load("examples/scans/kroll")\n'
+    f'    results = load("{scans_dir}")\n'
     "    frames = results.frames()\n"
     '    frames["phases"]          # labelled, narrated phases\n'
     '    frames["subagents"]       # sub-agent classifications\n'

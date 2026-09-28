@@ -1,12 +1,10 @@
 """Diagnostic helpers for the reliability iteration loop.
 
-The scrambled-vocabulary check distinguishes definition-reading from
-name-anchoring: rename the labels, keep every description byte-
-identical, re-run the same judge setup, and compare the descrambled
-partition against the original run. Consistency under scramble is the
-healthy outcome. A scrambled run's report and store are diagnostic
-artifacts only, its labels are deliberately meaningless and must
-never be quoted as findings.
+The scrambled-vocabulary check measures sensitivity to label names
+under a changed prompt. Compare it with unchanged-setup repeats and inspect
+prompt coherence and label prevalence before attributing a mechanism. Stable
+or changed labels alone establish neither definition-reading nor name anchoring.
+The returned labels are diagnostic artifacts, not findings about the transcript.
 """
 
 import random
@@ -20,7 +18,7 @@ def scramble_spec(spec: Spec, seed: int) -> tuple[Spec, dict[str, dict[str, str]
     """A label-scrambled copy of ``spec`` plus the descramble mapping.
 
     Every phase and sub-agent label is replaced with a neutral token
-    (``phase_a`` / ``role_a``, ..., order shuffled by ``seed``);
+    (``phase_a`` / ``role_a``, ..., neutral-token assignment shuffled by ``seed``);
     descriptions, ``context``, and the ``ops`` flag are untouched, so
     the judges see identical definitions under meaningless names.
 

@@ -1,7 +1,7 @@
 """Narratives for decision_phases: headline + summary + turn groups."""
 
-import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from itertools import pairwise
 
 from inspect_ai.model import CachePolicy, Model
 from inspect_scout import AnswerStructured
@@ -11,11 +11,13 @@ from transect.scanners.helpers import capped_lines
 from transect.scanners.phases_common import (
     EVIDENCE_LINES,
     Digest,
+    NarrationGroupStatus,
     StitchedPhase,
     TurnGroup,
     call_judge,
     context_blocks,
     digest_line,
+    gather_judge_calls,
     humanise_phase,
 )
 from transect.spec import Spec
@@ -98,13 +100,12 @@ async def narrate_phases(
         list(range(offset, min(offset + _NARRATE_PER, len(phases))))
         for offset in range(0, len(phases), _NARRATE_PER)
     ]
-    results = await asyncio.gather(
-        *[
-            call_judge(
-                judge, answer, system, _narrate_user_prompt(phases, ids, digests), cache
-            )
-            for ids in ids_chunks
-        ]
+    by_turn = {d.turn: d for d in digests}
+    results = await gather_judge_calls(
+        call_judge(
+            judge, answer, system, _narrate_user_prompt(phases, ids, by_turn), cache
+        )
+        for ids in ids_chunks
     )
     narratives: dict[int, _PhaseNarrative] = {}
     for ids, (value, status) in zip(ids_chunks, results, strict=True):
@@ -122,16 +123,19 @@ async def narrate_phases(
         default_title = humanise_phase(p.phase)
         narrative = narratives.get(k)
         if narrative is None:
+            p.narration_group_status = "no_narrative"
             audit.n_fallback += 1
             p.headline = f"{default_title} ({p.n_turns} turns)"
             p.summary = ""
             p.turn_groups = validate_turn_groups([], p, default_title)
             continue
-        p.headline = narrative.headline.strip()[:140] or (
+        p.headline = narrative.headline.strip() or (
             f"{default_title} ({p.n_turns} turns)"
         )
-        p.summary = narrative.summary.strip()[:400]
-        p.turn_groups = validate_turn_groups(narrative.groups, p, default_title)
+        p.summary = narrative.summary.strip()
+        p.turn_groups, p.narration_group_status = _validated_groups(
+            narrative.groups, p, default_title
+        )
     return audit
 
 
@@ -164,54 +168,46 @@ def validate_turn_groups(
     phase: StitchedPhase,
     default_title: str,
 ) -> list[TurnGroup]:
-    """Rebuild the judge's groups into a clean partition of the phase.
+    """Preserve an exact partition, or use a neutral whole-phase fallback.
 
     Args:
         groups: The judge's proposed groups.
         phase: The phase being partitioned.
-        default_title: Title for inserted/fallback groups.
+        default_title: Title for the whole-phase fallback group.
 
     Returns:
         The validated groups, in turn order.
     """
+    return _validated_groups(groups, phase, default_title)[0]
+
+
+def _validated_groups(
+    groups: Sequence[TurnGroup], phase: StitchedPhase, default_title: str
+) -> tuple[list[TurnGroup], NarrationGroupStatus]:
+    """Return the partition and its outcome from the same validation decision."""
     lo, hi = phase.turn_start, phase.turn_end
     whole = [TurnGroup(turn_start=lo, turn_end=hi, title=default_title, gist="")]
-    if phase.n_turns <= 3 or not groups:
-        return whole
-    by_start: dict[int, TurnGroup] = {}
-    for g in groups:
-        start = max(lo, min(int(g.turn_start), hi))
-        if start not in by_start:
-            by_start[start] = TurnGroup(
-                turn_start=start,
-                turn_end=start,  # derived below
-                title=g.title.strip() or f"Turns {start}+",
-                gist=g.gist.strip(),
-            )
-    if lo not in by_start:
-        by_start[lo] = TurnGroup(
-            turn_start=lo, turn_end=lo, title=default_title, gist=""
-        )
-    starts = sorted(by_start)
-    out: list[TurnGroup] = []
-    for i, start in enumerate(starts):
-        end = (starts[i + 1] - 1) if i + 1 < len(starts) else hi
-        if end < start:
-            continue
-        group = by_start[start]
-        group.turn_end = end
-        out.append(group)
-    # defensive gapless assertion (the construction guarantees it)
+    if not groups:
+        return whole, "empty_groups"
+    ordered = sorted(groups, key=lambda group: group.turn_start)
     if (
-        not out
-        or out[0].turn_start != lo
-        or out[-1].turn_end != hi
+        ordered[0].turn_start != lo
+        or ordered[-1].turn_end != hi
+        or any(group.turn_start > group.turn_end for group in ordered)
         or any(
-            out[i + 1].turn_start != out[i].turn_end + 1 for i in range(len(out) - 1)
+            right.turn_start != left.turn_end + 1 for left, right in pairwise(ordered)
         )
     ):
-        return whole
-    return out
+        return whole, "invalid_partition"
+    return [
+        TurnGroup(
+            turn_start=group.turn_start,
+            turn_end=group.turn_end,
+            title=group.title.strip() or f"Turns {group.turn_start}+",
+            gist=group.gist.strip(),
+        )
+        for group in ordered
+    ], "complete"
 
 
 def _narrate_answer_spec() -> AnswerStructured:
@@ -234,19 +230,18 @@ def _narrate_answer_spec() -> AnswerStructured:
 def _narrate_user_prompt(
     phases: Sequence[StitchedPhase],
     ids: Sequence[int],
-    digests: Sequence[Digest],
+    by_turn: Mapping[int, Digest],
 ) -> str:
     """Render one narrator chunk: a block per phase.
 
     Args:
         phases: All phases.
         ids: The phase indices in this chunk.
-        digests: All turn digests.
+        by_turn: All turn digests, keyed by turn.
 
     Returns:
         The chunk user prompt.
     """
-    by_turn = {d.turn: d for d in digests}
     blocks = []
     for k in ids:
         p = phases[k]

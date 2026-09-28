@@ -10,12 +10,13 @@ explores the data, hands off three subtasks to sub-agents (EDA, an
 alternative model family, a final review), blends the models, and
 submits.
 
-Every example needs `ANTHROPIC_API_KEY`; the cohort example also
-needs `OPENAI_API_KEY` (with each provider's SDK installed).
+Every example needs `ANTHROPIC_API_KEY` (the cohort example also
+`OPENAI_API_KEY`, with each provider's SDK installed); the $0 dry
+run below needs no key at all.
 
 ## 1. Solo k-roll judge with a verifier
 
-    python examples/transect_kroll.py
+    uv run python examples/transect_kroll.py
 
 One judge model labels each phase and sub-agent three times; the
 majority vote across its own rolls decides. A second, stronger
@@ -24,7 +25,7 @@ confidence or low agreement across rolls).
 
 ## 2. Multi-model cohort
 
-    python examples/transect_cohort.py
+    uv run python examples/transect_cohort.py
 
 Three different judge models each label once; the majority vote
 across the cohort decides. No verifier in this shape: the cohort
@@ -33,7 +34,7 @@ alongside the voted labels.
 
 ## 3. Custom layer
 
-    python examples/transect_custom_layer.py
+    uv run python examples/transect_custom_layer.py
 
 A user-defined judged layer (one research-skill label per
 orchestrator reasoning turn) injected via `extra_layers`: its own
@@ -57,6 +58,8 @@ rubric.
 
 ## $0 dry run
 
-Example 1 or 2 with `judge_models=None` (edit the script) runs the
-structural scanners only: no API key, no LLM calls. The
-custom-layer example has no $0 shape.
+    uv run python examples/transect_kroll.py --structural
+
+runs the built-in structural scanners only: no API key, no LLM
+calls, judged sections empty. The custom-layer example has no $0
+shape.

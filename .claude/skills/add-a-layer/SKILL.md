@@ -26,9 +26,9 @@ results = transect.transect(logs, spec, judge_models=..., extra_layers=[MY_LAYER
 Each layer bundles an optional scanner (joins the scan batch), an
 optional frame, typed report blocks, phase-card tags, and an audit
 declaration. Every field is optional but the layer must do something.
-The worked reference is `examples/transect_custom_layer.py` in the Transect
-repo - a complete judged layer (research-skill labels per reasoning
-turn); mirror its shape before inventing a new one.
+For evaluation-specific choices, first read the using-transect skill's
+"Adapting to a new evaluation" section. The worked reference is
+[transect_custom_layer.py](https://github.com/AI-Safety-Institute/transect/blob/main/examples/transect_custom_layer.py).
 
 | Layer field | What it does |
 |---|---|
@@ -119,6 +119,17 @@ The pieces, and the rules that make them work:
   units) fails at scan time as a per-transcript scan error naming
   the fix - it never judges the whole transcript as one blob.
 
+  Batching is also the memory lever. A per-turn layer holds one
+  result row per item in memory until the loader finishes a
+  transcript, and each row stores that item's scan events (the judge
+  calls with their full prompts). inspect-scout releases up to 0.5.3
+  additionally copy every earlier item's events onto each later row
+  (fixed upstream, see transect issue #9), so on those versions a
+  long run's memory and scan store grow with the square of the item
+  count: several hundred items per transcript reached gigabytes per
+  scanner in our measurements, and past roughly 400 items the scan
+  aborts at record time. `batch=N` divides the item count by N.
+
   Batching is unit-neutral. A custom loader batches by doing
   exactly three things per yielded item:
 
@@ -184,11 +195,22 @@ The pieces, and the rules that make them work:
   (`extra: {research_skills: {label: description, ...}}` in the
   YAML, `load_spec(...).extra["research_skills"]` in the module) -
   eval knowledge stays in one file. The worked example does this.
+- **Question and display inputs**: map each requirement to the actual
+  consumer. `Spec.context` reaches phase prompts only; `Spec.extra` and
+  `vocabulary` do not inject text into your custom judge. Build `question`
+  explicitly and capture the prepared prompt in a deterministic check. Keep
+  source-derived facts and judge associations distinct in display columns.
 - **Frame**: `transect.turns_frame` projects one row per loader item: the
   item id and metadata, the decided `label`, and the judged columns
   (confidence, agreement, label_source, verifier review, judge
   identity). Do not read the stored item payload; item facts belong
   in loader metadata.
+- **One row per attempted item**: the audit reads coverage from the
+  frame, so a hand-rolled frame fn must keep every item judging
+  attempted, with a null `label` where no judgement was delivered -
+  filtering to labelled rows makes failed or refused items invisible
+  to the audit and its unjudged-units flag. `turns_frame` satisfies
+  this by construction.
 
 ## 2. Report blocks
 
@@ -258,7 +280,7 @@ A layer needs no judge. Two zero-LLM-call shapes:
 
 ## 5. Notebook analysis and reliability
 
-`transect.load(scans_dir, extra_layers=[MY_LAYER])` remounts the layer's
+`transect.load(results.scan_location, extra_layers=[MY_LAYER])` remounts the layer's
 frame from the stored scan without re-scanning (the layer must be
 passed again - the store alone does not know your frame fn). The
 reliability functions run over the layer's frame directly
@@ -267,6 +289,14 @@ votes-shaped ones, `transect.member_ballots(frame, "turn")` explodes the
 frame's raw `members` column into the long-format ballots
 (`cohort_agreement`, `member_coverage`, `label_stats`'s votes
 argument). Empty outside the voting regimes - a solo judge records
-no member ballots. The per-function column contract is the README's
-table; every function raises a `KeyError` naming missing columns and
-the fix.
+no member ballots. Read each installed `transect.reliability` function's
+docstring for its input columns and units, or the matching source
+[reliability module](https://github.com/AI-Safety-Institute/transect/blob/main/src/transect/reliability.py).
+Missing required columns raise a `KeyError` naming the fix.
+
+Before scaling a custom layer, check source identities through loader, stored
+result, frame, tags and source link. Test dropped, repeated and reordered
+batch answers; a matching row count alone does not establish alignment.
+Preserve distinct actions within one turn, or document an explicit aggregation
+rule. Inspect `results.scan_status` and per-item statuses after loading the exact
+scan; successful execution does not establish complete or correct labels.

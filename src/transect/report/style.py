@@ -52,6 +52,7 @@ h3 {{ font-size: var(--transect-font-size-small); font-weight: 600; }}
 /* h4 (audit entity names) bold over h5 (the maps' own titles), so
    the audit's heading hierarchy reads top-down */
 h4 {{ font-size: var(--transect-font-size-smaller); font-weight: 600; }}
+.phase-cards {{ overflow-wrap: anywhere; }}
 .meta {{ color: var(--transect-color-muted); font-size: 0.85rem; }}
 /* chart how-to-read lines: one step below .meta, so explainers cede
    visual space to the charts they explain */
@@ -78,6 +79,7 @@ h4 {{ font-size: var(--transect-font-size-smaller); font-weight: 600; }}
 .warning {{ color: #b00a1f; font-size: 0.9rem; font-weight: 600;
            background: #fdeaee; padding: 6px 10px;
            border-radius: var(--transect-radius); }}  /* darkened red */
+.warning a {{ color: inherit; }}  /* steel clashes inside the red band */
 .warning-amber {{ color: #7a6300; background: #fdf6e0; font-weight: 500; }}
 /* the audit's per-classification maps: colour ramps computed in
    sections.py (red = unhealthy, steel = healthy; pale-to-steel for

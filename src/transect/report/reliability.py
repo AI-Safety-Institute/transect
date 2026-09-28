@@ -13,6 +13,7 @@ import pandas as pd
 
 from transect.reliability import (
     NO_MEAN as NO_MEAN,
+    NO_RATE as NO_RATE,
     CohortAgreement as CohortAgreement,
     LabelStats as LabelStats,
     Mean as Mean,
@@ -26,7 +27,9 @@ from transect.reliability import (
     mean_stat as mean_stat,
     member_coverage as member_coverage,
     provenance_shares as provenance_shares,
+    rate as rate,
     relabel_rate as relabel_rate,
+    review_units as review_units,
     spot_check_overturns as spot_check_overturns,
     wilson_interval as wilson_interval,
 )
@@ -36,8 +39,9 @@ from transect.report.colors import _UNJUDGED_BASES
 # confidence-tier bounds.
 AGREEMENT_RELIABLE = 0.80  # Krippendorff's conventional "reliable" band
 AGREEMENT_TENTATIVE = 0.66  # below: unreliable; between the two: tentative
-KROLL_SUSPICIOUSLY_HIGH = 0.95  # self-agreement so high it suggests anchoring
+KROLL_SUSPICIOUSLY_HIGH = 0.95  # heuristic: inspect near-perfect self-agreement
 RELABEL_RATE_HIGH = 0.20  # verifier re-labels more than 1 in 5 examined
+UNJUDGED_SHARE_SERIOUS = 0.25  # red: a quarter of the surface is unmeasured
 
 
 def describe_regime(regime: Regime) -> str:
@@ -121,6 +125,7 @@ def build_flags(
     cohort: CohortAgreement,
     relabel: RelabelRate,
     spot_check: Rate,
+    unjudged: Rate = NO_RATE,
 ) -> list[Flag]:
     """Flags for one judged entity, each self-contained: metric, value,
     a plain-language explanation of what its threshold means, and a
@@ -128,8 +133,8 @@ def build_flags(
     into amber/red.
 
     Thresholds are the module-level flagging-policy constants above,
-    plus the thresholdless rule: any random-sample spot-check overturn
-    flags red.
+    plus two thresholdless rules: any random-sample spot-check overturn
+    flags red, and any unjudged unit flags at least amber.
     """
     flags: list[Flag] = []
     if regime.kind == "k_roll" and k_roll_stat.n and k_roll_stat.mean is not None:
@@ -144,11 +149,10 @@ def build_flags(
                     "its own labelling several times over, agrees with itself on "
                     "fewer than 4 in 5 turns: unusually noisy for what should be a "
                     "repeatable process.",
-                    "Check the judge's sampling settings first: lower temperature "
-                    "or top_p where the model exposes them; reasoning models often "
-                    "fix or ignore temperature and tune with reasoning effort "
-                    "instead. If inconsistency remains, tighten the rubric's "
-                    "definitions.",
+                    "Inspect effective sampling settings, source cases and coverage. "
+                    "Test any proposed setting or rubric change against "
+                    "unchanged-setup repeats; greater consistency alone does not "
+                    "establish correctness.",
                 )
             )
         elif k_roll_stat.mean > KROLL_SUSPICIOUSLY_HIGH:
@@ -158,14 +162,12 @@ def build_flags(
                     f"{k_roll_stat.mean:.2f}",
                     "amber",
                     f"Flagged above {KROLL_SUSPICIOUSLY_HIGH:.2f}: near-perfect "
-                    "self-agreement. At "
-                    "temperature 0 this is expected - repeat rolls near-replay "
-                    "each other, so it says nothing about quality. With sampling "
-                    "enabled, self-agreement this extreme can indicate a "
-                    "rubric/vocabulary artifact rather than a genuinely "
-                    "unambiguous transcript.",
-                    "Run a scrambled-vocabulary check to rule out label-name "
-                    "anchoring before leaning on this number.",
+                    "self-agreement can reflect the cases, sampling settings, shared "
+                    "prompts or cache replay. Check effective settings and fresh-call "
+                    "provenance before attributing its cause; agreement alone does "
+                    "not establish quality.",
+                    "Consider a label-name sensitivity check alongside unchanged-setup "
+                    "repeats; it cannot isolate name anchoring by itself.",
                 )
             )
     if regime.kind == "cohort" and cohort.alpha is not None:
@@ -192,8 +194,8 @@ def build_flags(
                     f"{cohort.alpha:.2f}",
                     level,
                     explanation,
-                    "A larger cohort narrows the estimate's uncertainty but "
-                    "rarely helps beyond ~5 members.",
+                    "Inspect disagreements and coverage before changing the roster. "
+                    "More correlated judges need not improve precision or correctness.",
                 )
             )
     if relabel.overall.of > 0:
@@ -208,9 +210,9 @@ def build_flags(
             if regime.verifier_same_model:
                 remediation += (
                     " The verifier here is the same model as the judge, so this "
-                    "rate reflects self-consistency under a second look rather "
-                    "than an independent reviewer's disagreement: treat it as a "
-                    "lower bound on what an independent check might find."
+                    "rate measures revision under a different review prompt. It is "
+                    "neither unchanged-procedure repeatability nor a bound on "
+                    "what another reviewer would change."
                 )
             flags.append(
                 Flag(
@@ -233,8 +235,9 @@ def build_flags(
                 if regime.verifier_same_model:
                     remediation += (
                         " The verifier here is the same model as the judge, so "
-                        "treat this as a self-consistency signal, not an "
-                        "independent reviewer's disagreement."
+                        "this records self-revision under a different review "
+                        "procedure; "
+                        "it does not establish which label is correct."
                     )
                 flags.append(
                     Flag(
@@ -254,13 +257,35 @@ def build_flags(
                 f"{spot_check.count} of {spot_check.of} sampled",
                 "red",
                 "Flagged whenever this count is above zero: a random, not "
-                "doubt-triggered, sample was overturned by the verifier, i.e. the "
-                "judge got a randomly-picked case wrong without flagging its own "
-                "doubt about it first. That is a sign of confident mislabelling, "
-                "not just noisy uncertainty.",
-                "Treat labels from this surface with extra caution; a "
-                "planted-incorrect-label experiment can help confirm the "
-                "verifier's catch rate.",
+                "doubt-triggered, sample received an applied relabel. This records "
+                "a disagreement worth checking against the source; it does not "
+                "establish that the original label was wrong.",
+                "Inspect the original evidence and both explanations. Planted-error "
+                "tests assess response to those interventions, not the verifier's "
+                "accuracy on naturally occurring cases.",
+            )
+        )
+    if unjudged.count > 0 and unjudged.rate is not None:
+        serious = unjudged.rate >= UNJUDGED_SHARE_SERIOUS
+        flags.append(
+            Flag(
+                "unjudged units (no delivered judgement)",
+                f"{unjudged.count} of {unjudged.of} ({unjudged.rate:.0%})",
+                "red" if serious else "amber",
+                "Flagged whenever this count is above zero: these units carry "
+                "no judgement at all (refusal, empty answer, or never reached), "
+                "so their grey rendering means unmeasured, not absent "
+                "activity. Units unjudged by design (tool-only turns, "
+                "unrequested classifications) are not counted here."
+                + (
+                    f" Red at or above {UNJUDGED_SHARE_SERIOUS:.0%}: a large "
+                    "share of this surface is unmeasured."
+                    if serious
+                    else ""
+                ),
+                "Check the recorded analysis errors under Scan execution & "
+                "coverage for provider failures, then re-run judging into a "
+                "separate scan store; do not read partial coverage as complete.",
             )
         )
     return flags
