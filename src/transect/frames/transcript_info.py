@@ -39,7 +39,8 @@ Columns (identity prefix explained in common.py):
 - message_limit / token_limit / time_limit / working_limit / epochs /
   epochs_reducer / fail_on_error / sandbox: the eval-level config as
   configured; None with header_available=True means "not set", with
-  False it means "data not found" (the renderer words the two apart).
+  False it means "not recorded by source" (the renderer words the two
+  apart).
 - dataset_samples / dataset_shuffled / scorers: dataset shape and
   scorer names from the header.
 - system_prompt / task_message: the verbatim initial prompts - the

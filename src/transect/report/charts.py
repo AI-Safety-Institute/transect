@@ -186,7 +186,9 @@ def phase_band(
     iframe and sharing an x-domain and margins. The strip stays per-turn
     - ``judge_agreement`` varies turn-to-turn within one phase, which is
     the point of it - so it was never a candidate for the band's
-    per-phase chunking.
+    per-phase chunking. Each row names itself in the shared left margin
+    ("phases" / "agreement", `_margin_label`): an unlabeled strip was
+    read as a confidence readout.
 
     No interactor and no hover line: an interval mark sharing a plot
     with `nearest_x` throws in-browser (module docstring), so this chart
@@ -433,6 +435,10 @@ def phase_band(
         "confidence": "confidence",
     }
     band = plot(
+        # the band's name in the left margin, matching the strip's below
+        # so the two rows read as a labelled pair; declared first so
+        # `highlight` still binds to the visible rect right before it
+        _margin_label("phases"),
         rect(
             data,
             x1="x1",
@@ -648,6 +654,12 @@ def phase_band(
         ]
         strip_data = Data.from_dataframe(cells[columns])
         strip = plot(
+            # the strip's own name, in the left margin: a thin unlabeled
+            # row under the band was read as confidence (see
+            # `_BAND_MARGIN_LEFT` for the room it needs). Declared first,
+            # so the tip-bearing rect below stays the plot's first
+            # tip mark and `highlight`-style binding rules are untouched.
+            _margin_label("agreement"),
             rect(
                 strip_data,
                 x1="x1",
@@ -774,19 +786,43 @@ def has_judge_agreement(phase_turns: pd.DataFrame) -> bool:
     return bool(phase_turns.judge_agreement.notna().any())
 
 
-# The phase band's left/right margins. The band draws nothing into
-# either (no y-axis, no row labels), so both are sized to the smallest
-# gap that keeps the top axis's edge ticks clear of the svg's edges.
+# The phase band's left/right margins, shared by the agreement strip
+# (and the interventions chart) so their turn columns line up.
 #
-# 20 on the left clears the leftmost tick's text by ~9px. 16 on the
-# right, not less: Plot centres a tick's text on its tick position
-# rather than right-aligning it, so the last tick can extend past the
-# domain's right edge by half its own width - measured on a
-# 6-turn/1000px fixture, 8px overflowed the svg by 0.46px. The risk is
-# specific to short transcripts; at real scale the last "nice" tick
-# lands well short of the padded domain edge.
-_BAND_MARGIN_LEFT = 20
+# The left margin holds the two rows' names ("phases" / "agreement",
+# `_margin_label`): the strip in particular was read as a confidence
+# readout when it carried no label of its own. 72 fits "agreement" at
+# the label's 11px font right-aligned 6px off the frame with ~10px to
+# spare; the old 20 (the leftmost tick's text clearance, ~9px) is
+# well inside it. 16 on the right, not less: Plot centres a tick's
+# text on its tick position rather than right-aligning it, so the last
+# tick can extend past the domain's right edge by half its own width -
+# measured on a 6-turn/1000px fixture, 8px overflowed the svg by
+# 0.46px. The risk is specific to short transcripts; at real scale the
+# last "nice" tick lands well short of the padded domain edge.
+_BAND_MARGIN_LEFT = 72
 _BAND_MARGIN_RIGHT = 16
+
+# the margin labels' colour: the page's muted text, so they read as
+# captions rather than data
+_MARGIN_LABEL_FILL = "#6c757d"
+
+
+def _margin_label(name: str) -> Mark:
+    """A row's name in the plot's left margin: anchored to the frame's
+    left edge, right-aligned and nudged 6px outward, so it sits in the
+    margin `_BAND_MARGIN_LEFT` reserves rather than over the first
+    turn's cell. A text mark with no data source and a literal fill:
+    the literal survives the plot's identity colour scale, and a mark
+    without a tip stays outside the one-channel-key-set rule (module
+    docstring)."""
+    return text(
+        text=[name],
+        frame_anchor="left",
+        styles=TextStyles(text_anchor="end", font_size=11),
+        dx=-6,
+        fill=_MARGIN_LABEL_FILL,
+    )
 
 
 # Room for the `x_axis="top"` tick numbers *and* the axis's own "turn"
@@ -859,6 +895,23 @@ def has_derived_token_views(one: pd.DataFrame) -> bool:
     # value-based, not column-presence: the frames contract guarantees
     # the columns exist, so all-NA views are the real fallback condition
     return bool(one[list(_TOKEN_SOURCE_COLUMNS)].notna().any().any())
+
+
+def token_measures_coincide(one: pd.DataFrame) -> bool:
+    """Whether ``per-turn total`` and ``per-turn new work`` are equal on
+    every turn that carries both, so the measure selector visibly
+    changes nothing. True on any source that recorded no cache reads or
+    writes: total is context + output and new work is input + output +
+    capped cache writes, which reduce to the same sum without cache
+    columns. False with no comparable turn at all (the raw fallback).
+    Exported so `sections.token_intro` can caption the coincidence.
+    """
+    both = one[["turn_total", "new_work"]].dropna()
+    if not len(both):
+        return False
+    return bool(
+        (both.turn_total.astype("int64") == both.new_work.astype("int64")).all()
+    )
 
 
 def token_stack(

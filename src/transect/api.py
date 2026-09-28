@@ -172,10 +172,22 @@ def transect(
     validate_section_order(section_order, [layer.name for layer in extra_layers or []])
     loaded_spec = spec if isinstance(spec, Spec) else load_spec(spec)
     if judge_models is None:
+        declared = (
+            f"the spec declares {len(loaded_spec.phases)} phases and "
+            f"{len(loaded_spec.subagent_labels)} subagent_labels but "
+            if loaded_spec.phases or loaded_spec.subagent_labels
+            else ""
+        )
+        custom = (
+            " (custom extra_layers scanners still run with their own models)"
+            if any(layer.scanner is not None for layer in extra_layers or [])
+            else ""
+        )
         print(
-            "WARNING: no judge_models - the judged surfaces (decision "
-            "phases, sub-agent classification) will be absent from the "
-            "report"
+            f"WARNING: {declared}no judge_models - the built-in judged "
+            "surfaces (decision phases, sub-agent classification) will be "
+            f"absent from the report{custom}; pass judge_models=<model> "
+            "to add them"
         )
     else:
         if not loaded_spec.phases:

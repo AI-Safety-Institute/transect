@@ -150,7 +150,7 @@ def render_report(
                     ),
                     _chart(phase_components, phase_height),
                     sections.phase_chips(my_phases, phase_colors, my_definitions),
-                    sections.agreement_strip_caption(my_phase_turns),
+                    sections.agreement_strip_caption(my_phase_turns, my_phases),
                     sections.phase_definitions(my_definitions),
                 ],
             )
@@ -191,6 +191,18 @@ def render_report(
                     ),
                 ],
             )
+        else:
+            # the section stays, as a note: a reader looking for the
+            # timeline finds the reason in its place, not a gap
+            add(
+                (
+                    "phase_timeline",
+                    sections.section(
+                        "Phase timeline",
+                        [sections.no_phases_note(results.scan_status)],
+                    ),
+                )
+            )
         # 2. human interventions, directly below the phase timeline: the
         # natural cross-read is phase behaviour around an intervention
         # (only when the transcript has any)
@@ -209,7 +221,11 @@ def render_report(
             add(("interventions", interventions_section))
         # 3. token telemetry
         derived = charts.has_derived_token_views(one)
-        token_blocks = [sections.token_intro(derived)]
+        token_blocks = [
+            sections.token_intro(
+                derived, coincide=derived and charts.token_measures_coincide(one)
+            )
+        ]
         components, stack_height = charts.token_stack(one, my_flushes)
         token_blocks.append(
             _chart(components, stack_height)
