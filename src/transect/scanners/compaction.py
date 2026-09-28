@@ -18,10 +18,6 @@ Inspect's post-compaction continuation lines are hardcoded constants and
 are not extracted.
 """
 
-import asyncio
-from itertools import chain
-
-from inspect_ai.log import read_eval_log_sample
 from inspect_scout import Transcript
 
 _MEMORY_WARNING_PREFIX = "Context compaction approaching. Use memory() to save"
@@ -36,24 +32,6 @@ async def compaction_texts(transcript: Transcript) -> list[dict[str, str | None]
     events, messages = transcript.events, transcript.messages
     if not any(event.event == "compaction" for event in events):
         return []
-    # inspect_scout does not resolve attachment references inside pooled
-    # model-event inputs (its pool item parser collects none), so the prompt
-    # text can arrive as ``attachment://<id>``. Re-read the sample resolved.
-    if transcript.source_uri and any(
-        "attachment://" in message.text
-        for message in chain.from_iterable(
-            event.input for event in events if event.event == "model"
-        )
-    ):
-        sample = await asyncio.to_thread(
-            read_eval_log_sample,
-            transcript.source_uri,
-            id=transcript.task_id,
-            epoch=transcript.task_repeat or 1,
-            resolve_attachments=True,
-        )
-        events, messages = sample.events, sample.messages
-
     # Both texts are user messages Inspect showed the model without adding
     # them to the conversation history, so a message that is in the history
     # (the task input, an operator note, the tail of a native compaction
