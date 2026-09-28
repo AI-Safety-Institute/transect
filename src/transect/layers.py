@@ -43,8 +43,7 @@ class Layer:
             judge parameter always takes the entry point's value, so
             hardcode layer-local judge choices in the factory body.
             ``load()`` never calls a factory: it only needs the
-            scanner's registry name. Joins the scan batch; results
-            feed ``frame``.
+            scanner's registry name.
         scanner_args: Extra keyword arguments for a factory-form
             scanner (a rubric, settings) - anything the factory needs
             that is neither a judge argument nor in the spec. Refused

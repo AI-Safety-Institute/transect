@@ -184,9 +184,6 @@ The pieces, and the rules that make them work:
   count, retries or timeouts, pass `Model` instances built with
   `get_model(name, config=GenerateConfig(...))` as `judge_models`.
 - **Frame fn inputs**: a frame fn receives the raw results table only.
-  One that needs the spec or settings is an ordinary closure or
-  `functools.partial` - no registry identity is involved, so nothing
-  more is needed.
 - **Vocabulary**: `answer` is the closed label list the judge picks
   from; `vocabulary` records the rubric in the scan store as
   `label_vocab` provenance (never shown to the judge - put rubric

@@ -50,29 +50,34 @@ def research_skills(
     )
 
 
-layer = Layer(
-    name="research_skills",
-    scanner=research_skills,  # factory: spec + judge roster come from transect()
-    frame=turns_frame,  # results -> one judged row per turn
-    tags={"skill": "label"},
-    audit=("turn", "label"),
-    section=[
-        Markdown(
-            "#### Research-skill per reasoning turn\n\n"
-            "One research-skill label per orchestrator reasoning turn "
-            "(own text plus each sub-agent spawn task)."
-        ),
-        TurnBand(label="label"),
-    ],
-)
-
 results = transect(
     "examples/logs",
     "examples/spec.yaml",
     judge_models="anthropic/claude-sonnet-4-6",
     scans_dir="examples/scans/research_skills",
     title="House-price demo - research skills",
-    extra_layers=[layer],
+    extra_layers=[
+        Layer(
+            name="research_skills",
+            scanner=research_skills,  # factory: spec + judge roster come from transect()
+            frame=turns_frame,  # results -> one judged row per turn
+            # phase-card chips: a "skill=<label>" chip on every card whose
+            # turn range carries this layer's label, a filter per family,
+            # and a "Group by: skill" option in Token spend
+            tags={"skill": "label"},
+            # an entity block in the reliability audit, keyed by the
+            # frame's (unit column, label column)
+            audit=("turn", "label"),
+            section=[
+                Markdown(
+                    "#### Research-skill per reasoning turn\n\n"
+                    "One research-skill label per orchestrator reasoning turn "
+                    "(own text plus each sub-agent spawn task)."
+                ),
+                TurnBand(label="label"),
+            ],
+        )
+    ],
 )
 
 print("\nreport:", results.report_paths[0])
@@ -84,8 +89,8 @@ print(
     + skills.label.value_counts().to_string()
 )
 print(
-    "\nexplore the layer in a notebook (pass the same layer to load - it\n"
-    "remounts the frame from the stored scan, no rescan, no model calls):\n\n"
+    "\nexplore the layer in a notebook (re-declare the layer and pass it\n"
+    "to load - it remounts the frame from the stored scan, no rescan):\n\n"
     "    from transect import load\n"
     '    results = load("examples/scans/research_skills", extra_layers=[layer])\n'
     '    results.layer_frames["research_skills"]  # judged per-turn frame\n'
