@@ -492,16 +492,23 @@ def intervention_line(interventions: pd.DataFrame) -> Markup:
     def text(value) -> str | None:
         return None if value is None or pd.isna(value) else str(value)
 
-    items = [
-        {
-            "turn": int(i.turn),
-            "channel": i.channel,
-            "content": text(i.content) or "",
-            "prompt": text(i.prompt),
-            "outcome": text(i.outcome),
-        }
-        for _, i in interventions.sort_values("turn").iterrows()
-    ]
+    items = []
+    for _, i in interventions.sort_values("turn", kind="stable").iterrows():
+        initiator = text(i.initiator)
+        items.append(
+            {
+                "turn": int(i.turn),
+                "channel": i.channel,
+                "content": text(i.content) or "",
+                "prompt": text(i.prompt),
+                "outcome": text(i.outcome),
+                # a store written before initiator existed: read it off
+                # the channel, so an old input_event row is not a "message"
+                "agent": initiator == "agent"
+                if initiator
+                else i.channel in ("input_event", "approval"),
+            }
+        )
     return _notes.intervention_line(items)
 
 

@@ -77,7 +77,8 @@ def render_report(
         my_flushes = _mine(results.flushes, transcript_id).sort_values("turn")
         flush_turns = list(my_flushes.turn)
         my_interventions = _mine(results.interventions, transcript_id).sort_values(
-            "turn"
+            "turn",
+            kind="stable",  # several interventions can share a turn
         )
         intervention_turns = list(my_interventions.turn)
         my_phases = _mine(results.phases, transcript_id)

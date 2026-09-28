@@ -76,9 +76,10 @@
 
 {#- Full text, never cut: the list exists to be read, and a message
     can run to many lines (`.intervention-text` scrolls past a cap).
-    An agent-initiated exchange shows the question and the answer. -#}
+    An agent-initiated exchange shows the question (when the source
+    recorded one) and the answer; an empty answer says so. -#}
 {% macro intervention_line(interventions) -%}
-<details class="event event-list"><summary>{{ interventions|length }} human intervention(s) &middot; solid navy lines on the chart above</summary><ol>{% for i in interventions %}<li>turn {{ i.turn }} &middot; {{ i.channel }}{% if i.outcome %} &middot; {{ i.outcome }}{% endif %}{% if i.prompt %}<div class="intervention-text"><span class="meta">asked (agent):</span> {{ i.prompt }}</div><div class="intervention-text"><span class="meta">answered (human):</span> {{ i.content }}</div>{% else %}<div class="intervention-text"><span class="meta">message (human):</span> {{ i.content }}</div>{% endif %}</li>{% endfor %}</ol></details>
+<details class="event event-list"><summary>{{ interventions|length }} human intervention(s) &middot; solid navy lines on the chart above</summary><ol>{% for i in interventions %}<li>turn {{ i.turn }} &middot; {{ i.channel }}{% if i.outcome %} &middot; {{ i.outcome }}{% endif %}{% if i.agent %}{% if i.prompt %}<div class="intervention-text"><span class="meta">asked (agent):</span> {{ i.prompt }}</div>{% endif %}<div class="intervention-text"><span class="meta">{{ "answered" if i.prompt else "recorded" }} (human):</span> {% if i.content %}{{ i.content }}{% else %}<span class="meta">no answer recorded</span>{% endif %}</div>{% else %}<div class="intervention-text"><span class="meta">message (human):</span> {% if i.content %}{{ i.content }}{% else %}<span class="meta">empty message</span>{% endif %}</div>{% endif %}</li>{% endfor %}</ol></details>
 {%- endmacro %}
 
 {% macro intervention_legend() -%}
