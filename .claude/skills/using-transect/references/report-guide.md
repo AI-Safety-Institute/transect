@@ -43,15 +43,14 @@ LLM prose), then three default-collapsed expandables:
   prompt, tool roster, attempts, submit, compaction, truncation,
   approval), and the verbatim initial prompts (system message +
   first task message the model actually saw) as sub-expandables.
-  For Inspect `.eval` logs, compaction prompt and nudge cards follow:
-  the summary prompt, the save-context warning before compaction, and
-  the resume instruction after it. Each distinct recorded text appears
-  once, with event details available in `flushes`. The configured template
-  is shown only when no recorded prompt is available; absent or
-  unidentifiable text reads "data not found". OpenClaw does not expose
-  these cards yet.
-  Native Anthropic compaction can record a resume nudge without exposing
-  the summarization prompt. Its generated summary is not a prompt.
+  For Inspect `.eval` logs, two compaction cards follow: the
+  summarization prompt and the save-to-memory nudge issued before
+  compaction, each distinct recorded text once (per-event text is in
+  `flushes`). The configured template is shown only when no recorded
+  prompt is available; absent text reads "data not found" - expected
+  when the run had no `memory` tool (no nudge is issued) or used native
+  provider compaction (no prompt is recorded). OpenClaw exports carry
+  neither, so those cards do not appear.
   A recorded compaction threshold also appears here, as a token count or
   a percentage of the context window. The threshold row is absent when
   unrecorded.

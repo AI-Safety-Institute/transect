@@ -243,14 +243,14 @@ too, but nothing here requires it.)
   new-content tokens, not billable cost.
 - `flushes` preserves compaction `role`, full `metadata`, `strategy`,
   `messages_before`, `messages_after`, and `trigger`. For Inspect `.eval`
-  logs it also carries `compaction_prompt` (summary-call input),
-  `compaction_nudge` (save-context warning), and `compaction_resume`
-  (instruction after a summary or Anthropic native compaction block).
-  A native summary is output, not the prompt that produced it.
-  Unrecorded or unidentifiable text is
-  missing, including on OpenClaw and synthesized drops. The separately
-  recorded template is `transcript_info.compaction_prompt`; the report
-  uses it only when no observed prompt is available. These fields
+  logs it also carries `compaction_prompt` (the summarization prompt as
+  the model saw it) and `compaction_nudge` (the save-to-memory warning
+  issued before compaction). The nudge only exists when the run had a
+  `memory` tool and the strategy's memory warning on; native provider
+  compaction records no prompt. Unrecorded text is missing, including on
+  OpenClaw (whose export has no prompt or nudge) and synthesized drops.
+  The configured template is `transcript_info.compaction_prompt`; the
+  report uses it only when no observed prompt is available. These fields
   require a fresh scan; old stores cannot recover them by re-rendering.
 - `transcript_info.compaction` retains the recorded strategy configuration,
   including its threshold when available. Re-rendering shows absolute

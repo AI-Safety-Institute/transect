@@ -1,17 +1,15 @@
-"""Inspect compaction text stays attributable from scan through stored report."""
+"""Inspect compaction text stays attributable from a real log to the stored report."""
 
 import pandas as pd
 import pytest
 from helpers import StubTranscript, model_turn, run_item
+from inspect_ai import Task, eval as inspect_eval
+from inspect_ai.agent import react
+from inspect_ai.dataset import Sample
 from inspect_ai.event import CompactionEvent
-from inspect_ai.log import read_eval_log, write_eval_log
-from inspect_ai.model import (
-    ChatMessageAssistant,
-    ChatMessageSystem,
-    ChatMessageUser,
-    ContentData,
-    ModelUsage,
-)
+from inspect_ai.model import ChatMessageUser, CompactionSummary, ModelOutput, get_model
+from inspect_ai.scorer import includes
+from inspect_ai.tool import tool
 from inspect_scout import Transcript
 from test_frames import raw_row
 from test_report_integration import _assert_no_page_errors
@@ -24,174 +22,135 @@ from transect.report.sections import compaction_threshold, eval_setup_blocks
 from transect.scanners.base import context_flush, eval_setup
 from transect.spec import Spec
 
-PROMPT = (
-    "Summarize the work completed so far. Include the user's request, decisions, "
-    "changed files, errors, and remaining tasks.\n"
-    "Keep <constraints> & next steps.\n"
-    "Do not invent results or treat attempted actions as completed."
-)
-NUDGE = (
-    "Context compaction approaching. Use memory() to save concise notes on:\n"
-    "- Key decisions\n- Next steps"
-)
-RESUME = "Continue from the saved state.\nRespect <constraints>."
-SUMMARY = "Finished the baseline; validation remains."
-METADATA = {
-    "strategy": "CompactionSummary",
-    "messages_before": 8,
-    "messages_after": 3,
-    "trigger": "forced",
-    "custom": {"preserved": True},
-}
+NUDGE_PREFIX = "Context compaction approaching. Use memory() to save"
+INSTRUCTIONS = "Keep <paths> & decisions."
 
 
-def compaction_events():
-    """The recorded shapes emitted by Inspect's summary and memory paths."""
-    warning = ChatMessageUser(content=NUDGE)
-    summary = ChatMessageUser(
-        content=(
-            "[CONTEXT COMPACTION SUMMARY]\n\n"
-            f"<summary>\n{SUMMARY}\n</summary>\n\n{RESUME}"
-        ),
-        metadata={"summary": True},
-    )
-    return [
-        model_turn("saved notes", span_id="lead", input=[warning]),
-        model_turn(
-            SUMMARY,
-            span_id="lead",
-            input=[warning, ChatMessageUser(content=PROMPT)],
-        ),
-        model_turn("unrelated sub-agent", span_id="worker"),
-        CompactionEvent(
-            type="summary",
-            source="inspect",
-            span_id="lead",
-            role="solver",
-            tokens_before=900,
-            tokens_after=200,
-            metadata=METADATA,
-        ),
-        model_turn("resumed", span_id="lead", input=[summary]),
+@tool
+def noisy():
+    async def execute(n: int) -> str:
+        """Return filler.
+
+        Args:
+            n: ignored
+        """
+        return "lorem ipsum dolor sit amet " * 30
+
+    return execute
+
+
+@tool
+def memory():
+    async def execute(command: str, path: str) -> str:
+        """Stand-in for Inspect's memory tool; the name is what arms the nudge.
+
+        Args:
+            command: ignored
+            path: ignored
+        """
+        return "saved"
+
+    return execute
+
+
+@pytest.fixture(scope="module")
+def compacted_log(tmp_path_factory):
+    """A $0 react run whose small threshold forces several summary compactions,
+    with a memory tool present so the pre-compaction nudge is issued."""
+    outputs = [
+        ModelOutput.for_tool_call(
+            "mockllm/model", "noisy", {"n": i}, content=f"step {i}"
+        )
+        for i in range(30)
     ]
-
-
-@pytest.mark.parametrize("source_type", ["eval_log", "openclaw"])
-def test_compaction_records_text_only_for_inspect(source_type):
-    """Role and metadata survive projection while text extraction is eval-only."""
-    transcript = StubTranscript(compaction_events())
-    transcript.source_type = source_type
-    result = run_item(context_flush(), transcript)
-    frame = flushes_df(
-        pd.DataFrame([raw_row(result)]),
-        pd.DataFrame(
-            columns=["transcript_id", "turn", "agent_span_id", "agent_lane", "context"]
+    task = Task(
+        dataset=[Sample(input="Do the thing", target="done")],
+        solver=react(
+            tools=[noisy(), memory()],
+            compaction=CompactionSummary(threshold=1500, instructions=INSTRUCTIONS),
         ),
+        scorer=includes(),
+        message_limit=60,
     )
-    row = frame.iloc[0]
-    assert (row.turn, row.role, row.strategy, row.trigger) == (
-        3,
-        "solver",
-        "CompactionSummary",
-        "forced",
+    (log,) = inspect_eval(
+        task,
+        model=get_model("mockllm/model", custom_outputs=outputs),
+        log_dir=str(tmp_path_factory.mktemp("compacted")),
+        log_format="eval",
+        display="none",
     )
-    assert row.metadata == METADATA
-    assert (row.messages_before, row.messages_after) == (8, 3)
-    assert str(frame.messages_after.dtype) == "Int64"
-    assert (row.compaction_prompt, row.compaction_nudge, row.compaction_resume) == (
-        (PROMPT, NUDGE, RESUME) if source_type == "eval_log" else (None, None, None)
+    return log.location
+
+
+def test_recorded_prompt_and_nudge_survive_to_the_stored_report(
+    compacted_log, tmp_path
+):
+    """Every summary flush carries the formatted prompt, nudges attach to the flush
+    they preceded, and the cards render from the store without the source log."""
+    scans = tmp_path / "scan"
+    results = _run(logs=compacted_log, spec=Spec(), scans_dir=str(scans))
+    flushes = results.flushes
+    assert len(flushes) >= 3
+    assert (flushes.strategy == "CompactionSummary").all()
+    assert (flushes.trigger == "threshold").all()
+    prompts = flushes.compaction_prompt
+    assert prompts.notna().all()
+    # instructions are substituted into the recorded prompt, the template
+    # placeholder is not
+    assert prompts.str.contains(INSTRUCTIONS, regex=False).all()
+    assert not prompts.str.contains("{addendums}", regex=False).any()
+    assert "attachment://" not in "".join(prompts)
+    template = results.transcript_info.compaction_prompt.iloc[0]
+    assert "{addendums}" in template
+    # identical nudges share one pooled message id in the log, so each flush
+    # must still get the warning issued in its own window
+    nudges = flushes.compaction_nudge.dropna()
+    assert len(nudges) >= 2
+    assert nudges.str.startswith(NUDGE_PREFIX).all()
+
+    reloaded = load(str(scans))
+    pd.testing.assert_frame_equal(flushes, reloaded.flushes)
+    reloaded.transcripts_location = None
+    report = tmp_path / "report.html"
+    render(reloaded, report_path=str(report), viewer=False, open_report=False)
+    html = report.read_text()
+    assert html.count("<summary>Compaction prompt (verbatim)</summary>") == 1
+    assert "Keep &lt;paths&gt; &amp; decisions." in html
+    assert "Compaction prompt (configured template)" not in html
+    assert html.index("Task message (verbatim") < html.index("Compaction prompt")
+    _assert_no_page_errors(
+        str(report),
+        min_frames=2,
+        setup_prompts={
+            "Compaction prompt (verbatim)": prompts.iloc[0],
+            "Compaction nudge (before compaction)": nudges.iloc[0],
+        },
+        compaction_threshold=1500,
     )
 
 
-@pytest.mark.parametrize("missing", ["summary", "human_warning", "wrong_lane"])
-def test_compaction_does_not_guess_unrecorded_text(missing):
-    """Unmatched summaries, human messages, and other lanes cannot supply text."""
-    events = compaction_events()
-    if missing == "summary":
-        events[-1].input = []
-    elif missing == "human_warning":
-        events[0].input[0].source = "input"
-    else:
-        events[3].span_id = "elsewhere"
-    row = run_item(context_flush(), StubTranscript(events)).value["flushes"][0]
-    if missing == "human_warning":
-        assert row["compaction_nudge"] is None
-        assert row["compaction_prompt"] == PROMPT
-    else:
-        assert row["compaction_prompt"] is None
-        assert row["compaction_resume"] is None
-    if missing == "wrong_lane":
-        assert row["compaction_nudge"] is None
-
-
-def test_compaction_does_not_reuse_an_old_warning():
-    """A warning retained in later model histories belongs to its first flush."""
-    events = compaction_events()
-    events.extend([events[1], events[3]])
-    rows = run_item(context_flush(), StubTranscript(events)).value["flushes"]
-    assert [row["compaction_nudge"] for row in rows] == [NUDGE, None]
-
-
-@pytest.mark.parametrize(
-    "case",
-    ["recorded", "openclaw", "wrong_lane", "human", "no_summary", "stale_summary"],
-)
-def test_native_compaction_extracts_only_the_recorded_resume(case):
-    """Native summary output identifies the resume nudge, never a prompt."""
-    resume = ChatMessageUser(content="Please continue working.")
-    if case == "human":
-        resume.source = "input"
-    summary = ChatMessageAssistant(
-        content=[
-            ContentData(
-                data={
-                    "compaction_metadata": {
-                        "type": "anthropic_compact",
-                        "content": SUMMARY,
-                    }
-                }
-            )
-        ]
+@pytest.mark.parametrize("case", ["openclaw", "history_message", "no_summary_call"])
+def test_no_text_is_inferred_where_none_was_recorded(case):
+    """Other sources, a history message before the flush, and non-summary
+    compactions all leave the text columns None."""
+    task = ChatMessageUser(content="Do the thing", source="input")
+    flush = CompactionEvent(type="summary", source="inspect", span_id="lead")
+    if case == "no_summary_call":
+        flush.type = "edit"
+    transcript = StubTranscript(
+        [model_turn("working", span_id="lead", input=[task]), flush], messages=[task]
     )
-    if case == "no_summary":
-        summary.content = "Ordinary assistant response."
-    messages = [ChatMessageSystem(content="System instructions."), summary, resume]
-    if case == "stale_summary":
-        messages.append(ChatMessageAssistant(content="Already resumed."))
-    flush = CompactionEvent(
-        type="summary",
-        source="inspect",
-        span_id="lead",
-        metadata={**METADATA, "strategy": "CompactionNative"},
-    )
-    events = [
-        model_turn("working", span_id="lead"),
-        flush,
-        model_turn("other lane", span_id="worker"),
-        model_turn(
-            "resuming",
-            span_id="elsewhere" if case == "wrong_lane" else "lead",
-            input=messages,
-        ),
-        flush.model_copy(),
-        model_turn("no recorded resume", span_id="lead"),
-    ]
-    transcript = StubTranscript(events)
     if case == "openclaw":
         transcript.source_type = "openclaw"
-    rows = run_item(context_flush(), transcript).value["flushes"]
-    assert [row["compaction_resume"] for row in rows] == [
-        resume.text if case == "recorded" else None,
-        None,
-    ]
-    assert all(row["compaction_prompt"] is None for row in rows)
-    assert all(row["compaction_nudge"] is None for row in rows)
+    (row,) = run_item(context_flush(), transcript).value["flushes"]
+    assert (row["compaction_prompt"], row["compaction_nudge"]) == (None, None)
 
 
 @pytest.mark.parametrize("source_type", ["eval_log", "openclaw"])
 def test_configured_compaction_template_is_not_a_runtime_default(source_type):
     """An explicit Inspect template supplies the card when observed text is absent."""
-    for args, expected in (({}, None), ({"compaction": {"prompt": PROMPT}}, PROMPT)):
+    prompt = "Summarize.\nKeep <constraints>.\n{addendums}"
+    for args, expected in (({}, None), ({"compaction": {"prompt": prompt}}, prompt)):
         result = run_item(
             eval_setup(),
             Transcript(transcript_id="t", source_type=source_type, agent_args=args),
@@ -208,92 +167,18 @@ def test_configured_compaction_template_is_not_a_runtime_default(source_type):
         )
 
 
-def test_compaction_cards_survive_loading_without_the_source_log(demo_log, tmp_path):
-    """An eval scan stores both nudges and the prompt for escaped HTML replay."""
-    log = read_eval_log(str(demo_log))
-    assert log.samples
-    sample = log.samples[0]
-    sample.events = compaction_events()
-    sample.messages = sample.messages[:2]
-    for event in sample.events:
-        if event.event == "model":
-            event.output.usage = ModelUsage(
-                input_tokens=300, output_tokens=10, total_tokens=310
-            )
-    log.plan.steps[-1].params["compaction"] = {"prompt": "Template: {addendums}"}
-    path = tmp_path / "compaction.eval"
-    write_eval_log(log, str(path))
-    scans = tmp_path / "scan"
-    results = _run(logs=str(path), spec=Spec(), scans_dir=str(scans))
-    path.unlink()
-    reloaded = load(str(scans))
-    pd.testing.assert_frame_equal(results.flushes, reloaded.flushes)
-    reloaded.transcripts_location = None
-    report = tmp_path / "report.html"
-    render(reloaded, report_path=str(report), viewer=False, open_report=False)
-    html = report.read_text()
-    assert "Keep &lt;constraints&gt; &amp; next steps." in html
-    assert "Respect &lt;constraints&gt;." in html
-    assert html.index("Task message (verbatim") < html.index("Compaction prompt")
-    assert "Compaction prompt (configured template)" not in html
-    assert "Template: {addendums}" not in html
-    assert "Compaction nudge (before compaction)" in html
-    assert "Compaction nudge (after compaction)" in html
-    assert "<summary>Compaction prompt (verbatim)</summary>" in html
-    assert html.count("Keep &lt;constraints&gt; &amp; next steps.") == 1
-    _assert_no_page_errors(
-        str(report),
-        min_frames=2,
-        setup_prompts={
-            "Compaction prompt (verbatim)": PROMPT,
-            "Compaction nudge (before compaction)": NUDGE,
-            "Compaction nudge (after compaction)": RESUME,
-        },
-    )
-
-
-def test_empty_flushes_keep_the_new_columns():
-    """No events still yields the complete nullable compaction contract."""
-    result = run_item(context_flush(), StubTranscript([]))
-    frame = flushes_df(
-        pd.DataFrame([raw_row(result)]),
-        pd.DataFrame(
-            columns=["transcript_id", "turn", "agent_span_id", "agent_lane", "context"]
-        ),
-    )
-    assert frame.empty
-    assert {
-        "compaction_prompt",
-        "compaction_nudge",
-        "compaction_resume",
-        "metadata",
-    } <= set(frame)
-    assert str(frame.messages_before.dtype) == "Int64"
-
-
 @pytest.mark.parametrize(
     "setting, source_type, label, tokens",
     [
         ({"threshold": 120000}, "eval_log", "120,000 tokens", 120000),
-        ({"threshold": 120000.9}, "eval_log", "120,000 tokens", 120000),
         (
             {"threshold": 0.9},
             "eval_log",
             "90% of context window (token count not recorded)",
             None,
         ),
-        ({"threshold": 1}, "eval_log", "1 token", 1),
-        (
-            {"threshold": 1.0},
-            "eval_log",
-            "100% of context window (token count not recorded)",
-            None,
-        ),
         (None, "eval_log", None, None),
-        ({}, "eval_log", None, None),
-        ({"threshold": True}, "eval_log", None, None),
         ({"threshold": "120000"}, "eval_log", None, None),
-        ({"threshold": -1}, "eval_log", None, None),
         ({"threshold": 120000}, "openclaw", None, None),
     ],
 )

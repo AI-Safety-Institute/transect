@@ -16,12 +16,12 @@ Columns (identity prefix explained in common.py):
 - strategy: the recorded strategy name (e.g. CompactionSummary).
 - messages_before / messages_after: recorded message counts, nullable integers.
 - trigger: the recorded trigger (e.g. forced / threshold).
-- compaction_prompt: the verbatim summary model call's final user input.
-- compaction_nudge: the verbatim pre-compaction save-context warning.
-- compaction_resume: the resume instruction following a recorded summary
-  or Anthropic native compaction block.
-  These three text columns are Inspect eval-only; None means unrecorded
-  or not structurally identifiable. Synthesized drops carry no such facts.
+- compaction_prompt: the summarization call's formatted prompt, verbatim
+  as the model saw it.
+- compaction_nudge: the pre-compaction save-to-memory warning, verbatim.
+  Both text columns are Inspect eval-only (scanners/compaction.py says
+  how they are located); None means the source recorded no such text.
+  Synthesized drops carry no such facts.
 - schema_version: the frames contract version.
 """
 
@@ -130,7 +130,6 @@ _RECORDED_COLUMNS = (
     "metadata",
     "compaction_prompt",
     "compaction_nudge",
-    "compaction_resume",
 )
 
 

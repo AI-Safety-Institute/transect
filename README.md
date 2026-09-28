@@ -224,12 +224,12 @@ Top to bottom, everything on a shared turn axis:
 - **Flags**: a red flag at the very top marks scan execution failures; it
   links to the run-wide "Scan execution & coverage" section at the bottom.
 - **Eval setup**: model, scaffold, verbatim prompts, limits, run summary.
-  Inspect `.eval` reports also show the compaction prompt and the nudges
-  before and after compaction below the system/task prompts in Core setup.
-  Each distinct recorded text appears once. A configured prompt
-  template is shown only when no recorded prompt is available.
-  Missing text reads "data not found". Recorded compaction thresholds
-  also appear in Core setup, as token counts or context-window percentages.
+  Inspect `.eval` reports also show the compaction prompt and the
+  pre-compaction memory nudge below the system/task prompts in Core setup,
+  each distinct recorded text once. The configured prompt template is
+  shown only when no recorded prompt is available; missing text reads
+  "data not found". Recorded compaction thresholds also appear in Core
+  setup, as token counts or context-window percentages.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions marked.
@@ -262,7 +262,7 @@ object, ready for a notebook or your own Python:
 frames = results.frames()  # dict of name -> DataFrame
 frames["transcript_info"]  # one row per transcript: task, model, outcome, setup
 frames["token_timeline"]  # per-turn token usage + context size
-frames["flushes"]  # compaction tokens, role, metadata, and Inspect prompt/nudges
+frames["flushes"]  # compaction tokens, role, metadata, Inspect prompt + nudge
 frames["interventions"]  # mid-run human interventions
 frames["lane_activity"]  # per-turn sub-agent tool activity
 frames["phases"]  # stitched phases + reliability
@@ -343,9 +343,8 @@ erDiagram
         int messages_after
         string trigger
         object metadata "complete event metadata"
-        string compaction_prompt "recorded summary-call input"
-        string compaction_nudge "save-context warning before compaction"
-        string compaction_resume "resume instruction after summary or native compaction"
+        string compaction_prompt "summarization prompt as the model saw it"
+        string compaction_nudge "save-to-memory warning before compaction"
     }
     interventions["interventions (one row per human intervention)"] {
         int turn FK

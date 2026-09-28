@@ -467,7 +467,6 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
                     "metadata": None,
                     "compaction_prompt": None,
                     "compaction_nudge": None,
-                    "compaction_resume": None,
                 }
             ]
         },
@@ -510,7 +509,6 @@ def test_a_recorded_flush_without_tokens_after_infers_it():
                     "metadata": None,
                     "compaction_prompt": None,
                     "compaction_nudge": None,
-                    "compaction_resume": None,
                 }
             ]
         },

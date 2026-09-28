@@ -80,9 +80,9 @@ def compaction_threshold(info: pd.DataFrame) -> CompactionThreshold | None:
     A recorded fraction alone cannot locate a line on a token axis: the
     runtime model capacity is not recorded alongside this setting.
     """
-    if not len(info) or info.iloc[0]["source_type"] != "eval_log":
+    if not len(info) or info.iloc[0].get("source_type") != "eval_log":
         return None
-    raw = info.iloc[0]["compaction"]
+    raw = info.iloc[0].get("compaction")
     if not isinstance(raw, str):
         return None
     try:
@@ -299,8 +299,11 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         )
         if (value := cell(srow, name)) is not None
     ]
-    if len(info) and irow["source_type"] == "eval_log":
-        prompts.extend(_compaction_prompts(flushes, irow["compaction_prompt"]))
+    if cell(srow, "source_type") == "eval_log":
+        template = cell(srow, "compaction_prompt")
+        prompts.extend(
+            _compaction_prompts(flushes, str(template) if template else None)
+        )
     config_rows = [
         ("task args", found(srow, "task_args"), None),
         (
@@ -365,7 +368,6 @@ def _compaction_prompts(
     for field, label in (
         ("compaction_prompt", "Compaction prompt"),
         ("compaction_nudge", "Compaction nudge (before compaction)"),
-        ("compaction_resume", "Compaction nudge (after compaction)"),
     ):
         recorded = [
             text
@@ -376,11 +378,7 @@ def _compaction_prompts(
             prompts.append((f"{label} (verbatim)", text))
         if recorded:
             continue
-        if (
-            field == "compaction_prompt"
-            and pd.notna(configured_prompt)
-            and configured_prompt
-        ):
+        if field == "compaction_prompt" and configured_prompt:
             prompts.append((f"{label} (configured template)", configured_prompt))
         else:
             prompts.append(

@@ -64,7 +64,6 @@ def test_mechanical_report_renders_whole(name, tmp_path):
         assert "Compaction nudge" not in html
     else:
         assert "Compaction nudge (before compaction)" in html
-        assert "Compaction nudge (after compaction)" in html
         assert "no identifiable text recorded in this log" in html
     assert "Traceback" not in html
     assert "Compaction threshold:" not in html
@@ -284,7 +283,7 @@ def test_eval_setup_renders_container_values():
         ],
         dtype=object,
     )
-    html = str(sections.eval_setup_blocks(info))
+    html = str(sections.eval_setup_blocks(info, pd.DataFrame()))
     text = html_mod.unescape(html)
     assert '["<b>x</b>", "a & b"]' in text
     assert '["docker", "compose.yaml"]' in text

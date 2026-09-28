@@ -134,7 +134,6 @@ def test_context_flush_records_compaction_events_at_their_turn():
         "metadata": None,
         "compaction_prompt": None,
         "compaction_nudge": None,
-        "compaction_resume": None,
     }
 
 

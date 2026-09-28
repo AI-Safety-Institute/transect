@@ -131,11 +131,11 @@ def context_flush() -> Scanner[Transcript]:
     turn (count of model turns preceding the flush), type, source,
     tokens_before, tokens_after, role, metadata - recorded as the event
     reports them (optional facts remain None). Inspect eval logs also
-    carry compaction_prompt (the summary call's final user input),
-    compaction_nudge (the pre-compaction memory warning), and
-    compaction_resume (the instruction after the recorded summary or
-    Anthropic native compaction block).
-    Missing text stays None, including on OpenClaw imports.
+    carry compaction_prompt (the summarization call's formatted prompt)
+    and compaction_nudge (the pre-compaction memory warning), both as
+    the model saw them; see scanners/compaction.py for how they are
+    located. Text the source never recorded stays None, including on
+    OpenClaw imports, whose export carries neither.
     """
 
     async def execute(transcript: Transcript) -> Result:
@@ -158,7 +158,6 @@ def context_flush() -> Scanner[Transcript]:
                     "metadata": event.model_dump(mode="json")["metadata"],
                     "compaction_prompt": None,
                     "compaction_nudge": None,
-                    "compaction_resume": None,
                     **next(texts, {}),
                 }
             )

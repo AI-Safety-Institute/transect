@@ -91,15 +91,17 @@ scanner change take effect; run a new scan and retain both results for compariso
   data" / an explicit note - never a fabricated zero, never a silently
   missing section. Unclassified spans are listed as unclassified;
   a classifier that joined zero spans warns loudly.
-- **Compaction text is Inspect-only.** `context_flush` preserves event
-  role and metadata and extracts recorded summary prompts and pre/post
-  nudges for `eval_log` transcripts. `flushes` carries the per-event text;
-  `transcript_info.compaction_prompt` carries the configured template.
-  The report uses that template only when no recorded prompt is available.
-  Native Anthropic resume messages are extracted from the first post-flush
-  model input; native summary output is never treated as a prompt.
-  Never substitute the installed Inspect version's default prompt for
-  unrecorded text. The report places these below the system/task prompts.
+- **Compaction text is Inspect-only.** Inspect records neither the
+  summarization prompt nor the memory nudge on the `CompactionEvent`;
+  `scanners/compaction.py` locates both in the surrounding model-event
+  inputs (its docstring states the structural criteria) for `eval_log`
+  transcripts. `flushes` carries the per-event text;
+  `transcript_info.compaction_prompt` carries the configured template
+  from `agent_args`, which the report uses only when no recorded prompt
+  is available. Never substitute the installed Inspect version's default
+  prompt for unrecorded text. OpenClaw exports carry only the summary
+  output (`compactionSummary.summary`, not surfaced) - no prompt or nudge
+  exists to extract, so those columns are None there.
 - **Compaction thresholds come from recorded configuration.** The report
   reads `transcript_info.compaction` and shows absolute thresholds as an
   optional dotted line on the context chart. Fractions appear in Core
