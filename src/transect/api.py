@@ -463,6 +463,7 @@ def _run(
             "verifier_model": verifier_model,
             "verify_sample": verify_sample,
         },
+        spec=spec,
     )
     validate_layers(extra_layers, builtin_frame_names())
     jsonl = _openclaw_files(logs)

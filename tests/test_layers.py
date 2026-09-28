@@ -220,6 +220,43 @@ def test_factory_scanner_resolution_threads_the_judge_args():
         )
 
 
+def test_factory_receives_the_spec_and_its_scanner_args():
+    """A factory declaring ``spec`` gets the loaded Spec; ``scanner_args``
+    ride along as given; a key the factory cannot take, or one that
+    shadows an injected argument, is refused before any scan."""
+    seen = {}
+
+    def factory(spec, rubric, judge_models=None, threshold=0.5):
+        seen.update(spec=spec, rubric=rubric, threshold=threshold)
+        return turn_counter()
+
+    marker = object()
+    resolve_scanner_factories(
+        [
+            Layer(
+                name="x", scanner=factory, scanner_args={"rubric": "r", "threshold": 1}
+            )
+        ],
+        {"judge_models": "m"},
+        spec=marker,
+    )
+    assert seen == {"spec": marker, "rubric": "r", "threshold": 1}
+    with pytest.raises(ValueError, match="not parameters"):
+        resolve_scanner_factories(
+            [Layer(name="x", scanner=factory, scanner_args={"rubric": "r", "nope": 1})],
+            {"judge_models": "m"},
+        )
+    with pytest.raises(ValueError, match="shadow"):
+        resolve_scanner_factories(
+            [Layer(name="x", scanner=factory, scanner_args={"rubric": "r", "spec": 1})],
+            {"judge_models": "m"},
+        )
+    with pytest.raises(ValueError, match="factory-form"):
+        validate_layers(
+            [Layer(name="y", scanner=turn_counter(), scanner_args={"rubric": "r"})]
+        )
+
+
 def test_turns_frame_explodes_the_turns_key():
     """The exported helper: identity + one row per value['turns']
     entry - per-turn layers need no hand-written frame fn."""
