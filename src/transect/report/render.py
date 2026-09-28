@@ -192,8 +192,7 @@ def render_report(
                 ],
             )
         else:
-            # the section stays, as a note: a reader looking for the
-            # timeline finds the reason in its place, not a gap
+            # the section stays, as a note stating why there is no timeline
             add(
                 (
                     "phase_timeline",

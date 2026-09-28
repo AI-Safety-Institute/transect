@@ -59,8 +59,6 @@ def section(
     return _notes.section(title, [block for block in blocks if block], anchor)
 
 
-# worded as a fact about the source, not about the lookup: "not found"
-# read to users as transect failing to look
 _NOT_FOUND = "not recorded by source"
 
 
@@ -421,25 +419,20 @@ def layer_definitions(
 def agreement_strip_caption(
     phase_turns: pd.DataFrame, phases: pd.DataFrame
 ) -> Markup | None:
-    """The agreement strip's own caption, rendered directly under the
-    band chart. When the strip has no data the caption instead says why
-    it is absent: a single judge has no one to agree with (the common
-    case), or a voting regime whose turns all ended without a vote.
-    `None` only when there are no phases at all."""
+    """The agreement strip's caption under the band chart; with no strip
+    data it says why (solo judge, or no turn ended with a vote). `None`
+    only when there are no phases."""
     if has_judge_agreement(phase_turns):
         return _notes.agreement_strip_caption()
     if not len(phases):
         return None
-    # the frames contract carries judge_regime on every phases frame
     regimes = phases.judge_regime.dropna().astype(str).tolist()
     return _notes.agreement_strip_absent(solo=bool(regimes) and regimes[0] == "solo")
 
 
 def no_phases_note(status) -> Markup:
-    """The Phase timeline section's body when the run has no phases:
-    the reason is either that no phase judge was requested (the default
-    ``judge_models=None`` run) or that the scanner ran and produced none,
-    which the scan-status block accounts for."""
+    """The Phase timeline section's body when the run has no phases: no
+    phase judge was requested, or it ran and produced none."""
     requested = any(s.scanner == "decision_phases" for s in status.scanners)
     return _notes.no_phases_note(requested)
 
@@ -453,9 +446,8 @@ def phase_definitions(definitions: pd.DataFrame | None) -> Markup:
 def token_intro(derived: bool, coincide: bool = False) -> Markup:
     """Text above the token telemetry chart(s): definitions of whichever
     measures + the linear/log scale the bars chart offers. ``coincide``
-    (`charts.token_measures_coincide`) adds the sentence explaining why
-    switching between the two per-turn measures changes nothing on a
-    source that recorded no cache usage.
+    (`charts.token_measures_coincide`) adds the note that the two
+    per-turn measures are equal on this transcript.
     """
     if not derived:
         return _notes.token_intro_raw()

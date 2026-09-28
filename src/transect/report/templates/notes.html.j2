@@ -48,9 +48,8 @@
 
 {#- No bold "Token telemetry" lead-in: the section's own header names
     it, and repeating it two lines apart reads as a duplicate. -#}
-{#- ``coincide``: this transcript recorded no cache reads or writes, so
-    the two per-turn measures are equal on every turn and the selector
-    visibly changes nothing - say so, or the selector reads as broken. -#}
+{#- ``coincide``: the two per-turn measures are equal on every turn
+    (no cache usage recorded), so the selector visibly changes nothing. -#}
 {% macro token_intro_derived(coincide=False) -%}
 <p class="meta explainer">Three measures of the per-turn token stream, selectable below (Inspect input_tokens excludes cache reads and writes; output includes reasoning; missing optional breakdowns count as zero in derived views):</p>
 <ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: an estimate of new content from uncached input, output and context growth; not a measure of effort</li><li><strong>cumulative (excluding cache reads)</strong>: uncached input, output and cache-write tokens summed over turns; excludes cache reads and is not monetary cost</li></ul>
@@ -98,11 +97,8 @@
 <p class="meta"><strong>Strip under the band = per-turn judge agreement</strong> (not confidence): the share of judges whose vote matched the turn's label, darker teal = more agreed; grey = no vote agreement to show (turn not judged, judged by a single voter, or verifier re-label). Hover a cell for the members' own votes.</p>
 {%- endmacro %}
 
-{#- The strip's honest absence, in the place the strip would sit: a
-    reader who has seen it on a k-roll or cohort report otherwise takes
-    its disappearance for a regression. ``solo`` picks the single-judge
-    wording; the other case is a voting regime on which no turn ended
-    with a vote (every member failed or refused). -#}
+{#- Why there is no strip, in its place. ``solo`` = single judge; else a
+    voting regime on which no turn ended with a vote. -#}
 {% macro agreement_strip_absent(solo) -%}
 {% if solo -%}
 <p class="meta">No per-turn agreement strip on this run: a single judge (no k_rolls, no cohort) has no one to agree with, so the reliability reading here is the judge's stated confidence plus any verifier review.</p>
@@ -111,11 +107,8 @@
 {%- endif %}
 {%- endmacro %}
 
-{#- The Phase timeline section's whole body when the run has no
-    phases. Rendered in the section's usual place, so the absence of
-    the timeline, cards and phase spend is explained where a reader
-    looks for them; ``requested`` distinguishes "no judge asked for"
-    from "the judge scanner ran and produced nothing". -#}
+{#- The Phase timeline section's body when the run has no phases;
+    ``requested`` = the phase judge ran and produced none. -#}
 {% macro no_phases_note(requested) -%}
 {% if requested -%}
 <p class="meta">The phase judge ran but produced no phases for this transcript, so there is no phase timeline, no phase cards and no token spend by phase. See the Scan execution &amp; coverage block at the end of the report for the recorded errors.</p>

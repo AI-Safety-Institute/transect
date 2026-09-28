@@ -186,9 +186,8 @@ def phase_band(
     iframe and sharing an x-domain and margins. The strip stays per-turn
     - ``judge_agreement`` varies turn-to-turn within one phase, which is
     the point of it - so it was never a candidate for the band's
-    per-phase chunking. Each row names itself in the shared left margin
-    ("phases" / "agreement", `_margin_label`): an unlabeled strip was
-    read as a confidence readout.
+    per-phase chunking. Each row is named in the left margin
+    (`_margin_label`).
 
     No interactor and no hover line: an interval mark sharing a plot
     with `nearest_x` throws in-browser (module docstring), so this chart
@@ -435,9 +434,7 @@ def phase_band(
         "confidence": "confidence",
     }
     band = plot(
-        # the band's name in the left margin, matching the strip's below
-        # so the two rows read as a labelled pair; declared first so
-        # `highlight` still binds to the visible rect right before it
+        # declared first so `highlight` still binds to the rect before it
         _margin_label("phases"),
         rect(
             data,
@@ -654,11 +651,6 @@ def phase_band(
         ]
         strip_data = Data.from_dataframe(cells[columns])
         strip = plot(
-            # the strip's own name, in the left margin: a thin unlabeled
-            # row under the band was read as confidence (see
-            # `_BAND_MARGIN_LEFT` for the room it needs). Declared first,
-            # so the tip-bearing rect below stays the plot's first
-            # tip mark and `highlight`-style binding rules are untouched.
             _margin_label("agreement"),
             rect(
                 strip_data,
@@ -787,14 +779,11 @@ def has_judge_agreement(phase_turns: pd.DataFrame) -> bool:
 
 
 # The phase band's left/right margins, shared by the agreement strip
-# (and the interventions chart) so their turn columns line up.
+# and the interventions chart so their turn columns line up.
 #
-# The left margin holds the two rows' names ("phases" / "agreement",
-# `_margin_label`): the strip in particular was read as a confidence
-# readout when it carried no label of its own. 72 fits "agreement" at
-# the label's 11px font right-aligned 6px off the frame with ~10px to
-# spare; the old 20 (the leftmost tick's text clearance, ~9px) is
-# well inside it. 16 on the right, not less: Plot centres a tick's
+# 72 on the left fits the row labels (`_margin_label`): "agreement" at
+# 11px, right-aligned 6px off the frame, leaves ~10px spare and clears
+# the leftmost tick's text. 16 on the right, not less: Plot centres a tick's
 # text on its tick position rather than right-aligning it, so the last
 # tick can extend past the domain's right edge by half its own width -
 # measured on a 6-turn/1000px fixture, 8px overflowed the svg by
@@ -803,19 +792,14 @@ def has_judge_agreement(phase_turns: pd.DataFrame) -> bool:
 _BAND_MARGIN_LEFT = 72
 _BAND_MARGIN_RIGHT = 16
 
-# the margin labels' colour: the page's muted text, so they read as
-# captions rather than data
-_MARGIN_LABEL_FILL = "#6c757d"
+_MARGIN_LABEL_FILL = "#6c757d"  # the page's muted text colour
 
 
 def _margin_label(name: str) -> Mark:
-    """A row's name in the plot's left margin: anchored to the frame's
-    left edge, right-aligned and nudged 6px outward, so it sits in the
-    margin `_BAND_MARGIN_LEFT` reserves rather than over the first
-    turn's cell. A text mark with no data source and a literal fill:
-    the literal survives the plot's identity colour scale, and a mark
-    without a tip stays outside the one-channel-key-set rule (module
-    docstring)."""
+    """A row's name in the left margin `_BAND_MARGIN_LEFT` reserves:
+    right-aligned 6px off the frame's left edge. No data source and a
+    literal fill (the plot's colour scale is identity); no tip, so it
+    stays outside the one-channel-key-set rule (module docstring)."""
     return text(
         text=[name],
         frame_anchor="left",
@@ -898,14 +882,10 @@ def has_derived_token_views(one: pd.DataFrame) -> bool:
 
 
 def token_measures_coincide(one: pd.DataFrame) -> bool:
-    """Whether ``per-turn total`` and ``per-turn new work`` are equal on
-    every turn that carries both, so the measure selector visibly
-    changes nothing. True on any source that recorded no cache reads or
-    writes: total is context + output and new work is input + output +
-    capped cache writes, which reduce to the same sum without cache
-    columns. False with no comparable turn at all (the raw fallback).
-    Exported so `sections.token_intro` can caption the coincidence.
-    """
+    """Whether ``turn_total`` equals ``new_work`` on every turn carrying
+    both, as on any source with no cache reads or writes (both reduce to
+    input + output). False with no comparable turn. Exported for
+    `sections.token_intro`."""
     both = one[["turn_total", "new_work"]].dropna()
     if not len(both):
         return False

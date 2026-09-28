@@ -151,7 +151,6 @@ function _transectCardFilter(containerId) {
   });
   var count = document.getElementById(containerId + "-count");
   if (count) count.textContent = "showing " + shown + " of " + cards.length + " phases";
-  // an all-hidden card list is blank space; say what happened instead
   var empty = document.getElementById(containerId + "-empty");
   if (empty) empty.hidden = shown > 0;
 }
