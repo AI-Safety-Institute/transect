@@ -34,6 +34,7 @@ For evaluation-specific choices, first read the using-transect skill's
 |---|---|
 | `name` | mount key (`results.layer_frames[name]`), the provenance label on everything the layer renders, and its section key in `section_order`; must not collide with a built-in frame name (`transect.frames.results.builtin_frame_names()`) or a report section key (`transect.report.SECTION_KEYS`) |
 | `scanner` | any `@scanner`-decorated Scout scanner - a mechanical extractor (a grep over turns, a per-turn metric) needs no judge and costs nothing; a judged classification builds on `cohort_llm_scanner` (the path in section 1). An instance, or the un-invoked factory |
+| `scanner_args` | extra keyword arguments `transect()` passes to a factory-form scanner (settings the factory needs that are neither judge arguments nor in the spec); refused with an instance or no scanner |
 | `frame` | fn over the scanner's raw results (use `transect.turns_frame` on the supported path), or a ready DataFrame (data-only layer); omitted with a scanner = `transect.frames.user.generic_flatten` (identity columns + the value's top-level keys, one row per result) |
 | `section` | typed report blocks, rendered as a badge-marked section |
 | `tags` | phase-card tag families from the layer's per-turn frame, e.g. `{"skill": "label"}` (family name -> frame column); also feeds the Token spend grouping selector |
@@ -52,28 +53,23 @@ from inspect_scout import Scanner, Transcript, scanner
 from transect import Layer, cohort_llm_scanner, reasoning_turns, turns_frame
 from transect.report import Markdown, TurnBand
 
-SKILLS = {
-    "hypothesis": "Proposing a new idea, mechanism, or approach to test.",
-    # ... one entry per label ...
-    "none_of_the_above": "No research-skill reasoning in this turn.",
-}
-
-QUESTION = (
-    "Above is one reasoning turn of an agent. Label the turn with the "
-    "best-fitting category:\n"
-    + "\n".join(f"- {label}: {text}" for label, text in SKILLS.items())
-)
-
-
 @scanner(loader=reasoning_turns())
-def research_skills(judge_models=None, k_rolls=1, verify=None):
+def research_skills(spec, judge_models=None, k_rolls=1, verify=None):
+    # the rubric lives in the spec's extra block: {label: description},
+    # always including a none_of_the_above escape hatch
+    skills = spec.extra["research_skills"]
+    question = (
+        "Above is one reasoning turn of an agent. Label the turn with the "
+        "best-fitting category:\n"
+        + "\n".join(f"- {label}: {text}" for label, text in skills.items())
+    )
     return cohort_llm_scanner(
-        question=QUESTION,
-        answer=list(SKILLS),
+        question=question,
+        answer=list(skills),
         models=judge_models,
         k_rolls=k_rolls,
         verify=verify,
-        vocabulary=SKILLS,
+        vocabulary=skills,
     )
 
 
@@ -176,8 +172,18 @@ The pieces, and the rules that make them work:
   and a declared parameter always takes the entry point's value.
   Hardcode layer-local judge choices in the factory body instead of
   declaring the parameter. Declaring `judge_models` when `transect()`
-  got none is refused loudly. A ready instance (the factory called by
-  you) is also accepted and receives nothing.
+  got none is refused loudly. Two more inputs reach a factory: declare
+  `spec` to receive the loaded `Spec` (rubrics in `spec.extra`, the
+  worked example's shape), and put anything else it needs - settings
+  that are not eval knowledge - in `Layer(scanner_args={...})`, passed
+  through as keyword arguments (a key the factory cannot take, or one
+  shadowing a judge argument or `spec`, is refused). `load()` never
+  calls a factory, so a factory-form layer remounts from a stored scan
+  with no credentials. A ready instance (the factory called by you) is
+  also accepted and receives nothing. To bound the judges' connection
+  count, retries or timeouts, pass `Model` instances built with
+  `get_model(name, config=GenerateConfig(...))` as `judge_models`.
+- **Frame fn inputs**: a frame fn receives the raw results table only.
 - **Vocabulary**: `answer` is the closed label list the judge picks
   from; `vocabulary` records the rubric in the scan store as
   `label_vocab` provenance (never shown to the judge - put rubric
