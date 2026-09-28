@@ -34,7 +34,7 @@ For evaluation-specific choices, first read the using-transect skill's
 |---|---|
 | `name` | mount key (`results.layer_frames[name]`), the provenance label on everything the layer renders, and its section key in `section_order`; must not collide with a built-in frame name (`transect.frames.results.builtin_frame_names()`) or a report section key (`transect.report.SECTION_KEYS`) |
 | `scanner` | any `@scanner`-decorated Scout scanner - a mechanical extractor (a grep over turns, a per-turn metric) needs no judge and costs nothing; a judged classification builds on `cohort_llm_scanner` (the path in section 1). An instance, or the un-invoked factory |
-| `scanner_args` | extra keyword arguments `transect()` passes to a factory-form scanner (settings the factory needs that are neither judge arguments nor in the spec); refused with an instance |
+| `scanner_args` | extra keyword arguments `transect()` passes to a factory-form scanner (settings the factory needs that are neither judge arguments nor in the spec); refused with an instance or no scanner |
 | `frame` | fn over the scanner's raw results (use `transect.turns_frame` on the supported path), or a ready DataFrame (data-only layer); omitted with a scanner = `transect.frames.user.generic_flatten` (identity columns + the value's top-level keys, one row per result) |
 | `section` | typed report blocks, rendered as a badge-marked section |
 | `tags` | phase-card tag families from the layer's per-turn frame, e.g. `{"skill": "label"}` (family name -> frame column); also feeds the Token spend grouping selector |

@@ -11,7 +11,7 @@ from conftest import turn_counter
 from inspect_scout import Result, Scanner, Transcript, scanner
 
 import transect
-from transect import Layer, load, turns_frame
+from transect import Layer, Spec, load, turns_frame
 from transect.layers import resolve_scanner_factories, validate_layers
 
 SPEC = Path(__file__).parents[1] / "examples" / "spec.yaml"
@@ -205,56 +205,75 @@ def test_factory_scanner_resolution_threads_the_judge_args():
     (resolved,) = resolve_scanner_factories(
         [Layer(name="x", scanner=factory)],
         {"judge_models": "m", "k_rolls": 3, "verify": True},
+        Spec(),
     )
     assert seen == {"judge_models": "m", "k_rolls": 3}  # verify not declared
     assert resolved.scanner is not None and resolved.scanner is not factory
     # an already-instantiated scanner passes through untouched
     instance = turn_counter()
     (kept,) = resolve_scanner_factories(
-        [Layer(name="y", scanner=instance)], {"judge_models": None}
+        [Layer(name="y", scanner=instance)], {"judge_models": None}, Spec()
     )
     assert kept.scanner is instance
     with pytest.raises(ValueError, match="judge_models"):
         resolve_scanner_factories(
-            [Layer(name="z", scanner=factory)], {"judge_models": None}
+            [Layer(name="z", scanner=factory)], {"judge_models": None}, Spec()
         )
 
 
 def test_factory_receives_the_spec_and_its_scanner_args():
-    """A factory declaring ``spec`` gets the loaded Spec; ``scanner_args``
-    ride along as given; a key the factory cannot take, or one that
-    shadows an injected argument, is refused before any scan."""
+    """A factory declaring ``spec`` gets the loaded Spec and its
+    ``scanner_args`` as given; the resolved layer carries the instance
+    with the args consumed. A key the factory cannot take, a required
+    parameter nobody supplies, or a key shadowing an injected argument
+    is refused by name; validation accepts the un-resolved layer, which
+    is what load() sees."""
     seen = {}
+    spec = Spec.model_validate({"phases": ["a"]})
 
+    @scanner(messages="all")
     def factory(spec, rubric, judge_models=None, threshold=0.5):
         seen.update(spec=spec, rubric=rubric, threshold=threshold)
         return turn_counter()
 
-    marker = object()
-    resolve_scanner_factories(
-        [
-            Layer(
-                name="x", scanner=factory, scanner_args={"rubric": "r", "threshold": 1}
-            )
-        ],
-        {"judge_models": "m"},
-        spec=marker,
+    layer = Layer(
+        name="x", scanner=factory, scanner_args={"rubric": "r", "threshold": 1}
     )
-    assert seen == {"spec": marker, "rubric": "r", "threshold": 1}
-    with pytest.raises(ValueError, match="not parameters"):
-        resolve_scanner_factories(
-            [Layer(name="x", scanner=factory, scanner_args={"rubric": "r", "nope": 1})],
-            {"judge_models": "m"},
-        )
-    with pytest.raises(ValueError, match="shadow"):
-        resolve_scanner_factories(
-            [Layer(name="x", scanner=factory, scanner_args={"rubric": "r", "spec": 1})],
-            {"judge_models": "m"},
-        )
-    with pytest.raises(ValueError, match="factory-form"):
-        validate_layers(
-            [Layer(name="y", scanner=turn_counter(), scanner_args={"rubric": "r"})]
-        )
+    validate_layers([layer])
+    (resolved,) = resolve_scanner_factories([layer], {"judge_models": "m"}, spec)
+    assert seen == {"spec": spec, "rubric": "r", "threshold": 1}
+    assert resolved.scanner_args == {} and resolved.scanner is not factory
+    for args, match in (
+        ({"rubric": "r", "nope": 1}, "cannot take"),
+        ({}, "cannot take"),
+        ({"rubric": "r", "spec": 1}, "shadow"),
+    ):
+        with pytest.raises(ValueError, match=match):
+            resolve_scanner_factories(
+                [Layer(name="x", scanner=factory, scanner_args=args)],
+                {"judge_models": "m"},
+                spec,
+            )
+
+
+@pytest.mark.parametrize(
+    ("layer", "match"),
+    [
+        (
+            Layer(name="y", scanner=turn_counter(), scanner_args={"r": 1}),
+            "factory-form",
+        ),
+        (
+            Layer(name="y", frame=pd.DataFrame({"turn": [0]}), scanner_args={"r": 1}),
+            "factory-form",
+        ),
+        (Layer(name="y", scanner=turn_counter, scanner_args=None), "dict of keyword"),
+        (Layer(name="y", scanner=turn_counter, scanner_args=["r"]), "dict of keyword"),
+    ],
+)
+def test_scanner_args_shapes_are_validated_before_any_factory_runs(layer, match):
+    with pytest.raises(ValueError, match=match):
+        validate_layers([layer])
 
 
 def test_turns_frame_explodes_the_turns_key():

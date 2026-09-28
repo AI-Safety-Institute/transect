@@ -1,9 +1,10 @@
 """User-injected layers: the custom-interface unit.
 
 A Layer bundles one custom addition to a run: an optional scanner
-(joins the scan batch), an optional frame (a fn over the scanner's
-raw results, or a ready DataFrame), typed section blocks, and
-phase-card tags. Every field is optional but a
+(joins the scan batch) with its factory's own ``scanner_args``, an
+optional frame (a fn over the scanner's raw results, or a ready
+DataFrame), typed section blocks, and phase-card tags. Every field is
+optional but a
 layer must do something; users extend the stack via
 ``transect(..., extra_layers=[Layer(...)])``.
 
@@ -22,6 +23,8 @@ from typing import Any
 
 import pandas as pd
 from inspect_ai._util.registry import registry_info
+
+from transect.spec import Spec
 
 FrameSource = Callable[[pd.DataFrame], pd.DataFrame] | pd.DataFrame
 
@@ -47,8 +50,8 @@ class Layer:
         scanner_args: Extra keyword arguments for a factory-form
             scanner (a rubric, settings) - anything the factory needs
             that is neither a judge argument nor in the spec. Refused
-            with a ready instance, and on a name shared with a judge
-            argument or ``spec``.
+            with a ready instance or no scanner, and on a name shared
+            with a judge argument or ``spec``.
         frame: A fn mapping the scanner's raw results table to a tidy
             DataFrame, or a ready DataFrame (bring-your-own data, no
             scanner). Omitted with a scanner: the generic flatten.
@@ -168,7 +171,7 @@ def validate_layers(layers: list[Layer], builtin_frames: tuple[str, ...] = ()) -
 
 
 def resolve_scanner_factories(
-    layers: list[Layer], judge_args: dict, spec: Any = None
+    layers: list[Layer], judge_args: dict, spec: Spec
 ) -> list[Layer]:
     """Instantiate factory-form layer scanners with the run's judge
     configuration, the loaded spec, and each layer's ``scanner_args``.
@@ -207,20 +210,22 @@ def resolve_scanner_factories(
                 "transect() injects - declare them in the factory signature "
                 "instead"
             )
-        accepts_any = any(
-            p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
-        )
-        unknown = sorted(k for k in layer.scanner_args if k not in params)
-        if unknown and not accepts_any:
+        # bind() names every mismatch in one place: an unknown scanner_args
+        # key, a required parameter nobody supplies, a positional-only spec
+        try:
+            bound = inspect.signature(factory).bind(**kwargs, **layer.scanner_args)
+        except TypeError as error:
             raise ValueError(
-                f"layer {layer.name!r}: scanner_args {unknown} are not parameters "
-                f"of its scanner factory (which takes {sorted(params)})"
-            )
+                f"layer {layer.name!r}: the scanner factory cannot take the "
+                f"arguments transect() resolved for it - {error} (its parameters "
+                f"are {sorted(params)}; judge arguments and spec are injected "
+                "by signature, everything else comes from scanner_args)"
+            ) from None
         # the args are consumed here; the resolved layer carries an instance,
         # which validate_layers refuses to pair with scanner_args
         resolved.append(
             replace(
-                layer, scanner=factory(**kwargs, **layer.scanner_args), scanner_args={}
+                layer, scanner=factory(*bound.args, **bound.kwargs), scanner_args={}
             )
         )
     return resolved

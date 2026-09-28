@@ -458,8 +458,11 @@ from transect.report import Markdown, TurnBand
 @scanner(loader=reasoning_turns())  # the units to judge: one item per reasoning turn
 def research_skills(spec, judge_models=None):
     skills = spec.extra["research_skills"]  # the rubric lives in the spec
+    question = "Label this reasoning turn with the best-fitting category:\n" + "\n".join(
+        f"- {label}: {text}" for label, text in skills.items()
+    )
     return cohort_llm_scanner(
-        question=question_for(skills),  # the closed-vocab judge prompt
+        question=question,  # the closed-vocab judge prompt
         answer=list(skills),
         models=judge_models,
         vocabulary=skills,  # recorded as the layer's rubric

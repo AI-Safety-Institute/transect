@@ -454,6 +454,9 @@ def _run(
     telemetry ``.jsonl`` files, which are first imported into a transcript
     retained snapshot database under ``scans_dir`` and scanned from there.
     """
+    # validate before resolving: a malformed layer must be refused before
+    # its factory runs (and constructs judge models)
+    validate_layers(list(extra_layers or []), builtin_frame_names())
     extra_layers = resolve_scanner_factories(
         list(extra_layers or []),
         {
@@ -463,9 +466,8 @@ def _run(
             "verifier_model": verifier_model,
             "verify_sample": verify_sample,
         },
-        spec=spec,
+        spec,
     )
-    validate_layers(extra_layers, builtin_frame_names())
     jsonl = _openclaw_files(logs)
     scanners = _scanners(
         spec,
