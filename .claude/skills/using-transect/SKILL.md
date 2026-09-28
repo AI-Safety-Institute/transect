@@ -201,7 +201,8 @@ means "not judged", never "fine"; absence is stated, never faked.
 
 | Symptom | Cause / fix |
 |---|---|
-| No phases / sub-agent sections in the report | inspect `scan_status` for failed or missing requested work; also check `judge_models` and the spec's enabled vocabularies |
+| No phases / sub-agent sections in the report | the Phase timeline section states the reason in place: no judge configured (`judge_models=None`, the console warning names the declared vocabularies), or the judge ran and produced no phases - then inspect `scan_status` for failed or missing requested work |
+| No agreement strip under the phase band | a solo judge (one model, `k_rolls=1`) has no per-turn agreement to show; the caption in its place says so - `k_rolls` > 1 or a cohort brings the strip back |
 | `sample= required` error | multi-sample log; the error lists the available ids |
 | "values outside the declared vocabulary ... coerced to NaN" warning on `load()` | the store's recorded values do not match the current scanner schema - run a new scan, retain the old one, and account for any fresh judge calls |
 | Loud "none joined this transcript's lanes" warning in the report | span identity mismatch between scan and render - treat as a bug, not cosmetics |

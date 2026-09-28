@@ -54,10 +54,11 @@ source log's header was read and the option was simply not
 configured; "scaffold default" means the agent scaffold's arguments
 were recorded but this one was left to the scaffold's own default
 (the log records only configured arguments, not resolved defaults);
-"data not found" means the source never recorded the fact at all -
-the whole config block reads that way on OpenClaw imports (no .eval
-header exists), and the compaction row there says flushes are
-detected from the transcript instead.
+"not recorded by source" means the source never recorded the fact at
+all - the whole config block reads that way on OpenClaw imports (no
+.eval header exists). The compaction row describes the configured
+setting only; the flushes on the token chart are detected from the
+transcript regardless.
 
 ## 1. Phase timeline
 
@@ -82,8 +83,10 @@ armed (the Sub-agent activity summary line does the same).
   (label inherited or taken from the surrounding phase) are painted
   their phase's colour - the basis says how a turn got its label,
   the paint does not.
-- The **agreement strip** below (only when several voters judged):
-  green cells, darker = higher per-turn agreement among judges; grey
+- The **agreement strip** below, labelled "agreement" in the margin
+  (only when several voters judged; a solo run states in its place
+  that a single judge has no one to agree with): green cells, darker
+  = higher per-turn agreement among judges; grey
   = no vote agreement (single voter, verifier re-label, or not
   judged). Its tooltip: one "member votes" row joining every member's
   own vote + confidence (members named "roll-N" on a k-roll run - the

@@ -59,7 +59,7 @@ def section(
     return _notes.section(title, [block for block in blocks if block], anchor)
 
 
-_NOT_FOUND = "data not found"
+_NOT_FOUND = "not recorded by source"
 
 
 def run_intro_line(info: pd.DataFrame) -> Markup | None:
@@ -118,8 +118,9 @@ def run_intro_line(info: pd.DataFrame) -> Markup | None:
 def eval_setup_blocks(info: pd.DataFrame) -> Markup:
     """The intro's three default-collapsed expandables: Core Setup,
     Additional Config Details, Run Summary. Every row renders even
-    when its fact is absent, wording "data not found" (never recorded)
-    apart from "not set" (header read, option not configured)."""
+    when its fact is absent, wording "not recorded by source" (never
+    recorded) apart from "not set" (header read, option not
+    configured)."""
     irow = info.iloc[0] if len(info) else pd.Series(dtype=object)
     srow = irow
     header_raw = srow.get("header_available")
@@ -165,16 +166,6 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
             return str(value)
         return "scaffold default" if args_recorded else _NOT_FOUND
 
-    compaction = cell(srow, "compaction")
-    if compaction is not None:
-        compaction_text = str(compaction)
-    elif args_recorded:
-        compaction_text = "scaffold default"
-    else:
-        compaction_text = (
-            f"{_NOT_FOUND} - this report's flushes are detected from the "
-            "transcript (recorded compaction events, or context-size drops)"
-        )
     core_rows = [
         ("model", found(irow, "model"), None),
         (
@@ -213,7 +204,7 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
         ),
         (
             "compaction",
-            compaction_text,
+            scaffold("compaction"),
             "The scaffold's context-compaction setting as configured; "
             "the log does not record the resolved scaffold default.",
         ),
@@ -425,12 +416,25 @@ def layer_definitions(
     return _notes.label_definitions("Label definitions", entries)
 
 
-def agreement_strip_caption(phase_turns: pd.DataFrame) -> Markup | None:
-    """The agreement strip's own caption, rendered directly under the
-    band chart - `None` when this transcript's strip has no data."""
-    if not has_judge_agreement(phase_turns):
+def agreement_strip_caption(
+    phase_turns: pd.DataFrame, phases: pd.DataFrame
+) -> Markup | None:
+    """The agreement strip's caption under the band chart; with no strip
+    data it says why (solo judge, or no turn ended with a vote). `None`
+    only when there are no phases."""
+    if has_judge_agreement(phase_turns):
+        return _notes.agreement_strip_caption()
+    if not len(phases):
         return None
-    return _notes.agreement_strip_caption()
+    regimes = phases.judge_regime.dropna().astype(str).tolist()
+    return _notes.agreement_strip_absent(solo=bool(regimes) and regimes[0] == "solo")
+
+
+def no_phases_note(status) -> Markup:
+    """The Phase timeline section's body when the run has no phases: no
+    phase judge was requested, or it ran and produced none."""
+    requested = any(s.scanner == "decision_phases" for s in status.scanners)
+    return _notes.no_phases_note(requested)
 
 
 def phase_definitions(definitions: pd.DataFrame | None) -> Markup:
@@ -439,11 +443,15 @@ def phase_definitions(definitions: pd.DataFrame | None) -> Markup:
     return _definitions_expandable(definitions, "phases", "Phase definitions")
 
 
-def token_intro(derived: bool) -> Markup:
+def token_intro(derived: bool, coincide: bool = False) -> Markup:
     """Text above the token telemetry chart(s): definitions of whichever
-    measures + the linear/log scale the bars chart offers.
+    measures + the linear/log scale the bars chart offers. ``coincide``
+    (`charts.token_measures_coincide`) adds the note that the two
+    per-turn measures are equal on this transcript.
     """
-    return _notes.token_intro_derived() if derived else _notes.token_intro_raw()
+    if not derived:
+        return _notes.token_intro_raw()
+    return _notes.token_intro_derived(coincide)
 
 
 def event_legend(has_context_chart: bool) -> Markup:
