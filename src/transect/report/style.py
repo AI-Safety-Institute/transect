@@ -166,6 +166,8 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .event-list summary {{ color: var(--transect-color-muted); }}
 .event-list ol {{ margin: 6px 0; padding-left: 1.4rem; }}
 .event-list li {{ margin: 3px 0; }}
+.intervention-text {{ white-space: pre-wrap; max-height: 14em; overflow: auto;
+                      margin: 2px 0 4px; color: var(--transect-color-text); }}
 /* per-spawn rows in the spawn-prompts expandable: closed = one
    ellipsis-clamped line, open = the full task text below it */
 .spawn-item {{ margin: 3px 0 3px 0.4rem; }}
@@ -173,7 +175,8 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
   overflow: hidden; text-overflow: ellipsis;
   font-size: var(--transect-font-size-smaller); }}
 .spawn-item summary:hover {{ background: var(--transect-color-hover); }}
-.spawn-item .prompt-verbatim {{ margin: 0.3rem 0 0.7rem 1.1rem; }}
+.spawn-item .prompt-verbatim {{ margin: 0.3rem 0 0.7rem 1.1rem;
+                                max-height: 14em; overflow: auto; }}
 .chip {{ display: inline-flex; align-items: center; gap: 4px;
         margin: 0 8px 4px 0; font-size: var(--transect-font-size-smaller);
         color: var(--transect-chip-text); background: var(--transect-chip-bg);
