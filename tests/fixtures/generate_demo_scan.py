@@ -156,6 +156,10 @@ def portable_sources(store: Path) -> None:
 
     for path in store.rglob("*.json"):
         value = relative(json.loads(path.read_text()))
+        if path.name == "_scan.json":
+            # Scout names a scan after the working directory; pin the
+            # fixture's name so a checkout's directory does not leak in
+            value["scan_name"] = "transect"
         path.write_text(
             json.dumps(value, indent=None if path.name == "_summary.json" else 2)
         )
