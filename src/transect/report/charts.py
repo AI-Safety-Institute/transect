@@ -1318,8 +1318,9 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
     One navy solid `rule_x` per intervention turn, offset by the shared
     t-0.5 convention and purely visual (`pointer_events="none"`); an
     `_event_hit_rect` layered under it carries the hover tooltip (turn,
-    channel, an 80-char content preview), so hovering anywhere in that
-    turn's column names its source.
+    channel, 80-char previews of the question asked and the content,
+    the outcome - the last three null on rows without them), so
+    hovering anywhere in that turn's column names its source.
 
     ``act`` is expected non-empty - the orchestrator guards, this
     builder does not re-guard.
@@ -1343,10 +1344,18 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
     explicit margins) is the number worth reading, not the total.
     """
     width = chart_width(n_turns)
-    frame = act[["turn", "channel"]].copy()
-    frame["preview"] = [_intervention_preview(i) for i in act.itertuples()]
+    frame = act[["turn", "channel", "outcome"]].copy()
+    # prompt/outcome are null cells on human-initiated rows (no row pops)
+    frame["prompt_preview"] = [_preview(i.prompt) for i in act.itertuples()]
+    frame["preview"] = [_preview(i.content) for i in act.itertuples()]
     data = Data.from_dataframe(frame[["turn"]])
-    hit_channels = {"turn": "turn", "channel": "channel", "content": "preview"}
+    hit_channels = {
+        "turn": "turn",
+        "channel": "channel",
+        "asked": "prompt_preview",
+        "content": "preview",
+        "outcome": "outcome",
+    }
     component = plot(
         _event_hit_rect(
             frame,
@@ -1396,15 +1405,17 @@ _INTERVENTION_MARGIN_LEFT = _BAND_MARGIN_LEFT
 _INTERVENTION_MARGIN_RIGHT = _BAND_MARGIN_RIGHT
 
 
-def _intervention_preview(i) -> str:
-    """One intervention's content preview, trimmed to ~80 characters -
-    long enough to identify the message, short enough to keep the tooltip
-    legible. Longer than `sections.intervention_line`'s own list preview;
-    the two surfaces needn't agree on a length. An ellipsis marks an
-    actual truncation, never appended to text that already fit.
+def _preview(value) -> str | None:
+    """A tooltip text cell trimmed to ~80 characters - long enough to
+    identify the message, short enough to keep the tooltip legible (the
+    list under the chart carries the full text). An ellipsis marks an
+    actual truncation, never appended to text that already fit; None
+    stays None (no tooltip row).
     """
-    content = str(i.content)
-    return content if len(content) <= 80 else content[:80] + "…"
+    if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
+        return None
+    text = str(value)
+    return text if len(text) <= 80 else text[:80] + "…"
 
 
 def swimlanes(

@@ -74,8 +74,11 @@
 <details class="event event-list"><summary>{{ flushes|length }} context flush(es) &middot; dashed lines on the charts above</summary><ol>{% for f in flushes %}<li>turn {{ f.turn }} &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol></details>
 {%- endmacro %}
 
+{#- Full text, never cut: the list exists to be read, and a message
+    can run to many lines (`.intervention-text` scrolls past a cap).
+    An agent-initiated exchange shows the question and the answer. -#}
 {% macro intervention_line(interventions) -%}
-<details class="event event-list"><summary>{{ interventions|length }} human intervention(s) &middot; solid navy lines on the chart above</summary><ol>{% for i in interventions %}<li>turn {{ i.turn }} &middot; {{ i.channel }} &middot; &ldquo;{{ i.content }}&rdquo;</li>{% endfor %}</ol></details>
+<details class="event event-list"><summary>{{ interventions|length }} human intervention(s) &middot; solid navy lines on the chart above</summary><ol>{% for i in interventions %}<li>turn {{ i.turn }} &middot; {{ i.channel }}{% if i.outcome %} &middot; {{ i.outcome }}{% endif %}{% if i.prompt %}<div class="intervention-text"><span class="meta">asked (agent):</span> {{ i.prompt }}</div><div class="intervention-text"><span class="meta">answered (human):</span> {{ i.content }}</div>{% else %}<div class="intervention-text"><span class="meta">message (human):</span> {{ i.content }}</div>{% endif %}</li>{% endfor %}</ol></details>
 {%- endmacro %}
 
 {% macro intervention_legend() -%}

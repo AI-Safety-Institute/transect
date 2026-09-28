@@ -37,13 +37,6 @@ TEXT_CHARS = 400
 """Per-turn excerpt cap. The full text lives in the Scout viewer."""
 
 
-SPAWN_PROMPT_CHARS = 200
-"""Per-span spawn-prompt cap. The sub-agent activity section's
-expandable shows one line per span, so a shorter cap than `TEXT_CHARS`
-keeps that list scannable; the full text is what a reader deep-links to
-the Scout viewer for, same as excerpts."""
-
-
 CARD_BUDGET = 10
 """Excerpt turns per phase card, split across the card's turn groups."""
 
@@ -242,9 +235,7 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
                 transcript = await reader.read(info, content)
                 found[info.transcript_id] = TranscriptExtras(
                     excerpts=_turn_excerpts(transcript),
-                    spawn_prompts=_spawn_prompts(
-                        transcript, text_chars=SPAWN_PROMPT_CHARS
-                    ),
+                    spawn_prompts=_spawn_prompts(transcript),
                     tool_counts=_tool_call_counts(transcript),
                 )
             except Exception as failure:
@@ -297,10 +288,11 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
     return found
 
 
-def _spawn_prompts(
-    transcript: Any, text_chars: int = TEXT_CHARS
-) -> dict[str, SpawnPrompt]:
-    """Each sub-agent span's own spawn prompt, keyed by ``agent_span_id``.
+def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
+    """Each sub-agent span's own spawn prompt, in full, keyed by
+    ``agent_span_id``. Uncapped: the expandable exists for a human to
+    read the whole task, and the judge's own capped copy is the
+    fallback only when this store read is unavailable.
 
     Reads directly off each ``span_begin`` event already present on
     ``transcript.events`` - the same object `_turn_excerpts` reads, so
@@ -320,7 +312,6 @@ def _spawn_prompts(
 
     Args:
         transcript: The transcript to read (anything with ``events``).
-        text_chars: Per-prompt character cap.
 
     Returns:
         ``{agent_span_id: SpawnPrompt}`` for the spans whose own
@@ -333,9 +324,7 @@ def _spawn_prompts(
         text, _source = span_task_text(event, None)
         if not text:
             continue
-        found[event.id] = SpawnPrompt(
-            text=text[:text_chars], truncated=len(text) > text_chars
-        )
+        found[event.id] = SpawnPrompt(text=text, truncated=False)
     return found
 
 

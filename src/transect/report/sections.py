@@ -484,11 +484,22 @@ def intervention_legend() -> Markup:
 
 def intervention_line(interventions: pd.DataFrame) -> Markup:
     """The human-intervention list: a ``<details>`` whose summary is the
-    count and whose body is one ``<li>`` per intervention - turn,
-    channel, content.
+    count and whose body is one ``<li>`` per intervention with its full
+    text - an agent-initiated one as the question asked and the answer
+    given, with the recorded outcome.
     """
+
+    def text(value) -> str | None:
+        return None if value is None or pd.isna(value) else str(value)
+
     items = [
-        {"turn": int(i.turn), "channel": i.channel, "content": str(i.content)[:60]}
+        {
+            "turn": int(i.turn),
+            "channel": i.channel,
+            "content": text(i.content) or "",
+            "prompt": text(i.prompt),
+            "outcome": text(i.outcome),
+        }
         for _, i in interventions.sort_values("turn").iterrows()
     ]
     return _notes.intervention_line(items)

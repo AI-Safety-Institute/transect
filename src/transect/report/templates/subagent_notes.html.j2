@@ -25,8 +25,9 @@
     <details class="event event-list"> treatment as the flush/
     intervention lists - but each spawn is its own collapsed <details>:
     a one-line clamped summary (turn · label · preview), the full task
-    text on open, so a many-spawn run stays scannable instead of one
-    text blob. `row.text` is untrusted agent/user content, so it is
+    text on open (scrolling past a cap), so a many-spawn run stays
+    scannable instead of one text blob. `row.truncated` is set only on
+    the fallback copy the judge saw. `row.text` is untrusted agent/user content, so it is
     interpolated raw exactly like phase_cards.html.j2's excerpt text
     - autoescape does the escaping. -#}
 {% macro spawn_prompts(rows) -%}
