@@ -1,12 +1,12 @@
 {
-  "scan_id": "EKCHKcGN7JQrwUK38ZhpRu",
+  "scan_id": "37sFQMDPB2ydpp7eqBVK6q",
   "scan_name": "transect",
-  "timestamp": "2026-09-28T14:12:30.023923+01:00",
+  "timestamp": "2026-09-28T15:50:10.086559+01:00",
   "revision": {
     "type": "git",
     "origin": "git@github.com:AI-Safety-Institute/transect.git",
     "version": "0.0.0-dev.0+unknown",
-    "commit": "ad65dad"
+    "commit": "881ef99"
   },
   "packages": {
     "inspect_ai": "0.3.268",

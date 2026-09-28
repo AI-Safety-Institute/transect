@@ -2,14 +2,14 @@
 
 import pandas as pd
 import pytest
+from fixtures.generate_eval_log import (
+    COMPACTION_INSTRUCTIONS,
+    COMPACTION_THRESHOLD,
+    NUDGE_PREFIX,
+)
 from helpers import StubTranscript, model_turn, run_item
-from inspect_ai import Task, eval as inspect_eval
-from inspect_ai.agent import react
-from inspect_ai.dataset import Sample
 from inspect_ai.event import CompactionEvent
-from inspect_ai.model import ChatMessageUser, CompactionSummary, ModelOutput, get_model
-from inspect_ai.scorer import includes
-from inspect_ai.tool import tool
+from inspect_ai.model import ChatMessageUser
 from inspect_scout import Transcript
 from test_frames import raw_row
 from test_report_integration import _assert_no_page_errors
@@ -22,90 +22,34 @@ from transect.report.sections import compaction_threshold, eval_setup_blocks
 from transect.scanners.base import context_flush, eval_setup
 from transect.spec import Spec
 
-NUDGE_PREFIX = "Context compaction approaching. Use memory() to save"
-INSTRUCTIONS = "Keep <paths> & decisions."
 
-
-@tool
-def noisy():
-    async def execute(n: int) -> str:
-        """Return filler.
-
-        Args:
-            n: ignored
-        """
-        return "lorem ipsum dolor sit amet " * 30
-
-    return execute
-
-
-@tool
-def memory():
-    async def execute(command: str, path: str) -> str:
-        """Stand-in for Inspect's memory tool; the name is what arms the nudge.
-
-        Args:
-            command: ignored
-            path: ignored
-        """
-        return "saved"
-
-    return execute
-
-
-@pytest.fixture(scope="module")
-def compacted_log(tmp_path_factory):
-    """A $0 react run whose small threshold forces several summary compactions,
-    with a memory tool present so the pre-compaction nudge is issued."""
-    outputs = [
-        ModelOutput.for_tool_call(
-            "mockllm/model", "noisy", {"n": i}, content=f"step {i}"
-        )
-        for i in range(30)
-    ]
-    task = Task(
-        dataset=[Sample(input="Do the thing", target="done")],
-        solver=react(
-            tools=[noisy(), memory()],
-            compaction=CompactionSummary(threshold=1500, instructions=INSTRUCTIONS),
-        ),
-        scorer=includes(),
-        message_limit=60,
-    )
-    (log,) = inspect_eval(
-        task,
-        model=get_model("mockllm/model", custom_outputs=outputs),
-        log_dir=str(tmp_path_factory.mktemp("compacted")),
-        log_format="eval",
-        display="none",
-    )
-    return log.location
-
-
-def test_recorded_prompt_and_nudge_survive_to_the_stored_report(
-    compacted_log, tmp_path
-):
+def test_recorded_prompt_and_nudge_survive_to_the_stored_report(fixture_logs, tmp_path):
     """Every summary flush carries the formatted prompt, nudges attach to the flush
     they preceded, and the cards render from the store without the source log."""
     scans = tmp_path / "scan"
-    results = _run(logs=compacted_log, spec=Spec(), scans_dir=str(scans))
+    results = _run(
+        logs=str(fixture_logs),
+        sample="fixture-sample-1",
+        spec=Spec(),
+        scans_dir=str(scans),
+    )
     flushes = results.flushes
-    assert len(flushes) >= 3
+    assert len(flushes) >= 2
     assert (flushes.strategy == "CompactionSummary").all()
     assert (flushes.trigger == "threshold").all()
     prompts = flushes.compaction_prompt
     assert prompts.notna().all()
     # instructions are substituted into the recorded prompt, the template
     # placeholder is not
-    assert prompts.str.contains(INSTRUCTIONS, regex=False).all()
+    assert prompts.str.contains(COMPACTION_INSTRUCTIONS, regex=False).all()
     assert not prompts.str.contains("{addendums}", regex=False).any()
     assert "attachment://" not in "".join(prompts)
     template = results.transcript_info.compaction_prompt.iloc[0]
     assert "{addendums}" in template
     # identical nudges share one pooled message id in the log, so each flush
     # must still get the warning issued in its own window
-    nudges = flushes.compaction_nudge.dropna()
-    assert len(nudges) >= 2
+    nudges = flushes.compaction_nudge
+    assert nudges.notna().all()
     assert nudges.str.startswith(NUDGE_PREFIX).all()
 
     reloaded = load(str(scans))
@@ -115,7 +59,7 @@ def test_recorded_prompt_and_nudge_survive_to_the_stored_report(
     render(reloaded, report_path=str(report), viewer=False, open_report=False)
     html = report.read_text()
     assert html.count("<summary>Compaction prompt (verbatim)</summary>") == 1
-    assert "Keep &lt;paths&gt; &amp; decisions." in html
+    assert "Keep &lt;paths&gt; &amp; decisions." in html  # instructions, escaped
     assert "Compaction prompt (configured template)" not in html
     assert html.index("Task message (verbatim") < html.index("Compaction prompt")
     _assert_no_page_errors(
@@ -125,7 +69,7 @@ def test_recorded_prompt_and_nudge_survive_to_the_stored_report(
             "Compaction prompt (verbatim)": prompts.iloc[0],
             "Compaction nudge (before compaction)": nudges.iloc[0],
         },
-        compaction_threshold=1500,
+        compaction_threshold=COMPACTION_THRESHOLD,
     )
 
 

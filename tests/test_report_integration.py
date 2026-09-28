@@ -64,10 +64,11 @@ def test_mechanical_report_renders_whole(name, tmp_path):
         assert "Compaction nudge" not in html
     else:
         assert "Compaction nudge (before compaction)" in html
-        assert "no identifiable text recorded in this log" in html
     assert "Traceback" not in html
-    assert "Compaction threshold:" not in html
-    assert "compaction threshold</span>" not in html
+    # only the fixture-task log records a compaction threshold (row + chart toggle)
+    recorded = name == "plain-single-agent"
+    assert ("compaction threshold</span>" in html) == recorded
+    assert ("Compaction threshold:" in html) == recorded
     assert len(html) > 20_000
 
 

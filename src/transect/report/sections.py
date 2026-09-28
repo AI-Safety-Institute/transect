@@ -374,9 +374,7 @@ def _compaction_prompts(
         if field == "compaction_prompt" and configured_prompt:
             prompts.append((f"{label} (configured template)", configured_prompt))
         else:
-            prompts.append(
-                (label, "data not found - no identifiable text recorded in this log")
-            )
+            prompts.append((label, _NOT_FOUND))
     return prompts
 
 
