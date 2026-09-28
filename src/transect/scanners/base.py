@@ -1,5 +1,6 @@
 """Structural (zero-LLM) Scout scanners: the default path."""
 
+import json
 from collections import Counter
 from typing import Any, cast
 
@@ -169,28 +170,53 @@ def context_flush() -> Scanner[Transcript]:
     return execute
 
 
-@scanner(messages="all", events=cast("list[Any]", ["model", "input"]))
+@scanner(messages="all", events=cast("list[Any]", ["model", "input", "approval"]))
 def human_intervention() -> Scanner[Transcript]:
     """Mid-run human interactions. Detection is structural, via inspect's
-    ChatMessage.source field - scaffold-generated user messages (handoff
-    boundaries, react continue-prompts) can never match.
+    ChatMessage.source field and its human-facing events - scaffold-
+    generated user messages (handoff boundaries, react continue-prompts)
+    can never match.
 
-    Channels:
-    - "operator": user message with source="operator" - ACP steering.
-    - "input": user message with source="input".
-    - "input_event": an InputEvent - the human's answer to an
-      agent-initiated ask_user prompt.
+    Two shapes, told apart by ``initiator``:
+
+    - human-initiated (``prompt``/``outcome`` None): the human wrote to
+      the running agent unprompted. Channels "operator" (user message
+      with source="operator": ACP steering, OpenClaw inbound messages)
+      and "input" (source="input").
+    - agent-initiated: the run put something to a human and recorded
+      the reply. Channel "input_event" is an InputEvent: from
+      ask_user / request_input it carries the question as ``prompt``,
+      the ``outcome`` (accepted / declined / cancelled) and the answer
+      as ``content`` (structured fields as "name: value" lines, else
+      the recorded text minus the question); a console input_screen
+      recording has no separate question, so ``prompt`` is None and
+      the recording is the content. Channel "approval" is an
+      ApprovalEvent decided by the human approver: ``prompt`` is the
+      tool call put to them, ``outcome`` the decision, ``content`` the
+      explanation.
 
     The first user message that arrived on a human channel (operator
     or input) is the task prompt, never an intervention.
 
     value = {"interventions": [entry, ...]}: turn (count of model turns /
-    assistant messages preceding it), channel, content (full text;
-    render truncates).
+    assistant messages preceding it), channel, initiator, prompt,
+    content, outcome.
     """
 
     async def execute(transcript: Transcript) -> Result:
         interventions: list[dict[str, Any]] = []
+
+        def entry(turn, channel, initiator, content, prompt=None, outcome=None):
+            interventions.append(
+                {
+                    "turn": turn,
+                    "channel": channel,
+                    "initiator": initiator,
+                    "prompt": prompt,
+                    "content": content,
+                    "outcome": outcome,
+                }
+            )
 
         assistant_turns = 0
         seen_task_prompt = False
@@ -206,24 +232,34 @@ def human_intervention() -> Scanner[Transcript]:
             if not seen_task_prompt:
                 seen_task_prompt = True
                 continue
-            interventions.append(
-                {
-                    "turn": assistant_turns,
-                    "channel": source,
-                    "content": (message.text or "").strip(),
-                }
-            )
+            entry(assistant_turns, source, "human", (message.text or "").strip())
 
         for turn, event in _non_model_events(transcript):
-            if event.event != "input":
-                continue
-            interventions.append(
-                {
-                    "turn": turn,
-                    "channel": "input_event",
-                    "content": (event.input or "").strip(),
-                }
-            )
+            if event.event == "input":
+                prompt = (getattr(event, "message", None) or "").strip() or None
+                entry(
+                    turn,
+                    "input_event",
+                    "agent",
+                    _input_answer(event, prompt),
+                    prompt,
+                    getattr(event, "outcome", None),
+                )
+            elif event.event == "approval" and event.approver == "human":
+                call = event.call
+                arguments = (
+                    json.dumps(call.arguments, ensure_ascii=False)
+                    if call.arguments
+                    else ""
+                )
+                entry(
+                    turn,
+                    "approval",
+                    "agent",
+                    (event.explanation or "").strip(),
+                    f"{call.function}({arguments})",
+                    event.decision,
+                )
 
         interventions.sort(key=lambda i: i["turn"])
         return Result(
@@ -232,6 +268,19 @@ def human_intervention() -> Scanner[Transcript]:
         )
 
     return execute
+
+
+def _input_answer(event: Any, prompt: str | None) -> str:
+    """The human's side of an InputEvent: the structured answer when one
+    was recorded, else the recorded text with the question (which
+    inspect prepends to it) removed."""
+    content = getattr(event, "content", None)
+    if isinstance(content, dict) and content:
+        return "\n".join(f"{name}: {value}" for name, value in content.items())
+    text = (event.input or "").strip()
+    if prompt and text.startswith(prompt):
+        text = text[len(prompt) :].strip()
+    return text
 
 
 def _span_ends(

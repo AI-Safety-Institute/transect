@@ -3,8 +3,9 @@ human_intervention - judged by what they extract from event streams."""
 
 import pytest
 from helpers import agent_span, model_turn, run_scan, tool_event
-from inspect_ai.event import CompactionEvent, InputEvent
+from inspect_ai.event import ApprovalEvent, CompactionEvent, InputEvent
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, ModelUsage
+from inspect_ai.tool import ToolCall
 
 from transect.scanners.base import context_flush, human_intervention, token_timeline
 
@@ -211,11 +212,86 @@ def test_scaffold_user_messages_are_not_interventions():
 
 
 def test_input_events_are_interventions_on_their_own_channel():
-    """An inspect InputEvent (the human answering an agent prompt)
-    lands as channel=input_event at the current turn."""
+    """A console InputEvent (no question of its own) lands as
+    channel=input_event at the current turn, agent-initiated, with the
+    recording as its content and no prompt or outcome."""
     events = [model_turn("asking"), InputEvent(input="yes, go ahead", input_ansi="")]
     value = run_scan(human_intervention(), events).value
     (intervention,) = value["interventions"]
     assert intervention["channel"] == "input_event"
+    assert intervention["initiator"] == "agent"
     assert intervention["content"] == "yes, go ahead"
+    assert intervention["prompt"] is None and intervention["outcome"] is None
     assert intervention["turn"] == 1
+
+
+@pytest.mark.parametrize(
+    ("event", "prompt", "content", "outcome"),
+    [
+        (  # ask_user as inspect records it: question prepended to the text
+            InputEvent(
+                input="Submit now?\n  confirm: yes",
+                input_ansi="",
+                message="Submit now?",
+                outcome="accepted",
+                content={"confirm": "yes"},
+            ),
+            "Submit now?",
+            "confirm: yes",
+            "accepted",
+        ),
+        (  # declined: no structured answer, the marker line remains
+            InputEvent(
+                input="Submit now?\n[declined]",
+                input_ansi="",
+                message="Submit now?",
+                outcome="declined",
+            ),
+            "Submit now?",
+            "[declined]",
+            "declined",
+        ),
+        (  # an older log: bare answer, question, no outcome recorded
+            InputEvent(input="y", input_ansi="", message="Submit now?"),
+            "Submit now?",
+            "y",
+            None,
+        ),
+    ],
+)
+def test_ask_user_events_separate_question_answer_and_outcome(
+    event, prompt, content, outcome
+):
+    value = run_scan(human_intervention(), [model_turn("asking"), event]).value
+    (intervention,) = value["interventions"]
+    assert (intervention["prompt"], intervention["content"]) == (prompt, content)
+    assert intervention["outcome"] == outcome
+
+
+@pytest.mark.parametrize(
+    ("approver", "n"),
+    [("human", 1), ("auto", 0)],
+)
+def test_human_approvals_are_interventions_and_automatic_ones_are_not(approver, n):
+    """A tool call decided by the human approver is an agent-initiated
+    intervention carrying the call, the decision and the explanation."""
+    call = ToolCall(id="c1", function="bash", arguments={"cmd": "rm -rf build"})
+    events = [
+        model_turn("running"),
+        ApprovalEvent(
+            message="cleaning up",
+            call=call,
+            approver=approver,
+            decision="reject",
+            explanation="too destructive",
+        ),
+    ]
+    value = run_scan(human_intervention(), events).value
+    assert len(value["interventions"]) == n
+    if n:
+        (intervention,) = value["interventions"]
+        assert intervention["channel"] == "approval"
+        assert intervention["prompt"] == 'bash({"cmd": "rm -rf build"})'
+        assert intervention["outcome"] == "reject"
+        assert intervention["content"] == "too destructive"
+        assert intervention["turn"] == 1

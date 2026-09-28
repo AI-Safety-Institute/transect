@@ -25,7 +25,7 @@ def test_triage_runs_the_default_path_end_to_end(demo_log, tmp_path, capsys):
     html = open(report).read()
     assert "Token telemetry" in html and "Sub-agent activity" in html
     assert len(results.token_timeline) == 16
-    assert "WARNING: no judge_models" in capsys.readouterr().out
+    assert "no judge_models" in capsys.readouterr().out
     assert set(results.frames()) == {
         "token_timeline",
         "flushes",

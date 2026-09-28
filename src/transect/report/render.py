@@ -150,7 +150,7 @@ def render_report(
                     ),
                     _chart(phase_components, phase_height),
                     sections.phase_chips(my_phases, phase_colors, my_definitions),
-                    sections.agreement_strip_caption(my_phase_turns),
+                    sections.agreement_strip_caption(my_phase_turns, my_phases),
                     sections.phase_definitions(my_definitions),
                 ],
             )
@@ -191,6 +191,17 @@ def render_report(
                     ),
                 ],
             )
+        else:
+            # the section stays, as a note stating why there is no timeline
+            add(
+                (
+                    "phase_timeline",
+                    sections.section(
+                        "Phase timeline",
+                        [sections.no_phases_note(results.scan_status)],
+                    ),
+                )
+            )
         # 2. human interventions, directly below the phase timeline: the
         # natural cross-read is phase behaviour around an intervention
         # (only when the transcript has any)
@@ -209,7 +220,11 @@ def render_report(
             add(("interventions", interventions_section))
         # 3. token telemetry
         derived = charts.has_derived_token_views(one)
-        token_blocks = [sections.token_intro(derived)]
+        token_blocks = [
+            sections.token_intro(
+                derived, coincide=derived and charts.token_measures_coincide(one)
+            )
+        ]
         threshold = sections.compaction_threshold(my_info)
         components, stack_height = charts.token_stack(
             one, my_flushes, threshold.tokens if threshold is not None else None
@@ -508,18 +523,19 @@ def _subagent_section(
         tip_fields=tip_fields,
     )
     flags = sections.subagent_reliability_flags(subagents, subagent_votes)
-    # spawn prompts: the loader's own emitted task text when present
-    # (exactly what the judge saw), else the render-time store read; a
-    # span with no resolved prompt is absent, not a blank row
-    if subagents.span_task.notna().any():
-        spawn_prompts = {
-            str(row.agent_span_id): SpawnPrompt(
-                text=str(row.span_task),
-                truncated=bool(row.span_task_truncated),
-            )
-            for row in subagents.itertuples()
-            if pd.notna(row.span_task)
-        }
+    # spawn prompts: the full text from the render-time store read wins;
+    # the loader's stored copy (capped to what the judge saw, hence its
+    # truncated flag) fills in for spans the store could not supply. A
+    # span with no resolved prompt is absent, not a blank row.
+    stored = {
+        str(row.agent_span_id): SpawnPrompt(
+            text=str(row.span_task),
+            truncated=bool(row.span_task_truncated),
+        )
+        for row in subagents.itertuples()
+        if pd.notna(row.span_task)
+    }
+    spawn_prompts = {**stored, **spawn_prompts}
     spawn_rows = sorted(
         (
             {

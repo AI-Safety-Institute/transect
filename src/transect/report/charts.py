@@ -199,7 +199,8 @@ def phase_band(
     iframe and sharing an x-domain and margins. The strip stays per-turn
     - ``judge_agreement`` varies turn-to-turn within one phase, which is
     the point of it - so it was never a candidate for the band's
-    per-phase chunking.
+    per-phase chunking. Each row is named in the left margin
+    (`_margin_label`).
 
     No interactor and no hover line: an interval mark sharing a plot
     with `nearest_x` throws in-browser (module docstring), so this chart
@@ -446,6 +447,8 @@ def phase_band(
         "confidence": "confidence",
     }
     band = plot(
+        # declared first so `highlight` still binds to the rect before it
+        _margin_label("phases"),
         rect(
             data,
             x1="x1",
@@ -661,6 +664,7 @@ def phase_band(
         ]
         strip_data = Data.from_dataframe(cells[columns])
         strip = plot(
+            _margin_label("agreement"),
             rect(
                 strip_data,
                 x1="x1",
@@ -787,19 +791,35 @@ def has_judge_agreement(phase_turns: pd.DataFrame) -> bool:
     return bool(phase_turns.judge_agreement.notna().any())
 
 
-# The phase band's left/right margins. The band draws nothing into
-# either (no y-axis, no row labels), so both are sized to the smallest
-# gap that keeps the top axis's edge ticks clear of the svg's edges.
+# The phase band's left/right margins, shared by the agreement strip
+# and the interventions chart so their turn columns line up.
 #
-# 20 on the left clears the leftmost tick's text by ~9px. 16 on the
-# right, not less: Plot centres a tick's text on its tick position
-# rather than right-aligning it, so the last tick can extend past the
-# domain's right edge by half its own width - measured on a
-# 6-turn/1000px fixture, 8px overflowed the svg by 0.46px. The risk is
-# specific to short transcripts; at real scale the last "nice" tick
-# lands well short of the padded domain edge.
-_BAND_MARGIN_LEFT = 20
+# 72 on the left fits the row labels (`_margin_label`): "agreement" at
+# 11px, right-aligned 6px off the frame, leaves ~10px spare and clears
+# the leftmost tick's text. 16 on the right, not less: Plot centres a tick's
+# text on its tick position rather than right-aligning it, so the last
+# tick can extend past the domain's right edge by half its own width -
+# measured on a 6-turn/1000px fixture, 8px overflowed the svg by
+# 0.46px. The risk is specific to short transcripts; at real scale the
+# last "nice" tick lands well short of the padded domain edge.
+_BAND_MARGIN_LEFT = 72
 _BAND_MARGIN_RIGHT = 16
+
+_MARGIN_LABEL_FILL = "#6c757d"  # the page's muted text colour
+
+
+def _margin_label(name: str) -> Mark:
+    """A row's name in the left margin `_BAND_MARGIN_LEFT` reserves:
+    right-aligned 6px off the frame's left edge. No data source and a
+    literal fill (the plot's colour scale is identity); no tip, so it
+    stays outside the one-channel-key-set rule (module docstring)."""
+    return text(
+        text=[name],
+        frame_anchor="left",
+        styles=TextStyles(text_anchor="end", font_size=11),
+        dx=-6,
+        fill=_MARGIN_LABEL_FILL,
+    )
 
 
 # Room for the `x_axis="top"` tick numbers *and* the axis's own "turn"
@@ -872,6 +892,19 @@ def has_derived_token_views(one: pd.DataFrame) -> bool:
     # value-based, not column-presence: the frames contract guarantees
     # the columns exist, so all-NA views are the real fallback condition
     return bool(one[list(_TOKEN_SOURCE_COLUMNS)].notna().any().any())
+
+
+def token_measures_coincide(one: pd.DataFrame) -> bool:
+    """Whether ``turn_total`` equals ``new_work`` on every turn carrying
+    both, as on any source with no cache reads or writes (both reduce to
+    input + output). False with no comparable turn. Exported for
+    `sections.token_intro`."""
+    both = one[["turn_total", "new_work"]].dropna()
+    if not len(both):
+        return False
+    return bool(
+        (both.turn_total.astype("int64") == both.new_work.astype("int64")).all()
+    )
 
 
 def token_stack(
@@ -1348,8 +1381,9 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
     One navy solid `rule_x` per intervention turn, offset by the shared
     t-0.5 convention and purely visual (`pointer_events="none"`); an
     `_event_hit_rect` layered under it carries the hover tooltip (turn,
-    channel, an 80-char content preview), so hovering anywhere in that
-    turn's column names its source.
+    channel, 80-char previews of the question asked and the content,
+    the outcome - the last three null on rows without them), so
+    hovering anywhere in that turn's column names its source.
 
     ``act`` is expected non-empty - the orchestrator guards, this
     builder does not re-guard.
@@ -1373,10 +1407,18 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
     explicit margins) is the number worth reading, not the total.
     """
     width = chart_width(n_turns)
-    frame = act[["turn", "channel"]].copy()
-    frame["preview"] = [_intervention_preview(i) for i in act.itertuples()]
+    frame = act[["turn", "channel", "outcome"]].copy()
+    # prompt/outcome are null cells on human-initiated rows (no row pops)
+    frame["prompt_preview"] = [_preview(i.prompt) for i in act.itertuples()]
+    frame["preview"] = [_preview(i.content) for i in act.itertuples()]
     data = Data.from_dataframe(frame[["turn"]])
-    hit_channels = {"turn": "turn", "channel": "channel", "content": "preview"}
+    hit_channels = {
+        "turn": "turn",
+        "channel": "channel",
+        "asked": "prompt_preview",
+        "content": "preview",
+        "outcome": "outcome",
+    }
     component = plot(
         _event_hit_rect(
             frame,
@@ -1426,15 +1468,17 @@ _INTERVENTION_MARGIN_LEFT = _BAND_MARGIN_LEFT
 _INTERVENTION_MARGIN_RIGHT = _BAND_MARGIN_RIGHT
 
 
-def _intervention_preview(i) -> str:
-    """One intervention's content preview, trimmed to ~80 characters -
-    long enough to identify the message, short enough to keep the tooltip
-    legible. Longer than `sections.intervention_line`'s own list preview;
-    the two surfaces needn't agree on a length. An ellipsis marks an
-    actual truncation, never appended to text that already fit.
+def _preview(value) -> str | None:
+    """A tooltip text cell trimmed to ~80 characters - long enough to
+    identify the message, short enough to keep the tooltip legible (the
+    list under the chart carries the full text). An ellipsis marks an
+    actual truncation, never appended to text that already fit; None
+    stays None (no tooltip row).
     """
-    content = str(i.content)
-    return content if len(content) <= 80 else content[:80] + "…"
+    if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
+        return None
+    text = str(value)
+    return text if len(text) <= 80 else text[:80] + "…"
 
 
 def swimlanes(

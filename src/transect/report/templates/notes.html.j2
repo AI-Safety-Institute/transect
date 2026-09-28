@@ -30,7 +30,7 @@
 {#- The intro's three default-collapsed expandables (Core setup /
     Additional config details / Run summary - the eval-setup surface).
     Rows are (label, value) pairs, every value pre-worded by
-    sections.eval_setup_blocks ("data not found" / "not set" included);
+    sections.eval_setup_blocks ("not recorded by source" / "not set" included);
     prompts are (label, verbatim text) sub-expandables - untrusted
     agent-facing content, interpolated raw into autoescape. -#}
 {% macro setup_blocks(blocks) -%}
@@ -48,9 +48,12 @@
 
 {#- No bold "Token telemetry" lead-in: the section's own header names
     it, and repeating it two lines apart reads as a duplicate. -#}
-{% macro token_intro_derived() -%}
+{#- ``coincide``: the two per-turn measures are equal on every turn
+    (no cache usage recorded), so the selector visibly changes nothing. -#}
+{% macro token_intro_derived(coincide=False) -%}
 <p class="meta explainer">Three measures of the per-turn token stream, selectable below (Inspect input_tokens excludes cache reads and writes; output includes reasoning; missing optional breakdowns count as zero in derived views):</p>
 <ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: an estimate of new content from uncached input, output and context growth; not a measure of effort</li><li><strong>cumulative (excluding cache reads)</strong>: uncached input, output and cache-write tokens summed over turns; excludes cache reads and is not monetary cost</li></ul>
+{% if coincide %}<p class="meta">This transcript recorded no cache reads or writes, so per-turn total and per-turn new work are equal on every turn: switching between them changes nothing here.</p>{% endif %}
 {%- endmacro %}
 
 {% macro token_intro_raw() -%}
@@ -71,8 +74,11 @@
 <details class="event event-list"><summary>{{ flushes|length }} context flush(es) &middot; dashed lines on the charts above</summary><ol>{% for f in flushes %}<li>turn {{ f.turn }} &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol></details>
 {%- endmacro %}
 
+{#- Full text, never cut: the list exists to be read, and a message
+    can run to many lines (`.intervention-text` scrolls past a cap).
+    An agent-initiated exchange shows the question and the answer. -#}
 {% macro intervention_line(interventions) -%}
-<details class="event event-list"><summary>{{ interventions|length }} human intervention(s) &middot; solid navy lines on the chart above</summary><ol>{% for i in interventions %}<li>turn {{ i.turn }} &middot; {{ i.channel }} &middot; &ldquo;{{ i.content }}&rdquo;</li>{% endfor %}</ol></details>
+<details class="event event-list"><summary>{{ interventions|length }} human intervention(s) &middot; solid navy lines on the chart above</summary><ol>{% for i in interventions %}<li>turn {{ i.turn }} &middot; {{ i.channel }}{% if i.outcome %} &middot; {{ i.outcome }}{% endif %}{% if i.prompt %}<div class="intervention-text"><span class="meta">asked (agent):</span> {{ i.prompt }}</div><div class="intervention-text"><span class="meta">answered (human):</span> {{ i.content }}</div>{% else %}<div class="intervention-text"><span class="meta">message (human):</span> {{ i.content }}</div>{% endif %}</li>{% endfor %}</ol></details>
 {%- endmacro %}
 
 {% macro intervention_legend() -%}
@@ -91,7 +97,27 @@
     itself has data (`charts.has_judge_agreement`) - never a caption for
     a chart element that isn't there. -#}
 {% macro agreement_strip_caption() -%}
-<p class="meta explainer">Strip under the band: teal = per-turn judge agreement, darker = higher (k-roll/cohort judges); grey = no vote agreement (turn not judged, judged by a single voter, or verifier re-label)</p>
+<p class="meta"><strong>Strip under the band = per-turn judge agreement</strong> (not confidence): the share of judges whose vote matched the turn's label, darker teal = more agreed; grey = no vote agreement to show (turn not judged, judged by a single voter, or verifier re-label). Hover a cell for the members' own votes.</p>
+{%- endmacro %}
+
+{#- Why there is no strip, in its place. ``solo`` = single judge; else a
+    voting regime on which no turn ended with a vote. -#}
+{% macro agreement_strip_absent(solo) -%}
+{% if solo -%}
+<p class="meta">No per-turn agreement strip on this run: a single judge (no k_rolls, no cohort) has no one to agree with, so the reliability reading here is the judge's stated confidence plus any verifier review.</p>
+{%- else -%}
+<p class="meta">No per-turn agreement strip on this run: no turn ended with a vote to measure agreement on (see the member coverage in the reliability audit).</p>
+{%- endif %}
+{%- endmacro %}
+
+{#- The Phase timeline section's body when the run has no phases;
+    ``requested`` = the phase judge ran and produced none. -#}
+{% macro no_phases_note(requested) -%}
+{% if requested -%}
+<p class="meta">The phase judge ran but produced no phases for this transcript, so there is no phase timeline, no phase cards and no token spend by phase. See the Scan execution &amp; coverage block at the end of the report for the recorded errors.</p>
+{%- else -%}
+<p class="meta">No judge was configured for this scan (<code>judge_models=None</code>), so there is no phase segmentation: the phase timeline, the phase cards and token spend by phase are absent. Pass <code>judge_models</code> with a spec that declares <code>phases</code> to add them.</p>
+{%- endif %}
 {%- endmacro %}
 
 {% macro group_heading(text) -%}

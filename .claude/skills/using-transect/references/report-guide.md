@@ -65,10 +65,11 @@ source log's header was read and the option was simply not
 configured; "scaffold default" means the agent scaffold's arguments
 were recorded but this one was left to the scaffold's own default
 (the log records only configured arguments, not resolved defaults);
-"data not found" means the source never recorded the fact at all -
-the whole config block reads that way on OpenClaw imports (no .eval
-header exists), and the compaction row there says flushes are
-detected from the transcript instead.
+"not recorded by source" means the source never recorded the fact at
+all - the whole config block reads that way on OpenClaw imports (no
+.eval header exists). The compaction row describes the configured
+setting only; the flushes on the token chart are detected from the
+transcript regardless.
 
 ## 1. Phase timeline
 
@@ -93,8 +94,10 @@ armed (the Sub-agent activity summary line does the same).
   (label inherited or taken from the surrounding phase) are painted
   their phase's colour - the basis says how a turn got its label,
   the paint does not.
-- The **agreement strip** below (only when several voters judged):
-  green cells, darker = higher per-turn agreement among judges; grey
+- The **agreement strip** below, labelled "agreement" in the margin
+  (only when several voters judged; a solo run states in its place
+  that a single judge has no one to agree with): green cells, darker
+  = higher per-turn agreement among judges; grey
   = no vote agreement (single voter, verifier re-label, or not
   judged). Its tooltip: one "member votes" row joining every member's
   own vote + confidence (members named "roll-N" on a k-roll run - the
@@ -123,16 +126,26 @@ armed (the Sub-agent activity summary line does the same).
 ## 2. Human interventions
 
 Solid navy rules on their own strip - mid-run human interactions. Hover
-for channel and a content preview; the expandable lists them in full.
-The channel names the source - explain them when asked:
+for channel, a preview and the outcome; the expandable lists every
+message in full (long ones scroll). Two shapes, and the channel names
+the source - explain them when asked:
 
-- **operator**: a message steering the running agent from outside
-  (inspect's operator channel, e.g. ACP remote steering).
-- **input**: a human typed into the session mid-run. The run's first
-  input message is the task prompt itself and is deliberately not
-  counted - only later ones are interventions.
-- **input_event**: the human's answer to a question the agent itself
-  asked (an ask-user prompt) - agent-initiated, human-supplied.
+- Human-initiated, shown as "message (human)":
+  - **operator**: a message steering the running agent from outside
+    (inspect's operator channel: ACP remote steering, OpenClaw inbound
+    messages including slash commands such as `/stop`).
+  - **input**: a human typed into the session mid-run. The run's first
+    input message is the task prompt itself and is deliberately not
+    counted - only later ones are interventions.
+- Agent-initiated, shown as "asked (agent)" (the question or tool
+  call) and "answered (human)" (the reply), with the outcome on the
+  header line when the source recorded one:
+  - **input_event**: an ask-user / request-input question and its
+    answer (accepted / declined / cancelled); a console input recording
+    has no separate question, so only the recording shows. Older logs
+    record no outcome.
+  - **approval**: a tool call decided by the human approver (approve /
+    modify / reject / escalate / terminate), with the explanation.
 
 Detection is structural (inspect's own message-source field), so
 scaffold-generated user messages - handoff boundaries, react

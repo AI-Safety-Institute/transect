@@ -37,7 +37,7 @@ SCENARIOS = {
         {},
         # no .eval header exists on an OpenClaw import: the setup
         # section renders its honest absences
-        ["Eval setup", "data not found", "Token telemetry"],
+        ["Eval setup", "not recorded by source", "Token telemetry"],
     ),
 }
 

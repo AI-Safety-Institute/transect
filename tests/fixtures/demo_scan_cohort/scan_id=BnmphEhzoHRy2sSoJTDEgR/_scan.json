@@ -1,12 +1,12 @@
 {
-  "scan_id": "9Y7Tc9299EtHp478AnD3wj",
-  "scan_name": "compaction",
-  "timestamp": "2026-09-28T14:37:29.049394+01:00",
+  "scan_id": "BnmphEhzoHRy2sSoJTDEgR",
+  "scan_name": "transect",
+  "timestamp": "2026-09-28T14:12:31.437380+01:00",
   "revision": {
     "type": "git",
     "origin": "git@github.com:AI-Safety-Institute/transect.git",
     "version": "0.0.0-dev.0+unknown",
-    "commit": "2619b58"
+    "commit": "ad65dad"
   },
   "packages": {
     "inspect_ai": "0.3.268",
@@ -28,31 +28,31 @@
     "token_timeline": {
       "name": "transect/token_timeline",
       "version": 0,
-      "package_version": "0.1.6",
+      "package_version": "0.1.8",
       "params": {}
     },
     "context_flush": {
       "name": "transect/context_flush",
       "version": 0,
-      "package_version": "0.1.6",
+      "package_version": "0.1.8",
       "params": {}
     },
     "human_intervention": {
       "name": "transect/human_intervention",
       "version": 0,
-      "package_version": "0.1.6",
+      "package_version": "0.1.8",
       "params": {}
     },
     "eval_setup": {
       "name": "transect/eval_setup",
       "version": 0,
-      "package_version": "0.1.6",
+      "package_version": "0.1.8",
       "params": {}
     },
     "decision_phases": {
       "name": "transect/decision_phases",
       "version": 0,
-      "package_version": "0.1.6",
+      "package_version": "0.1.8",
       "params": {
         "spec": {
           "phases": [
@@ -149,7 +149,7 @@
     "subagent_classification": {
       "name": "transect/subagent_classification",
       "version": 0,
-      "package_version": "0.1.6",
+      "package_version": "0.1.8",
       "params": {
         "spec": {
           "phases": [

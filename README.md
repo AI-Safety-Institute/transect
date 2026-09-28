@@ -350,6 +350,8 @@ erDiagram
         int turn FK
         string channel
         string content
+        string prompt "the question or tool call put to the human; None when human-initiated"
+        string outcome "accepted/declined/cancelled or the approval decision"
     }
     lane_activity["lane_activity (one row per (turn, sub-agent span))"] {
         int turn FK
