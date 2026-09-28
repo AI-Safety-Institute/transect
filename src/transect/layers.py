@@ -1,9 +1,10 @@
 """User-injected layers: the custom-interface unit.
 
 A Layer bundles one custom addition to a run: an optional scanner
-(joins the scan batch), an optional frame (a fn over the scanner's
-raw results, or a ready DataFrame), typed section blocks, and
-phase-card tags. Every field is optional but a
+(joins the scan batch) with its factory's own ``scanner_args``, an
+optional frame (a fn over the scanner's raw results, or a ready
+DataFrame), typed section blocks, and phase-card tags. Every field is
+optional but a
 layer must do something; users extend the stack via
 ``transect(..., extra_layers=[Layer(...)])``.
 
@@ -23,6 +24,8 @@ from typing import Any
 import pandas as pd
 from inspect_ai._util.registry import registry_info
 
+from transect.spec import Spec
+
 FrameSource = Callable[[pd.DataFrame], pd.DataFrame] | pd.DataFrame
 
 
@@ -38,10 +41,17 @@ class Layer:
             un-invoked factory - called at the entry point with the
             subset of the judge arguments (``judge_models`` /
             ``k_rolls`` / ``verify`` / ``verifier_model`` /
-            ``verify_sample``) its signature declares. A declared
-            parameter always takes the entry point's value, so
+            ``verify_sample``) its signature declares, the loaded
+            ``spec`` when declared, and ``scanner_args``. A declared
+            judge parameter always takes the entry point's value, so
             hardcode layer-local judge choices in the factory body.
-            Joins the scan batch; results feed ``frame``.
+            ``load()`` never calls a factory: it only needs the
+            scanner's registry name.
+        scanner_args: Extra keyword arguments for a factory-form
+            scanner (a rubric, settings) - anything the factory needs
+            that is neither a judge argument nor in the spec. Refused
+            with a ready instance or no scanner, and on a name shared
+            with a judge argument or ``spec``.
         frame: A fn mapping the scanner's raw results table to a tidy
             DataFrame, or a ready DataFrame (bring-your-own data, no
             scanner). Omitted with a scanner: the generic flatten.
@@ -58,6 +68,7 @@ class Layer:
     section: list | None = None
     tags: bool | list[str] | dict[str, str] = field(default=False)
     audit: tuple[str, str] | None = None
+    scanner_args: dict[str, Any] = field(default_factory=dict)
 
 
 def validate_layers(layers: list[Layer], builtin_frames: tuple[str, ...] = ()) -> None:
@@ -119,6 +130,17 @@ def validate_layers(layers: list[Layer], builtin_frames: tuple[str, ...] = ()) -
                 "or a ready DataFrame, not both - a ready frame cannot be "
                 "fed by a scanner"
             )
+        if not isinstance(layer.scanner_args, dict) or not all(
+            isinstance(k, str) and k for k in layer.scanner_args
+        ):
+            raise ValueError(f"{where}: scanner_args is a dict of keyword arguments")
+        if layer.scanner_args and (
+            layer.scanner is None or _is_instance(layer.scanner)
+        ):
+            raise ValueError(
+                f"{where}: scanner_args needs a factory-form scanner (the "
+                "un-invoked @scanner function) to pass them to"
+            )
         if layer.scanner is not None:
             key = scanner_key(layer.scanner)  # raises with the fix named
             if key in seen_scanners:
@@ -148,16 +170,21 @@ def validate_layers(layers: list[Layer], builtin_frames: tuple[str, ...] = ()) -
                 )
 
 
-def resolve_scanner_factories(layers: list[Layer], judge_args: dict) -> list[Layer]:
+def resolve_scanner_factories(
+    layers: list[Layer], judge_args: dict, spec: Spec
+) -> list[Layer]:
     """Instantiate factory-form layer scanners with the run's judge
-    configuration.
+    configuration, the loaded spec, and each layer's ``scanner_args``.
 
     A factory (the un-invoked ``@scanner``-decorated function, sync -
     an instance is an async callable) is called with the subset of
-    the transect() judge arguments its signature declares: the signature
-    is the opt-in, an undeclared knob stays layer-local rather than
-    arriving unasked. Declaring ``judge_models`` with none passed to
-    ``transect()`` is refused.
+    the transect() judge arguments its signature declares, plus
+    ``spec`` when declared: the signature is the opt-in, an undeclared
+    knob stays layer-local rather than arriving unasked.
+    ``Layer.scanner_args`` are passed as given. Declaring
+    ``judge_models`` with none passed to ``transect()`` is refused, as
+    is a ``scanner_args`` key the factory does not accept or one that
+    shadows a judge argument or ``spec``.
     """
     resolved = []
     for layer in layers:
@@ -173,7 +200,34 @@ def resolve_scanner_factories(layers: list[Layer], judge_args: dict) -> list[Lay
                 "pass a ready scanner instance carrying its own models"
             )
         kwargs = {k: v for k, v in judge_args.items() if k in params}
-        resolved.append(replace(layer, scanner=factory(**kwargs)))
+        if "spec" in params:
+            kwargs["spec"] = spec
+        injected = {*judge_args, "spec"}
+        shadowed = sorted(injected & set(layer.scanner_args))
+        if shadowed:
+            raise ValueError(
+                f"layer {layer.name!r}: scanner_args {shadowed} shadow arguments "
+                "transect() injects - declare them in the factory signature "
+                "instead"
+            )
+        # bind() names every mismatch in one place: an unknown scanner_args
+        # key, a required parameter nobody supplies, a positional-only spec
+        try:
+            bound = inspect.signature(factory).bind(**kwargs, **layer.scanner_args)
+        except TypeError as error:
+            raise ValueError(
+                f"layer {layer.name!r}: the scanner factory cannot take the "
+                f"arguments transect() resolved for it - {error} (its parameters "
+                f"are {sorted(params)}; judge arguments and spec are injected "
+                "by signature, everything else comes from scanner_args)"
+            ) from None
+        # the args are consumed here; the resolved layer carries an instance,
+        # which validate_layers refuses to pair with scanner_args
+        resolved.append(
+            replace(
+                layer, scanner=factory(*bound.args, **bound.kwargs), scanner_args={}
+            )
+        )
     return resolved
 
 

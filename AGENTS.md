@@ -206,7 +206,7 @@ scanner change take effect; run a new scan and retain both results for compariso
 ## Extending
 
 New task types land as custom layers first:
-`transect(..., extra_layers=[Layer(...)])` carries a user's scanner,
+`transect(..., extra_layers=[Layer(...)])` carries a user's scanner (with its factory's `scanner_args`),
 frame, typed section blocks, phase-card tags, and audit declaration
 (README "Custom layers"; the authoring recipe is the shipped
 add-a-layer skill; `examples/transect_custom_layer.py` is the worked

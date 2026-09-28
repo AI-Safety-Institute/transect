@@ -475,20 +475,17 @@ from inspect_scout import scanner
 from transect import Layer, cohort_llm_scanner, reasoning_turns, transect, turns_frame
 from transect.report import Markdown, TurnBand
 
-SKILLS = {
-    "hypothesis": "Proposing a new idea, mechanism, or approach to test.",
-    # ...
-    "none_of_the_above": "No research-skill reasoning in this turn.",
-}
-
-
 @scanner(loader=reasoning_turns())  # the units to judge: one item per reasoning turn
-def research_skills(judge_models=None):
+def research_skills(spec, judge_models=None):
+    skills = spec.extra["research_skills"]  # the rubric lives in the spec
+    question = "Label this reasoning turn with the best-fitting category:\n" + "\n".join(
+        f"- {label}: {text}" for label, text in skills.items()
+    )
     return cohort_llm_scanner(
-        question=QUESTION,  # the closed-vocab judge prompt
-        answer=list(SKILLS),
+        question=question,  # the closed-vocab judge prompt
+        answer=list(skills),
         models=judge_models,
-        vocabulary=SKILLS,  # recorded as the layer's rubric
+        vocabulary=skills,  # recorded as the layer's rubric
     )
 
 
@@ -524,7 +521,10 @@ results.turn_tags  # tag families, per turn
 Each `Layer` field is one surface, all optional:
 
 - **scanner** - `cohort_llm_scanner` inherits the judge regimes,
-  voting, verifier, and batching; structural scanners are $0.
+  voting, verifier, and batching; structural scanners are $0. Pass
+  the factory un-invoked: `transect()` calls it with the judge
+  arguments its signature declares, the loaded `spec` when declared,
+  and any `scanner_args={...}` on the layer.
 - **frame** - post-processes the scan results into the layer's
   dataframe (`turns_frame`: one judged row per turn), or injects a
   ready dataframe with your own data.
