@@ -16,11 +16,15 @@ render empty:
     uv run python examples/transect_kroll.py --structural
 """
 
-import sys
+import argparse
 
 from transect import transect
 
-structural = "--structural" in sys.argv
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    "--structural", action="store_true", help="run without judges or model charges"
+)
+structural = parser.parse_args().structural
 scans_dir = "examples/scans/structural" if structural else "examples/scans/kroll"
 judge = (
     {}
