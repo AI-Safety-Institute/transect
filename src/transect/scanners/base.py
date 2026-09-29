@@ -201,14 +201,6 @@ def human_intervention() -> Scanner[Transcript]:
     value = {"interventions": [entry, ...]}: turn (the model turn the
     intervention precedes, on the shared event axis), channel, initiator,
     prompt, content, outcome.
-
-    Human messages live in the history, not the event stream, so their
-    turn is the event turn of the assistant message before them plus one.
-    Counting assistant messages instead would drift by one after every
-    summary compaction: the summarization call is a model turn whose
-    output never enters the history. An assistant message no event
-    recorded (a history without its event stream) still advances the
-    count by one.
     """
 
     async def execute(transcript: Transcript) -> Result:
@@ -226,6 +218,11 @@ def human_intervention() -> Scanner[Transcript]:
                 }
             )
 
+        # Human messages live in the history, not the event stream, so their
+        # turn is the event turn of the assistant message before them plus
+        # one. Counting assistant messages instead would drift by one after
+        # every summary compaction: the summarization call is a model turn
+        # whose output never enters the history.
         turn_of_output = {
             event.output.message.id: turn
             for turn, (event, _calls) in enumerate(model_turns(transcript))
@@ -235,6 +232,8 @@ def human_intervention() -> Scanner[Transcript]:
         seen_task_prompt = False
         for message in transcript.messages:
             if message.role == "assistant":
+                # an assistant message no event recorded (a history without
+                # its event stream) still advances the count by one
                 recorded = turn_of_output.get(message.id)
                 next_turn = next_turn + 1 if recorded is None else recorded + 1
                 continue
