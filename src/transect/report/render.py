@@ -246,8 +246,18 @@ def render_report(
             if components
             else Markup("<p>No timeline data.</p>")
         )
-        if flush_turns:
-            token_blocks.append(sections.event_legend(derived))
+        # mirrors charts.token_stack's condition for drawing the rule
+        drawn_threshold = (
+            threshold.tokens
+            if threshold is not None and bool(one.context.notna().any())
+            else None
+        )
+        if flush_turns or drawn_threshold is not None:
+            token_blocks.append(
+                sections.event_legend(
+                    derived, flushes=bool(flush_turns), threshold=drawn_threshold
+                )
+            )
         if flush_turns:
             token_blocks.append(sections.flush_line(my_flushes))
         add(("token_telemetry", sections.section("Token telemetry", token_blocks)))

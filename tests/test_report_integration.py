@@ -233,6 +233,7 @@ def test_recorded_compaction_threshold_survives_replay_and_toggles(demo_log, tmp
     html = report.read_text()
     assert "compaction threshold</span>" in html
     assert "4,000 tokens" in html
+    assert "dotted purple = configured compaction threshold (4,000 tokens)" in html
     _assert_no_page_errors(str(report), min_frames=2, compaction_threshold=4000)
 
 

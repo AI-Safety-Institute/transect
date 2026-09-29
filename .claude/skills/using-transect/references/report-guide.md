@@ -181,8 +181,9 @@ tokens before -> after. A context-window sawtooth drop at a flush is
 the compaction doing its job.
 
 A recorded absolute compaction threshold appears as a dotted purple
-horizontal line on the context-window chart, initially visible. The
-checkbox above that chart toggles it without changing the vertical scale.
+horizontal line on the context-window chart, initially visible, with its
+own legend line under the chart next to the flush legend. The checkbox
+above that chart toggles it (the vertical scale follows).
 The line and checkbox are absent when no token threshold is recorded.
 A percentage alone stays in Core setup: the report does not look up a
 model capacity to convert it. The run's total token limit and the size

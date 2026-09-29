@@ -38,11 +38,16 @@
 {%- endmacro %}
 
 
-{% macro event_legend(has_context_chart) -%}
-{% if has_context_chart -%}
+{#- ``threshold``: the drawn compaction threshold in tokens, or none when
+    the context chart carries no threshold rule. -#}
+{% macro event_legend(has_context_chart, flushes=True, threshold=None) -%}
+{% if flushes and has_context_chart -%}
 <p class="meta">{{ line_swatch('#c44e52', 'dashed') }}dashed red = context flush event, marked on both the bars and context-window charts above; hover a bar for the flush detail.</p>
-{%- else -%}
+{%- elif flushes -%}
 <p class="meta">{{ line_swatch('#c44e52', 'dashed') }}context flush: appears on the token telemetry chart; hover that turn for the flush detail.</p>
+{%- endif %}
+{% if threshold is not none -%}
+<p class="meta">{{ line_swatch('#9467bd', 'dotted') }}dotted purple = configured compaction threshold ({{ '{:,}'.format(threshold) }} tokens) on the context-window chart; the checkbox above it hides the line.</p>
 {%- endif %}
 {%- endmacro %}
 

@@ -562,9 +562,12 @@ def token_intro(derived: bool, coincide: bool = False) -> Markup:
     return _notes.token_intro_derived(coincide)
 
 
-def event_legend(has_context_chart: bool) -> Markup:
-    """Legend for the flush-event glyph."""
-    return _notes.event_legend(has_context_chart)
+def event_legend(
+    has_context_chart: bool, flushes: bool = True, threshold: int | None = None
+) -> Markup:
+    """Legend for the flush-event glyph and, when drawn, the compaction
+    threshold rule (``threshold`` in tokens)."""
+    return _notes.event_legend(has_context_chart, flushes, threshold)
 
 
 def flush_line(flushes: pd.DataFrame) -> Markup:
