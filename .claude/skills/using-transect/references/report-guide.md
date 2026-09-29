@@ -177,8 +177,12 @@ The measure radio picks what the bars show - in the simplest terms:
   when a few huge turns flatten everything else - it makes the small
   turns readable again without hiding the big ones. Dashed red rules mark context flushes (compactions);
 the flush list expandable gives each one's turn, type/source, and
-tokens before -> after. A context-window sawtooth drop at a flush is
-the compaction doing its job.
+tokens before -> after as the compaction event recorded them. Those are
+not chart readings: the chart's context is each call's reported input,
+so at a summary flush the flush turn is the summarization call itself
+(whole conversation plus summary prompt) and the first call after it
+adds tool definitions back on top of the kept messages. A
+context-window sawtooth drop at a flush is the compaction doing its job.
 
 A recorded absolute compaction threshold appears as a dotted purple
 horizontal line on the context-window chart, initially visible, with its
