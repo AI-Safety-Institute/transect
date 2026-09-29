@@ -26,9 +26,9 @@
 <p class="meta explainer">Tokens the scanners themselves billed, by scanner and judge model, summed over the stored results.</p>
 <div class="relmap-scroll"><table class="relmap">
 <tr><th>scanner</th><th>model</th><th>input</th><th>output</th><th>total</th><th>cache read</th><th>cache write</th><th>reasoning</th><th>cost</th></tr>
-{% for row in scan_status_view.usage %}<tr{% if row.scanner == "all scanners" %} class="relmap-group"{% endif %}>{% if row.first %}<th rowspan="{{ row.group_size }}">{{ row.scanner }}</th>{% endif %}<td>{{ row.model }}</td>{% for cell in (row.input, row.output, row.total, row.cache_read, row.cache_write, row.reasoning, row.cost) %}<td>{% if cell is none %}<span class="relmap-absent" title="not reported">-</span>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+{% for row in scan_status_view.usage %}<tr{% if row.is_total %} class="relmap-group"{% endif %}>{% if row.first %}<th rowspan="{{ row.group_size }}">{{ row.scanner }}</th>{% endif %}<td>{{ row.model }}</td>{% for cell in (row.input, row.output, row.total, row.cache_read, row.cache_write, row.reasoning, row.cost) %}<td>{% if cell is none %}<span class="relmap-absent" title="not reported">-</span>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
 {% endfor %}</table></div>
 {% else %}
-<p class="meta">No billed model usage is recorded for this scan: either no judge scanner ran, or every judge call was answered from inspect-ai's response cache.</p>
+<p class="meta">The stored results record no billed model usage: no judge scanner ran, every judge call was cached, or the store carries no usage column.</p>
 {% endif %}
 </section>

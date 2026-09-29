@@ -1,5 +1,6 @@
 """Run-wide execution facts are projected from the persisted scan store."""
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from inspect_scout import (
     scan_results_df,
 )
 
+from transect import load
 from transect.report.sections import scan_status_view
 from transect.scan_status import ScanStatus, build_scan_status
 
@@ -161,8 +163,6 @@ def test_resumed_scan_counts_stay_within_scope():
 
 
 def _usage_json(**models):
-    import json
-
     return json.dumps(models)
 
 
@@ -223,10 +223,24 @@ def test_model_usage_sums_rows_per_model_and_keeps_unreported_fields_absent():
     assert verifier.total_cost is None and verifier.input_tokens_cache_read is None
 
 
-def test_structural_scanner_records_no_model_usage():
-    """A scanner that made no model calls has an empty usage list, not zeros."""
-    raw = raw_scan("transect/token_timeline", [{"scan_model_usage": "{}"}])
-    assert build_scan_status(raw, set()).scanners[0].model_usage == []
+@pytest.mark.parametrize("stored", ["{}", None, float("nan"), pd.NA, ""])
+def test_rows_without_usage_record_no_model_usage(stored):
+    """A scanner with no billed calls, or a nulled usage cell, has an empty
+    usage list rather than zeros, and the report block lists no rows."""
+    raw = raw_scan("transect/token_timeline", [{"scan_model_usage": stored}])
+    status = build_scan_status(raw, set())
+    assert status.scanners[0].model_usage == []
+    assert scan_status_view(status)["usage"] == []
+
+
+def test_malformed_usage_json_names_its_origin():
+    """An unreadable usage cell fails loudly with the scanner and transcript."""
+    raw = raw_scan(
+        "transect/decision_phases",
+        [{"transcript_id": "t1", "scan_model_usage": "{not json"}],
+    )
+    with pytest.raises(ValueError, match=r"test: unreadable scan_model_usage.*t1"):
+        build_scan_status(raw, set())
 
 
 def test_run_wide_model_usage_totals_across_scanners():
@@ -249,8 +263,6 @@ def test_run_wide_model_usage_totals_across_scanners():
 
 def test_stored_cohort_scan_usage_matches_scout_summary():
     """Row-aggregated usage agrees with Scout's own per-scanner summary."""
-    from transect import load
-
     store = Path(__file__).parent / "fixtures" / "demo_scan_cohort"
     results = load(str(store))
     status = results.scan_status
@@ -305,10 +317,3 @@ def test_scan_status_view_lists_billed_usage_by_scanner_and_model():
         ("all scanners", "b/judge"),
     ]
     assert rows[-2]["total"] == "2,468" and rows[-2]["cost"] == "$0.0250"
-
-
-def test_scan_status_view_without_billed_usage_says_so():
-    """A structural-only or fully cached scan renders an explicit note."""
-    raw = raw_scan("transect/token_timeline", [{"scan_model_usage": "{}"}])
-    view = scan_status_view(build_scan_status(raw, set()))
-    assert view["usage"] == []

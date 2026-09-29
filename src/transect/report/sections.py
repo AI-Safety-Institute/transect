@@ -42,6 +42,7 @@ from transect.report.display import (
 )
 from transect.report.excerpts import Excerpt, card_excerpts
 from transect.report.lanes_layout import truncate_lane_name
+from transect.scan_status import ModelTokenUsage
 from transect.scanners.phases_common import humanise_phase
 
 # Any: jinja TemplateModule macros are dynamic attributes
@@ -1375,7 +1376,8 @@ def scan_status_view(status) -> dict:
     if sum(bool(scanner.model_usage) for scanner in status.scanners) > 1:
         total = status.model_usage
         usage.extend(
-            _usage_row("all scanners", u, i, len(total)) for i, u in enumerate(total)
+            _usage_row("all scanners", u, i, len(total), total=True)
+            for i, u in enumerate(total)
         )
     for scanner in status.scanners:
         completed = scanner.completed_transcripts
@@ -2305,11 +2307,18 @@ def _status_count(count: int) -> dict:
     return _status_cell(str(count), bad=count > 0)
 
 
-def _usage_row(scanner: str, usage, index: int, group_size: int) -> dict:
+def _usage_row(
+    scanner: str,
+    usage: ModelTokenUsage,
+    index: int,
+    group_size: int,
+    *,
+    total: bool = False,
+) -> dict:
     """One billed-usage table row; a field no row reported is None and
     the template renders it as a faded dash. ``first``/``group_size``
     let the template merge a scanner's name cell across its models
-    with a rowspan."""
+    with a rowspan; ``total`` marks the run-wide rows."""
 
     def count(value) -> str | None:
         return None if value is None else f"{value:,}"
@@ -2322,6 +2331,7 @@ def _usage_row(scanner: str, usage, index: int, group_size: int) -> dict:
         cost = f"${usage.total_cost:.4f}"
     return {
         "scanner": scanner,
+        "is_total": total,
         "first": index == 0,
         "group_size": group_size,
         "model": usage.model,

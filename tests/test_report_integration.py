@@ -104,9 +104,9 @@ _STORE_CONTENT = {
         ("Flags (overall scanner assessment)", 1),
     ),
     "demo_scan_cohort": (
-        # the billed judge usage table: one row per scanner and judge model
+        # the billed judge usage table: the scanner cell spans its three models
         ("Billed model usage", 1),
-        ("mockllm/model3", 2),
+        ('<th rowspan="3">decision_phases</th>', 1),
         ("Gwet's AC1", 1),
         ("Flagged below 0.66", 2),
         ("Flagged between 0.66 and 0.80", 2),

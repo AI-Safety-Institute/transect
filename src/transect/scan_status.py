@@ -187,7 +187,14 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
         if table is not None:
             usage_by_model: dict[str, ModelTokenUsage] = {}
             for _, row in table.iterrows():
-                for model, usage in _row_usage(row.get("scan_model_usage")).items():
+                try:
+                    row_usage = _row_usage(row.get("scan_model_usage"))
+                except json.JSONDecodeError as err:
+                    raise ValueError(
+                        f"{key}: unreadable scan_model_usage on transcript "
+                        f"{_text(row.get('transcript_id'))}: {err}"
+                    ) from err
+                for model, usage in row_usage.items():
                     usage_by_model.setdefault(model, ModelTokenUsage(model)).add(usage)
                 error_message = _text(row.get("scan_error"))
                 if error_message is None:
