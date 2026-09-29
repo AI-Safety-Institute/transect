@@ -253,7 +253,7 @@ def human_intervention() -> Scanner[Transcript]:
                 # an assistant message no event recorded (a history without
                 # its event stream) still advances the count by one; a
                 # repeated id (a cached generate) never moves the axis back
-                recorded = turn_of_output.get(message.id)
+                recorded = turn_of_output.get(message.id or "")
                 next_turn = max(next_turn + 1, 0 if recorded is None else recorded + 1)
                 continue
             if message.role != "user":
