@@ -1361,10 +1361,22 @@ def reliability_audit(
 def scan_status_view(status) -> dict:
     """The run-wide execution block: per-scanner completed-of-scope
     counts (audit-red on failure states, plain otherwise), the
-    recorded error list, and the stored-but-unmounted and
-    never-attempted scanner names."""
+    recorded error list, the stored-but-unmounted and never-attempted
+    scanner names, and the billed model usage per scanner and model
+    followed by the run total (only when more than one scanner
+    billed)."""
     rows = []
     unattempted = []
+    usage = [
+        _usage_row(scanner.scanner, u, i, len(scanner.model_usage))
+        for scanner in status.scanners
+        for i, u in enumerate(scanner.model_usage)
+    ]
+    if sum(bool(scanner.model_usage) for scanner in status.scanners) > 1:
+        total = status.model_usage
+        usage.extend(
+            _usage_row("all scanners", u, i, len(total)) for i, u in enumerate(total)
+        )
     for scanner in status.scanners:
         completed = scanner.completed_transcripts
         # the denominator is the scan's scope; a store that records no
@@ -1396,6 +1408,7 @@ def scan_status_view(status) -> dict:
         "failures": status.has_failures,
         "execution": execution,
         "rows": rows,
+        "usage": usage,
         "unattempted": unattempted,
         "unmounted": [s.scanner for s in status.scanners if not s.mounted],
         "errors": [
@@ -2290,3 +2303,33 @@ def _status_cell(text: str, bad: bool) -> dict:
 def _status_count(count: int) -> dict:
     """A failure-count cell: red when positive, plain otherwise."""
     return _status_cell(str(count), bad=count > 0)
+
+
+def _usage_row(scanner: str, usage, index: int, group_size: int) -> dict:
+    """One billed-usage table row; a field no row reported is None and
+    the template renders it as a faded dash. ``first``/``group_size``
+    let the template merge a scanner's name cell across its models
+    with a rowspan."""
+
+    def count(value) -> str | None:
+        return None if value is None else f"{value:,}"
+
+    if usage.total_cost is None:
+        cost = None
+    elif usage.total_cost >= 0.1:
+        cost = f"${usage.total_cost:,.2f}"
+    else:
+        cost = f"${usage.total_cost:.4f}"
+    return {
+        "scanner": scanner,
+        "first": index == 0,
+        "group_size": group_size,
+        "model": usage.model,
+        "input": count(usage.input_tokens),
+        "output": count(usage.output_tokens),
+        "total": count(usage.total_tokens),
+        "cache_read": count(usage.input_tokens_cache_read),
+        "cache_write": count(usage.input_tokens_cache_write),
+        "reasoning": count(usage.reasoning_tokens),
+        "cost": cost,
+    }

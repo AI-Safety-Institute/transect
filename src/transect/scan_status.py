@@ -2,12 +2,13 @@
 
 Scout completion describes execution, not usable labels. This module
 projects only execution-level facts: which requested scanners ran, on
-how many transcripts, and what errors the store recorded. Judgement
-quality (abstentions, filled labels, member and verifier degradation)
-is the reliability audit's territory, computed per transcript from the
-mounted frames.
+how many transcripts, what errors the store recorded, and what model
+usage the scanners themselves billed. Judgement quality (abstentions,
+filled labels, member and verifier degradation) is the reliability
+audit's territory, computed per transcript from the mounted frames.
 """
 
+import json
 from dataclasses import dataclass, field
 
 from inspect_scout import ScanResultsDF
@@ -24,6 +25,57 @@ class ScanError:
 
 
 @dataclass
+class ModelTokenUsage:
+    """One model's usage billed to a scanner, summed over its result rows.
+
+    Scout stamps each row with the usage inspect-ai recorded, keyed by
+    ``provider/model``; cached judge calls record nothing, and roles
+    sharing one model merge under it. Optional fields stay None when no
+    row reported them; ``total_cost`` is inspect-ai's pricing estimate.
+    """
+
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    input_tokens_cache_read: int | None = None
+    input_tokens_cache_write: int | None = None
+    reasoning_tokens: int | None = None
+    total_cost: float | None = None
+
+    def add(self, usage: dict) -> None:
+        """Accumulate one row's usage dict for this model."""
+        self.input_tokens += int(usage.get("input_tokens") or 0)
+        self.output_tokens += int(usage.get("output_tokens") or 0)
+        self.total_tokens += int(usage.get("total_tokens") or 0)
+        for name in (
+            "input_tokens_cache_read",
+            "input_tokens_cache_write",
+            "reasoning_tokens",
+            "total_cost",
+        ):
+            value = usage.get(name)
+            if value is None:
+                continue
+            setattr(self, name, (getattr(self, name) or 0) + value)
+
+    def as_dict(self) -> dict:
+        """The additive fields, in the shape ``add`` consumes."""
+        return {
+            name: getattr(self, name)
+            for name in (
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "input_tokens_cache_read",
+                "input_tokens_cache_write",
+                "reasoning_tokens",
+                "total_cost",
+            )
+        }
+
+
+@dataclass
 class ScannerCoverage:
     """One requested scanner's run-wide execution record.
 
@@ -33,6 +85,8 @@ class ScannerCoverage:
     counts this scanner's entries in the run's error list: recorded
     scan errors plus store anomalies such as a results table missing
     despite recorded scans (e.g. a partially copied store).
+    ``model_usage`` lists the usage billed to this scanner per model,
+    in first-seen order; empty when it made no billed model call.
     """
 
     scanner: str
@@ -41,6 +95,7 @@ class ScannerCoverage:
     scanned_transcripts: int = 0
     completed_transcripts: int = 0
     errors: int = 0
+    model_usage: list[ModelTokenUsage] = field(default_factory=list)
 
     @property
     def missing_scans(self) -> int | None:
@@ -76,6 +131,17 @@ class ScanStatus:
             or bool(self.errors)
             or any(scanner.has_failures for scanner in self.scanners)
         )
+
+    @property
+    def model_usage(self) -> list[ModelTokenUsage]:
+        """Billed usage per model summed across every scanner."""
+        totals: dict[str, ModelTokenUsage] = {}
+        for scanner in self.scanners:
+            for usage in scanner.model_usage:
+                totals.setdefault(usage.model, ModelTokenUsage(usage.model)).add(
+                    usage.as_dict()
+                )
+        return list(totals.values())
 
 
 def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanStatus:
@@ -119,7 +185,10 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
         table = raw.scanners.get(key)
         table_missing = table is None and coverage.scanned_transcripts > 0
         if table is not None:
+            usage_by_model: dict[str, ModelTokenUsage] = {}
             for _, row in table.iterrows():
+                for model, usage in _row_usage(row.get("scan_model_usage")).items():
+                    usage_by_model.setdefault(model, ModelTokenUsage(model)).add(usage)
                 error_message = _text(row.get("scan_error"))
                 if error_message is None:
                     continue
@@ -131,6 +200,7 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
                 )
                 if record not in status.errors:
                     status.errors.append(record)
+            coverage.model_usage = list(usage_by_model.values())
         elif table_missing:
             status.errors.append(
                 ScanError(
@@ -160,3 +230,16 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
 
 def _text(value) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _row_usage(value) -> dict[str, dict]:
+    """One row's stored ``scan_model_usage`` JSON as {model: usage}.
+
+    Scout nulls the column on rows it synthesizes (expanded resultsets,
+    label validation), which contribute nothing.
+    """
+    text = _text(value)
+    if text is None:
+        return {}
+    parsed = json.loads(text)
+    return parsed if isinstance(parsed, dict) else {}

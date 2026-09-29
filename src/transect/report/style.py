@@ -98,6 +98,7 @@ h4 {{ font-size: var(--transect-font-size-smaller); font-weight: 600; }}
   font-weight: 600; }}
 .relmap-sub {{ font-size: 0.7rem; opacity: 0.85; font-weight: 400; }}
 .relmap-ci {{ font-size: 0.65rem; opacity: 0.85; }}
+.relmap-absent {{ color: var(--transect-color-muted); opacity: 0.6; font-weight: 400; }}
 .relmap-group {{ font-weight: 600; }}
 .relmap-help {{ color: var(--transect-color-muted); font-weight: 400;
   font-size: 0.7rem; cursor: help; }}
