@@ -176,7 +176,8 @@ The measure radio picks what the bars show - in the simplest terms:
 - **linear/log scale**: linear for comparing turns at a glance; log
   when a few huge turns flatten everything else - it makes the small
   turns readable again without hiding the big ones. Dashed red rules mark context flushes (compactions);
-the flush list expandable gives each one's turn, type/source, and
+the flush list expandable gives, for each one, the turn it precedes
+(events sit between turns, drawn at the half-turn), type/source, and
 tokens before -> after as the compaction event recorded them. Those are
 not chart readings: the chart's context is each call's reported input,
 so at a summary flush the flush turn is the summarization call itself
