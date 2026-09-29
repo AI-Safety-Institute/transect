@@ -24,7 +24,7 @@ def test_triage_runs_the_default_path_end_to_end(demo_log, tmp_path, capsys):
     (report,) = results.report_paths
     html = open(report).read()
     assert "Token telemetry" in html and "Sub-agent activity" in html
-    assert len(results.token_timeline) == 16
+    assert len(results.token_timeline) == 17
     assert "no judge_models" in capsys.readouterr().out
     assert set(results.frames()) == {
         "token_timeline",
@@ -122,7 +122,11 @@ def test_triage_judged_regimes_end_to_end(regime, demo_log, tmp_path):
     markers, and the report renders."""
     setups = {
         "solo": dict(judge_models=demo_judge(), verify=False),
-        "solo-verified": dict(judge_models=demo_judge(), verify=True),
+        # verify_sample=1.0: the spot check is a seeded draw per item id,
+        # so a regenerated log would otherwise decide how many get picked
+        "solo-verified": dict(
+            judge_models=demo_judge(), verify=True, verify_sample=1.0
+        ),
         "k-roll": dict(judge_models=demo_judge(), k_rolls=3),
         "cohort": dict(judge_models=[demo_judge(), demo_judge(model="mockllm/model2")]),
     }
@@ -159,7 +163,7 @@ def test_triage_judged_regimes_end_to_end(regime, demo_log, tmp_path):
         spans = results.subagents
         assert spans.verifier_model.notna().all()
         spot = spans[spans.verifier_selected.fillna(False)]
-        assert len(spot) == 1
+        assert len(spot) == 3
         assert (spot.verifier_trigger == "random_sample").all()
         assert not spot.overturned.any()
     if regime == "k-roll":

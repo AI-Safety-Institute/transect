@@ -65,8 +65,8 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     else:
         assert "Compaction nudge (before compaction)" in html
     assert "Traceback" not in html
-    # only the fixture-task log records a compaction threshold (row + chart toggle)
-    recorded = name == "plain-single-agent"
+    # the Inspect logs record a compaction threshold (row + chart toggle)
+    recorded = name != "openclaw-import"
     assert ("compaction threshold</span>" in html) == recorded
     assert ("Compaction threshold:" in html) == recorded
     assert len(html) > 20_000

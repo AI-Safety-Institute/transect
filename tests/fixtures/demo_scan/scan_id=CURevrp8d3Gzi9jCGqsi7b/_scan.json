@@ -1,12 +1,12 @@
 {
-  "scan_id": "bsCyTHLsvEZWXmqM5zgfbT",
+  "scan_id": "CURevrp8d3Gzi9jCGqsi7b",
   "scan_name": "transect",
-  "timestamp": "2026-09-28T15:50:11.513649+01:00",
+  "timestamp": "2026-09-29T13:25:12.437718+01:00",
   "revision": {
     "type": "git",
     "origin": "git@github.com:AI-Safety-Institute/transect.git",
     "version": "0.0.0-dev.0+unknown",
-    "commit": "881ef99"
+    "commit": "737a668"
   },
   "packages": {
     "inspect_ai": "0.3.268",
@@ -20,7 +20,7 @@
     "type": "eval_log",
     "filter": [],
     "transcript_ids": {
-      "5J5JLAekZ4CUL7NuTYcuEz": "examples/logs/house_price_demo.eval"
+      "Hc9XfPC6FgtwvHC6QoPmUs": "examples/logs/house_price_demo.eval"
     },
     "count": 0
   },
@@ -28,31 +28,31 @@
     "token_timeline": {
       "name": "transect/token_timeline",
       "version": 0,
-      "package_version": "0.1.8",
+      "package_version": "0.1.11",
       "params": {}
     },
     "context_flush": {
       "name": "transect/context_flush",
       "version": 0,
-      "package_version": "0.1.8",
+      "package_version": "0.1.11",
       "params": {}
     },
     "human_intervention": {
       "name": "transect/human_intervention",
       "version": 0,
-      "package_version": "0.1.8",
+      "package_version": "0.1.11",
       "params": {}
     },
     "eval_setup": {
       "name": "transect/eval_setup",
       "version": 0,
-      "package_version": "0.1.8",
+      "package_version": "0.1.11",
       "params": {}
     },
     "decision_phases": {
       "name": "transect/decision_phases",
       "version": 0,
-      "package_version": "0.1.8",
+      "package_version": "0.1.11",
       "params": {
         "spec": {
           "phases": [
@@ -114,42 +114,24 @@
             }
           }
         },
-        "judge_models": [
-          {
-            "model": "mockllm/model",
-            "config": {},
-            "base_url": null,
-            "model_args": {
-              "custom_outputs": "route"
-            }
-          },
-          {
-            "model": "mockllm/model2",
-            "config": {},
-            "base_url": null,
-            "model_args": {
-              "custom_outputs": "route"
-            }
-          },
-          {
-            "model": "mockllm/model3",
-            "config": {},
-            "base_url": null,
-            "model_args": {
-              "custom_outputs": "route"
-            }
+        "judge_models": {
+          "model": "mockllm/model",
+          "config": {},
+          "base_url": null,
+          "model_args": {
+            "custom_outputs": "route"
           }
-        ],
-        "k_rolls": 1,
-        "verify": null,
-        "verify_sample": null,
+        },
+        "k_rolls": 3,
+        "verify": true,
+        "verify_sample": 1.0,
         "verifier_model": null
       }
     },
     "subagent_classification": {
       "name": "transect/subagent_classification",
       "version": 0,
-      "package_version": "0.1.8",
+      "package_version": "0.1.11",
       "params": {
         "spec": {
           "phases": [
@@ -211,36 +193,18 @@
             }
           }
         },
-        "judge_models": [
-          {
-            "model": "mockllm/model",
-            "config": {},
-            "base_url": null,
-            "model_args": {
-              "custom_outputs": "route"
-            }
-          },
-          {
-            "model": "mockllm/model2",
-            "config": {},
-            "base_url": null,
-            "model_args": {
-              "custom_outputs": "route"
-            }
-          },
-          {
-            "model": "mockllm/model3",
-            "config": {},
-            "base_url": null,
-            "model_args": {
-              "custom_outputs": "route"
-            }
+        "judge_models": {
+          "model": "mockllm/model",
+          "config": {},
+          "base_url": null,
+          "model_args": {
+            "custom_outputs": "route"
           }
-        ],
-        "k_rolls": 1,
-        "verify": null,
+        },
+        "k_rolls": 3,
+        "verify": true,
         "verifier_model": null,
-        "verify_sample": null
+        "verify_sample": 1.0
       }
     }
   }

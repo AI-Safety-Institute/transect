@@ -106,11 +106,12 @@ def test_batched_cohort_votes_per_turn(demo_log, tmp_path):
             )
         ],
     )
-    # 9 reasoning turns, batch=8 -> 2 windows -> 2 calls per member
+    # 10 reasoning turns (the compaction summary call is one), batch=8
+    # -> 2 windows -> 2 calls per member
     assert calls == {"a": 2, "b": 2}
 
     frame = results.layer_frames["batch_risk"]
-    assert len(frame) == 9
+    assert len(frame) == 10
     by_turn = frame.set_index("turn")
     # turn 3 split 1-1: the tie-break goes to the higher confidence
     assert by_turn.loc[3, "label"] == "risky"
@@ -130,8 +131,8 @@ def test_batched_cohort_votes_per_turn(demo_log, tmp_path):
     # every (turn, member) slot gets a ballot row; the skipped slot
     # carries status no_answer with no label, like the built-in votes
     ballots = transect.member_ballots(frame, "turn")
-    assert len(ballots) == 18
-    assert int(ballots.label.notna().sum()) == 17
+    assert len(ballots) == 20  # 10 reasoning turns x 2 members
+    assert int(ballots.label.notna().sum()) == 19
     assert (ballots[ballots.label.isna()].status == "no_answer").all()
     stats = {
         st.label: st
@@ -139,7 +140,7 @@ def test_batched_cohort_votes_per_turn(demo_log, tmp_path):
             frame[frame.label.notna()], ballots, frame, "turn", "label", vocabulary=RISK
         )
     }
-    assert stats["risky"].n == 8 and stats["safe"].n == 1
+    assert stats["risky"].n == 9 and stats["safe"].n == 1
 
     # the report renders the layer's band and audit block from the
     # exploded frame
