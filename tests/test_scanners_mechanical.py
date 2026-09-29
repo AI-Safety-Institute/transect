@@ -240,7 +240,7 @@ def test_input_events_are_interventions_on_their_own_channel():
             "confirm: yes",
             "accepted",
         ),
-        (  # declined: no structured answer, the marker line remains
+        (  # declined: inspect's marker line is not an answer, outcome carries it
             InputEvent(
                 input="Submit now?\n[declined]",
                 input_ansi="",
@@ -248,7 +248,7 @@ def test_input_events_are_interventions_on_their_own_channel():
                 outcome="declined",
             ),
             "Submit now?",
-            "[declined]",
+            "",
             "declined",
         ),
         (  # an older log: bare answer, question, no outcome recorded

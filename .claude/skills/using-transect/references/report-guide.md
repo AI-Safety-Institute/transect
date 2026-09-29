@@ -141,11 +141,15 @@ the source - explain them when asked:
   call) and "answered (human)" (the reply), with the outcome on the
   header line when the source recorded one:
   - **input_event**: an ask-user / request-input question and its
-    answer (accepted / declined / cancelled); a console input recording
-    has no separate question, so only the recording shows. Older logs
-    record no outcome.
-  - **approval**: a tool call decided by the human approver (approve /
-    modify / reject / escalate / terminate), with the explanation.
+    answer (accepted / declined / cancelled); a declined or cancelled
+    request shows "no answer recorded". A console input recording has
+    no separate question, so it shows as "recorded (human)". Older
+    logs record no outcome, and stores scanned before transect 0.1.8
+    carry no question or outcome at all.
+  - **approval**: a tool call decided by inspect's built-in human
+    approver (approve / modify / reject / escalate / terminate), with
+    the explanation; a custom approver under another name is not
+    counted, and a modify shows the original call.
 
 Detection is structural (inspect's own message-source field), so
 scaffold-generated user messages - handoff boundaries, react

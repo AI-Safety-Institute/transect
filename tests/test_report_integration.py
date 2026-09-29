@@ -511,3 +511,70 @@ def test_layer_audit_block_names_an_unauditable_frame_instead_of_crashing():
     )
     assert "could not be audited" in out
     assert "KeyError" in out
+
+
+@pytest.mark.parametrize(
+    ("row", "needles"),
+    [
+        (  # human-initiated: the message alone
+            {
+                "channel": "operator",
+                "initiator": "human",
+                "content": "stop",
+                "prompt": None,
+                "outcome": None,
+            },
+            ["message (human):</span> stop"],
+        ),
+        (  # ask_user: question, answer, outcome on the header line
+            {
+                "channel": "input_event",
+                "initiator": "agent",
+                "content": "confirm: yes",
+                "prompt": "Submit?",
+                "outcome": "accepted",
+            },
+            [
+                "· accepted",
+                "asked (agent):</span> Submit?",
+                "answered (human):</span> confirm: yes",
+            ],
+        ),
+        (  # approval with no explanation: an explicit absence, not a blank
+            {
+                "channel": "approval",
+                "initiator": "agent",
+                "content": "",
+                "prompt": "bash({})",
+                "outcome": "reject",
+            },
+            ["asked (agent):</span> bash({})", "no answer recorded"],
+        ),
+        (  # console recording: agent-initiated, no separate question
+            {
+                "channel": "input_event",
+                "initiator": "agent",
+                "content": "y",
+                "prompt": None,
+                "outcome": None,
+            },
+            ["recorded (human):</span> y"],
+        ),
+        (  # a store scanned before the new columns existed
+            {
+                "channel": "input_event",
+                "initiator": None,
+                "content": "y",
+                "prompt": None,
+                "outcome": None,
+            },
+            ["recorded (human):</span> y"],
+        ),
+    ],
+)
+def test_intervention_list_labels_each_shape_by_its_initiator(row, needles):
+    frame = pd.DataFrame([{"turn": 3, **row}])
+    html = html_mod.unescape(str(sections.intervention_line(frame)))
+    for needle in needles:
+        assert needle in html, needle
+    assert "message (human)" not in html or row["initiator"] == "human"

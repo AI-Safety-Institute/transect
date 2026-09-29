@@ -222,6 +222,8 @@ def test_interventions_frame_carries_the_planted_interventions(demo_results):
         (15, "input_event"),
     ]
     assert interventions.content.iloc[0].startswith("Operator note: we are time-boxed")
+    assert interventions.initiator.tolist() == ["human", "agent"]
+    assert interventions.prompt.iloc[1].startswith("Submit the blended predictions")
     assert interventions.content.iloc[1] == "y"
 
 

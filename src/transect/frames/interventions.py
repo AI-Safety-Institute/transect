@@ -11,21 +11,29 @@ Columns (identity prefix explained in common.py):
   - input_event: an inspect InputEvent - the human's answer to an
     agent-initiated ask_user / request_input prompt, or a console
     input_screen recording.
-  - approval: an inspect ApprovalEvent decided by the human approver.
+  - approval: an inspect ApprovalEvent decided by inspect's built-in
+    human approver (name "human"); a custom approver under another
+    name is not counted.
 
   The transcript's first user message is the task prompt, never an
   intervention, whichever channel delivered it.
-- content: the human's own text - the message, the answer, or the
-  approval explanation.
+- content: the human's own text - the message, the answer (structured
+  fields as "name: value" lines), or the approval explanation. Empty
+  on a declined or cancelled ask_user (outcome carries the fact) and
+  on an approval with no explanation. A console recording's content
+  is the whole console export, prompts printed by the run included.
 - prompt: what the run put to the human, when the source records it
   (the ask_user question, the tool call awaiting approval); None on
-  human-initiated channels and console recordings.
+  human-initiated channels and console recordings. A "modify"
+  approval carries the original call, not the modified one.
 - outcome: how an agent-initiated exchange concluded - the InputEvent
   outcome (accepted / declined / cancelled) or the approval decision
   (approve / modify / reject / escalate / terminate); None otherwise,
   including older logs that never recorded one.
 - initiator: "human" (operator, input) or "agent" (input_event,
-  approval) - who opened the exchange.
+  approval) - who opened the exchange. NaN on stores scanned before
+  transect 0.1.8, together with prompt and outcome; the report then
+  reads the initiator off the channel.
 - schema_version: the frames contract version.
 """
 
