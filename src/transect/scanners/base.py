@@ -198,9 +198,17 @@ def human_intervention() -> Scanner[Transcript]:
     The first user message that arrived on a human channel (operator
     or input) is the task prompt, never an intervention.
 
-    value = {"interventions": [entry, ...]}: turn (count of model turns /
-    assistant messages preceding it), channel, initiator, prompt,
-    content, outcome.
+    value = {"interventions": [entry, ...]}: turn (the model turn the
+    intervention precedes, on the shared event axis), channel, initiator,
+    prompt, content, outcome.
+
+    Human messages live in the history, not the event stream, so their
+    turn is the event turn of the assistant message before them plus one.
+    Counting assistant messages instead would drift by one after every
+    summary compaction: the summarization call is a model turn whose
+    output never enters the history. An assistant message no event
+    recorded (a history without its event stream) still advances the
+    count by one.
     """
 
     async def execute(transcript: Transcript) -> Result:
@@ -218,11 +226,17 @@ def human_intervention() -> Scanner[Transcript]:
                 }
             )
 
-        assistant_turns = 0
+        turn_of_output = {
+            event.output.message.id: turn
+            for turn, (event, _calls) in enumerate(model_turns(transcript))
+            if event.output.message is not None
+        }
+        next_turn = 0
         seen_task_prompt = False
         for message in transcript.messages:
             if message.role == "assistant":
-                assistant_turns += 1
+                recorded = turn_of_output.get(message.id)
+                next_turn = next_turn + 1 if recorded is None else recorded + 1
                 continue
             if message.role != "user":
                 continue
@@ -232,7 +246,7 @@ def human_intervention() -> Scanner[Transcript]:
             if not seen_task_prompt:
                 seen_task_prompt = True
                 continue
-            entry(assistant_turns, source, "human", (message.text or "").strip())
+            entry(next_turn, source, "human", (message.text or "").strip())
 
         for turn, event in _non_model_events(transcript):
             if event.event == "input":
