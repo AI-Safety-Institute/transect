@@ -42,7 +42,8 @@ recorded transcript location:
 - `results.scan_location` / `results.transcripts_location`: the
   exact scan and its transcripts (Scout viewer deep links).
 - `results.scan_status`: the run-wide execution record (completed vs total
-  transcripts, recorded errors).
+  transcripts, recorded errors, and each scanner's billed judge usage per
+  model in `model_usage`).
 
 Frames can carry task/setup text, intervention text, spawn instructions and
 custom metadata; they are not anonymized exports. Map source fields separately
