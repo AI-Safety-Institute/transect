@@ -124,7 +124,7 @@ def eval_setup() -> Scanner[Transcript]:
     return execute
 
 
-@scanner(messages=["user"], events=["model", "compaction"])
+@scanner(messages=["user", "assistant"], events=["model", "compaction"])
 def context_flush() -> Scanner[Transcript]:
     """Context-window compactions (flushes), from explicit compaction events.
 

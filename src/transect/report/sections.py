@@ -101,8 +101,7 @@ def compaction_threshold(info: pd.DataFrame) -> CompactionThreshold | None:
         return None
     if isinstance(threshold, int) or threshold > 1:
         tokens = int(threshold)
-        unit = "token" if tokens == 1 else "tokens"
-        return CompactionThreshold(f"{tokens:,} {unit}", tokens)
+        return CompactionThreshold(f"{tokens:,} tokens", tokens)
     return CompactionThreshold(
         f"{threshold * 100:g}% of context window (token count not recorded)", None
     )
@@ -219,9 +218,9 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         config = json.loads(compaction_text)
         config.pop("prompt", None)
         compaction_text = (
-            f"{json.dumps(config)}; prompt shown below"
+            f"{json.dumps(config)}; see the compaction prompt card below"
             if config
-            else "prompt shown below"
+            else "see the compaction prompt card below"
         )
     core_rows = [
         ("model", found(irow, "model"), None),
@@ -295,7 +294,7 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     if cell(srow, "source_type") == "eval_log":
         template = cell(srow, "compaction_prompt")
         # synthesized drops are detections, not recorded compactions
-        recorded = flushes[flushes.source != "synthesized"] if len(flushes) else flushes
+        recorded = flushes[flushes.source != "synthesized"]
         prompts.extend(
             _compaction_prompts(recorded, str(template) if template else None)
         )
@@ -1180,9 +1179,18 @@ def phase_cards(
                 "color": color,
                 "headline": headline,
                 "group_note": {
-                    "invalid_partition": "Neutral grouping: invalid group ranges.",
-                    "empty_groups": "Neutral grouping: no groups supplied.",
-                    "no_narrative": "Neutral grouping: no usable narrative.",
+                    "invalid_partition": (
+                        "Shown as one turn group: the narrator's groups did "
+                        "not line up with the phase's turns."
+                    ),
+                    "empty_groups": (
+                        "Shown as one turn group: the narrator did not split "
+                        "this phase into turn groups."
+                    ),
+                    "no_narrative": (
+                        "Shown as one turn group: no narration was available "
+                        "for this phase."
+                    ),
                 }.get(p.narration_group_status),
                 "tags": tags,
                 "summary": summary,

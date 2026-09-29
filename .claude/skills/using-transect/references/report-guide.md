@@ -265,8 +265,9 @@ and `basis` (reasoning-bearing vs attributed) instead of dividing by
 
 One expandable card per phase, chronological - the drill-down for the
 timeline. Headlines and summaries retain the complete generated text. A note on
-the collapsed card explains neutral grouping caused by invalid ranges, empty
-groups, or no usable narrative. This is separate from classification warnings. Each card: narrated headline and summary (LLM narrator
+the collapsed card says the phase is shown as one turn group and why (the
+narrator supplied no groups, its groups did not line up with the phase's
+turns, or no narration was available). This is separate from classification warnings. Each card: narrated headline and summary (LLM narrator
 output - descriptive, not a verdict), the class-box (the judge's
 classification + mean confidence in one container - neutral when
 healthy, red with a warning glyph and the issue text when a

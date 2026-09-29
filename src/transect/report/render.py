@@ -246,10 +246,9 @@ def render_report(
             if components
             else Markup("<p>No timeline data.</p>")
         )
-        # mirrors charts.token_stack's condition for drawing the rule
         drawn_threshold = (
             threshold.tokens
-            if threshold is not None and bool(one.context.notna().any())
+            if threshold is not None and charts.draws_threshold(one, threshold.tokens)
             else None
         )
         if flush_turns or drawn_threshold is not None:

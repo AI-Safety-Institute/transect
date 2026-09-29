@@ -75,6 +75,8 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
         turns = per_turn_of.get(identity_cols["transcript_id"])
         for f in result_value(r["value"]).get("flushes") or []:
             metadata = f["metadata"] or {}
+            # indexed, not .get: a store scanned before these fields existed
+            # must fail loudly here (it needs a re-scan, not a fallback)
             details = {name: f[name] for name in _RECORDED_COLUMNS}
             details.update({name: metadata.get(name) for name in _METADATA_COLUMNS})
             f = {**f, "tokens_after_inferred": False}

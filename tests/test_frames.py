@@ -194,7 +194,7 @@ def test_subagent_spans_are_listed_even_unjudged(demo_results):
     )
 
 
-def test_flushes_frame_carries_the_planted_compaction(demo_results):
+def test_flushes_frame_carries_the_demo_compaction(demo_results):
     """The demo's one compaction lands with its exact recorded facts."""
     flushes = demo_results.flushes
     expected = pd.DataFrame(

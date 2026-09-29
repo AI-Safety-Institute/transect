@@ -80,21 +80,29 @@ def test_recorded_prompt_and_nudge_survive_to_the_stored_report(fixture_logs, tm
     )
 
 
-@pytest.mark.parametrize("case", ["openclaw", "history_message", "no_summary_call"])
+@pytest.mark.parametrize(
+    "case", ["openclaw", "history_message", "no_summary_call", "native_with_nudge"]
+)
 def test_no_text_is_inferred_where_none_was_recorded(case):
-    """Other sources, a history message before the flush, and non-summary
-    compactions all leave the text columns None."""
+    """Other sources, a history message before the flush, non-summary
+    compactions, and a native compaction whose agent turn ends with the nudge
+    all leave the prompt None; only the nudge is kept where it was issued."""
     task = ChatMessageUser(content="Do the thing", source="input")
     flush = CompactionEvent(type="summary", source="inspect", span_id="lead")
     if case == "no_summary_call":
         flush.type = "edit"
-    transcript = StubTranscript(
-        [model_turn("working", span_id="lead", input=[task]), flush], messages=[task]
-    )
+    nudge = ChatMessageUser(content=f"{NUDGE_PREFIX} notes")
+    inputs = [task, nudge] if case == "native_with_nudge" else [task]
+    turn = model_turn("working", span_id="lead", input=inputs)
+    # a react agent's own output enters the history; a summarizer's never does
+    transcript = StubTranscript([turn, flush], messages=[task, turn.output.message])
     if case == "openclaw":
         transcript.source_type = "openclaw"
     (row,) = run_item(context_flush(), transcript).value["flushes"]
-    assert (row["compaction_prompt"], row["compaction_nudge"]) == (None, None)
+    assert row["compaction_prompt"] is None
+    assert row["compaction_nudge"] == (
+        nudge.text if case == "native_with_nudge" else None
+    )
 
 
 @pytest.mark.parametrize("source_type", ["eval_log", "openclaw"])

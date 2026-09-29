@@ -137,6 +137,24 @@ def seg_answer(*segments):
     )
 
 
+def scripted_groups(prompt: str, phase_index: int) -> list[dict]:
+    """Two contiguous turn groups splitting the phase's digest lines in the
+    narrator prompt (one group when the phase is a single turn)."""
+    block = re.search(
+        rf"PHASE {phase_index} \[[^\]]*\]:\n((?:\d+:.*(?:\n|$))+)", prompt
+    )
+    assert block, f"phase {phase_index} block missing from the narrator prompt"
+    turns = [int(n) for n in re.findall(r"^(\d+):", block.group(1), re.M)]
+    first, last = turns[0], turns[-1]
+    if first == last:
+        return [group(first, last, title="Whole phase", gist="scripted")]
+    mid = (first + last) // 2
+    return [
+        group(first, mid, title="Opening moves", gist="scripted"),
+        group(mid + 1, last, title="Follow-through", gist="scripted"),
+    ]
+
+
 def narrative(phase_index, headline="did work", summary="Did the work.", groups=()):
     return {
         "phase_index": phase_index,
@@ -192,7 +210,11 @@ def demo_judge(model=MODEL, phase_label="model_development", subagent_labels=Non
         if "Narrate these phases:" in text:
             return narrate_answer(
                 *(
-                    narrative(int(k), headline=f"Scripted headline for {label}")
+                    narrative(
+                        int(k),
+                        headline=f"Scripted headline for {label}",
+                        groups=scripted_groups(text, int(k)),
+                    )
                     for k, label in re.findall(r"PHASE (\d+) \[(\w+),", text)
                 )
             )

@@ -11,6 +11,7 @@ from inspect_ai.log import read_eval_log, write_eval_log
 import transect
 from transect import load, render
 from transect.api import _run
+from transect.frames.flushes import flushes_df
 from transect.report import charts, sections
 from transect.report.embed import (
     _TIP_EXTRA_LINE_PX,
@@ -220,6 +221,8 @@ def _assert_no_page_errors(
 def test_recorded_compaction_threshold_survives_replay_and_toggles(demo_log, tmp_path):
     """A saved absolute threshold renders in Core setup and toggles a dotted rule."""
     log = read_eval_log(str(demo_log))
+    # a threshold above the demo's context peak: the rule then sits clear of
+    # the curve, so hiding it visibly changes the chart
     log.plan.steps[-1].params["compaction"] = {"type": "summary", "threshold": 4000}
     path = tmp_path / "threshold.eval"
     write_eval_log(log, str(path))
@@ -269,6 +272,10 @@ def test_spend_bars_floor_covers_the_declared_tooltip_rows():
     assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
 
 
+def empty_flushes() -> pd.DataFrame:
+    return flushes_df(pd.DataFrame(), pd.DataFrame(columns=["transcript_id"]))
+
+
 def test_eval_setup_renders_container_values():
     """Container values in the bypass fields render as compact JSON
     (escaped); an empty container reads as unconfigured, not []."""
@@ -283,7 +290,7 @@ def test_eval_setup_renders_container_values():
         ],
         dtype=object,
     )
-    html = str(sections.eval_setup_blocks(info, pd.DataFrame()))
+    html = str(sections.eval_setup_blocks(info, empty_flushes()))
     text = html_mod.unescape(html)
     assert '["<b>x</b>", "a & b"]' in text
     assert '["docker", "compose.yaml"]' in text

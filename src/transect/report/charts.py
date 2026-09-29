@@ -909,6 +909,13 @@ def token_measures_coincide(one: pd.DataFrame) -> bool:
     )
 
 
+def draws_threshold(one: pd.DataFrame, compaction_threshold: int | None) -> bool:
+    """Whether `token_stack` draws a threshold rule for this transcript:
+    an absolute token count and a context series to draw it against.
+    Exported so the section's legend reads the same decision."""
+    return compaction_threshold is not None and bool(one.context.notna().any())
+
+
 def token_stack(
     one: pd.DataFrame,
     flushes: pd.DataFrame | None,
@@ -1076,19 +1083,15 @@ def token_stack(
     # with the bars chart's `hover` above
     threshold_controls: list[Component] = []
     threshold_marks: list[Mark] = []
-    if compaction_threshold is not None and wide.context.notna().any():
+    if compaction_threshold is not None and draws_threshold(one, compaction_threshold):
         threshold_data = Data.from_dataframe(
             pd.DataFrame({"threshold": [compaction_threshold], "visible": ["show"]})
         )
         threshold_selection = Selection.single(cross=False)
-        token_unit = "token" if compaction_threshold == 1 else "tokens"
         threshold_controls.append(
             checkbox(
                 data=threshold_data,
-                label=(
-                    f"Compaction threshold: {compaction_threshold:,} "
-                    f"{token_unit} (dotted)"
-                ),
+                label=f"Compaction threshold: {compaction_threshold:,} tokens (dotted)",
                 target=threshold_selection,
                 field="visible",
                 checked=True,
