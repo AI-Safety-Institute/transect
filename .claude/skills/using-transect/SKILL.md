@@ -24,14 +24,22 @@ flushes, human interventions, and sub-agent activity. Orientation:
 [AGENTS](https://github.com/AI-Safety-Institute/transect/blob/main/AGENTS.md)
 (architecture, contracts).
 
-Guide the user spec-first: their knowledge of the eval goes into the
-spec; the run is one call; the report is where the reading happens.
-Iterating and re-running is the normal loop, not a failure - and it
-has two dials: the spec (vocabulary and descriptions, when labels
-land wrong) and the judge setup (regime, verifier, models - when the
-reliability audit flags disagreement or inconsistency). Spec
-iteration is guided here; judge-setup iteration off reliability
-signals is the transect-diagnostics skill's own subject.
+Guide the user spec-first, in this order. Ask what the eval is and
+what they want to learn from the run; their knowledge goes into the
+spec, and a spec drafted from the log alone decides what the judges
+look for without them. Then run a $0 structural pass
+(`judge_models=None`, section 2) and read its report together: the
+sub-agent spawn prompts, the human interventions and the eval setup
+are the raw material for a vocabulary nobody knows before looking.
+Draft the phases and sub-agent labels from both, show the draft, and
+get the user's confirmation before any judged run. The run is one
+call; the report is where the reading happens. Iterating and
+re-running is the normal loop, not a failure - and it has two dials:
+the spec (vocabulary and descriptions, when labels land wrong) and
+the judge setup (regime, verifier, models - when the reliability
+audit flags disagreement or inconsistency). Spec iteration is guided
+here; judge-setup iteration off reliability signals is the
+transect-diagnostics skill's own subject.
 
 For a new evaluation or a domain-specific adaptation, work through
 section 8 (Adapting to a new evaluation) before choosing labels or
@@ -313,10 +321,10 @@ separate identities or an explicit aggregation rule, and a single primary
 label on a compound action hides secondary methods from an exact-label
 filter.
 
-Start from a fresh, empty spec and a $0 structural run
-(`judge_models=None`, section 2) rather than inheriting a previous
-evaluation's labels; derive the vocabularies from the task and the review
-question, with descriptions and escape categories.
+Start from a fresh, empty spec and the structural pass described at the
+top, not an inherited vocabulary; derive the labels from the task, the
+review question and what that pass shows, with descriptions and escape
+categories, and confirm them with the user before judging.
 
 Calibrate before paying for labels: capture prepared prompts with a
 deterministic model substitute to verify the rubric and context reach the

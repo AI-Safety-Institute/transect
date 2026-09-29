@@ -114,8 +114,8 @@ uv run python examples/transect_kroll.py --structural
 ```
 
 It renders `examples/scans/structural/report.html` and opens it with a
-Scout viewer wired in; structural data is populated and judged sections
-are empty. The following judged
+Scout viewer wired in; structural data is populated and the Phase
+timeline section states that no judge was configured. The following judged
 examples require provider credentials and incur model charges:
 
 ```bash
@@ -150,7 +150,14 @@ each phase described in your own words. `subagent_classification`
 labels every spawned sub-agent from its delegation instructions:
 it needs the sub-agent roles you expect. Free task context
 gives the phase judge background on the eval itself. The better
-your descriptions, the better the labelling. A minimal spec:
+your descriptions, the better the labelling.
+
+You rarely know the sub-agent roles, and often not the phases,
+before looking at a run. Start with a structural run, no judge and
+no spend, as in [Getting started](#getting-started): its report
+lists every sub-agent span with its full spawn prompt, every human
+intervention, and the eval setup. Draft the vocabulary from those,
+then run the judges against it. A minimal spec:
 
 ```yaml
 context: >
@@ -183,8 +190,10 @@ available to the judges.
 
 > [!TIP]
 > The shipped skills help here (see [Installation](#installation)):
-> `using-transect` drafts a first spec from your description of the
-> eval. Expect to iterate, a rubric is rarely right first time:
+> `using-transect` walks this with you: it asks what the eval is,
+> runs the structural pass, drafts the spec from both, and confirms
+> it with you before any judged run. Expect to iterate, a rubric is
+> rarely right first time:
 > read the report's reliability audit, refine your labels and
 > descriptions, and re-run; `transect-diagnostics` walks that loop.
 
