@@ -141,11 +141,8 @@ def context_flush() -> Scanner[Transcript]:
 
     async def execute(transcript: Transcript) -> Result:
         flushes: list[dict[str, Any]] = []
-        texts = iter(await compaction_texts(transcript))
-        turn = 0
-        for event in transcript.events:
-            if event.event == "model" and event.output:
-                turn += 1
+        texts = iter(compaction_texts(transcript))
+        for turn, event in _non_model_events(transcript):
             if event.event != "compaction":
                 continue
             flushes.append(

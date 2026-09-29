@@ -294,8 +294,10 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     ]
     if cell(srow, "source_type") == "eval_log":
         template = cell(srow, "compaction_prompt")
+        # synthesized drops are detections, not recorded compactions
+        recorded = flushes[flushes.source != "synthesized"] if len(flushes) else flushes
         prompts.extend(
-            _compaction_prompts(flushes, str(template) if template else None)
+            _compaction_prompts(recorded, str(template) if template else None)
         )
     config_rows = [
         ("task args", found(srow, "task_args"), None),
@@ -356,7 +358,15 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
 def _compaction_prompts(
     flushes: pd.DataFrame, configured_prompt: str | None
 ) -> list[tuple[str, str]]:
-    """Distinct recorded texts, or explicit absence."""
+    """Distinct recorded texts, or explicit absence. A run that recorded no
+    compaction gets no absence cards: only the configured template, if any,
+    since nothing happened for the text to be missing from."""
+    if not len(flushes):
+        return (
+            [("Compaction prompt (configured template)", configured_prompt)]
+            if configured_prompt
+            else []
+        )
     prompts = []
     for field, label in (
         ("compaction_prompt", "Compaction prompt"),

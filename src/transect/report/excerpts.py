@@ -89,10 +89,10 @@ def mark_compaction_turns(
 
     A summary compaction's ``generate()`` is a model event like any other,
     so it holds a turn on the shared axis and its excerpt is the summary
-    body. Unmarked, a card presents that as the agent pausing to recap;
-    ``turns`` comes from the flushes frame (a flush with a recorded
-    ``compaction_prompt`` sits on the summarization call's own turn), so
-    the card's marker and the flush list can never disagree.
+    body. Unmarked, a card presents that as the agent pausing to recap.
+    ``turns`` derives from the flushes frame (the turn before a flush with
+    a recorded ``compaction_prompt`` is its summarization call), so the
+    card's marker and the flush list can never disagree.
     """
     marked = dict(excerpts)
     for turn in turns:

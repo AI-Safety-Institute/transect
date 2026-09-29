@@ -4,15 +4,16 @@ Columns (identity prefix explained in common.py):
 
 - turn: 0-based index of the first post-flush model turn.
 - type: the compaction kind as recorded (e.g. summary), or
-  "synthesized" for detected-not-recorded drops.
+  "token_drop" for detected-not-recorded drops.
 - source: who recorded the event (e.g. inspect / openclaw), or
-  "context_drop" for synthesized rows.
+  "synthesized" for detected-not-recorded drops.
 - tokens_before / tokens_after: window size around the flush; None =
   not reported and not inferrable.
 - tokens_after_inferred: tokens_after came from the first non-gap
   main-lane turn after the flush, not the event itself.
 - role: the model role whose conversation was compacted, when recorded.
-- metadata: the complete recorded compaction event metadata, or None.
+- metadata: the complete recorded compaction event metadata (object), or
+  None.
 - strategy: the recorded strategy name (e.g. CompactionSummary).
 - messages_before / messages_after: recorded message counts, nullable integers.
 - trigger: the recorded trigger (e.g. forced / threshold).
@@ -20,8 +21,9 @@ Columns (identity prefix explained in common.py):
   as the model saw it.
 - compaction_nudge: the pre-compaction save-to-memory warning, verbatim.
   Both text columns are Inspect eval-only (scanners/compaction.py says
-  how they are located); None means the source recorded no such text.
-  Synthesized drops carry no such facts.
+  how they are located). role, strategy, trigger and the two text
+  columns are nullable strings; missing means the source recorded no
+  such fact. Synthesized drops carry none of them.
 - schema_version: the frames contract version.
 """
 
@@ -34,6 +36,10 @@ from transect.frames.common import (
     result_value,
     with_schema,
 )
+
+_METADATA_COLUMNS = ("strategy", "messages_before", "messages_after", "trigger")
+_RECORDED_COLUMNS = ("role", "metadata", "compaction_prompt", "compaction_nudge")
+_TEXT_COLUMNS = ("role", "strategy", "trigger", "compaction_prompt", "compaction_nudge")
 
 
 def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFrame:
@@ -114,23 +120,18 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
         *_RECORDED_COLUMNS,
     ]
     df = pd.DataFrame(rows, columns=columns)
-    # pin nullable numerics
+    # pin nullable numerics and strings, so an all-missing column is not
+    # inferred as float NaN
     df = df.astype(
-        dict.fromkeys(
-            ("tokens_before", "tokens_after", "messages_before", "messages_after"),
-            "Int64",
-        )
+        {
+            **dict.fromkeys(
+                ("tokens_before", "tokens_after", "messages_before", "messages_after"),
+                "Int64",
+            ),
+            **dict.fromkeys(_TEXT_COLUMNS, "string"),
+        }
     )
     return with_schema(df)
-
-
-_METADATA_COLUMNS = ("strategy", "messages_before", "messages_after", "trigger")
-_RECORDED_COLUMNS = (
-    "role",
-    "metadata",
-    "compaction_prompt",
-    "compaction_nudge",
-)
 
 
 def _synthesized_drops(lane_turns: pd.DataFrame, nearby: set[int]):

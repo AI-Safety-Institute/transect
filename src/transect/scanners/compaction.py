@@ -23,7 +23,7 @@ from inspect_scout import Transcript
 _MEMORY_WARNING_PREFIX = "Context compaction approaching. Use memory() to save"
 
 
-async def compaction_texts(transcript: Transcript) -> list[dict[str, str | None]]:
+def compaction_texts(transcript: Transcript) -> list[dict[str, str | None]]:
     """One ``{compaction_prompt, compaction_nudge}`` dict per compaction event,
     in event order; empty for non-Inspect sources or transcripts without
     compaction events."""

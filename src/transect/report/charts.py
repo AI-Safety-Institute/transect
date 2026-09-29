@@ -45,8 +45,10 @@ Constraints ledger (detail sits on each named function or constant):
   `y_scale=scale`). A mark with no scale to spare targets a `Selection`
   instead (`phase_band`'s label filter and fill-mode checkbox).
 - **A checkbox-bound `Param` on a rule's `stroke_opacity` does not
-  toggle the rule.** Filter its data with a `Selection` instead and pin
-  the y-domain to keep the curve fixed (`token_stack`'s threshold rule).
+  toggle the rule.** Filter its data with a `Selection` instead
+  (`token_stack`'s threshold rule); the y-scale follows the visible
+  marks, so hiding the rule rescales the curve - never pin the domain to
+  the threshold, which squashes a curve far below it for good.
 - **A `sql()` x-expression leaks into the x-scale's auto-inferred
   label.** Pin `x_label=` on any plot with a `sql()`-computed x.
 - **An `x_axis="top"` plot's axis label is pinned near the svg's
@@ -973,8 +975,8 @@ def token_stack(
 
     A recorded absolute compaction threshold adds a dotted horizontal
     rule to the context chart and a checkbox above it. The checkbox
-    filters the rule's data with a Selection; a pinned y-domain keeps
-    the context curve fixed while the reference line is hidden.
+    filters the rule's data with a Selection, and the y-scale follows:
+    hiding a threshold far above the curve gives the curve the chart back.
     No threshold control is emitted without context data or an absolute
     token count; cumulative spend and output do not measure input context.
     """
@@ -1074,7 +1076,6 @@ def token_stack(
     # with the bars chart's `hover` above
     threshold_controls: list[Component] = []
     threshold_marks: list[Mark] = []
-    context_domain = None
     if compaction_threshold is not None and wide.context.notna().any():
         threshold_data = Data.from_dataframe(
             pd.DataFrame({"threshold": [compaction_threshold], "visible": ["show"]})
@@ -1105,7 +1106,6 @@ def token_stack(
                 pointer_events="none",
             )
         )
-        context_domain = (0, max(compaction_threshold, float(wide.context.max())))
     context_chart = plot(
         line(
             context_data,
@@ -1128,7 +1128,6 @@ def token_stack(
         width=width,
         height=_CONTEXT_HEIGHT,
         y_label="context",
-        y_domain=context_domain,
         margin_left=_TOKEN_MARGIN_LEFT,  # shared with the bars chart above
         margin_top=_CONTEXT_MARGIN_TOP,
         margin_bottom=_CONTEXT_MARGIN_BOTTOM,

@@ -46,11 +46,12 @@ LLM prose), then three default-collapsed expandables:
   For Inspect `.eval` logs, two compaction cards follow: the
   summarization prompt and the save-to-memory nudge issued before
   compaction, each distinct recorded text once (per-event text is in
-  `flushes`). The configured template is shown only when no recorded
-  prompt is available; absent text reads "data not found" - expected
-  when the run had no `memory` tool (no nudge is issued) or used native
-  provider compaction (no prompt is recorded). OpenClaw exports carry
-  neither, so those cards do not appear.
+  `flushes`). The cards appear only when the log recorded a compaction
+  (or, with none, just the configured template if one was set). Absent
+  text reads "not recorded by source" - expected when the run had no
+  `memory` tool (no nudge is issued) or used native provider compaction
+  (no prompt is recorded). OpenClaw exports carry neither, so those
+  cards do not appear.
   A recorded compaction threshold also appears here, as a token count or
   a percentage of the context window. The threshold row is absent when
   unrecorded.

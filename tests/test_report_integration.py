@@ -203,12 +203,10 @@ def _assert_no_page_errors(
             playwright.expect(control).to_be_checked()
             playwright.expect(rule).to_have_count(1)
             playwright.expect(curve).to_have_count(1)
-            curve_path = curve.locator("path")
-            geometry = curve_path.get_attribute("d")
-            assert geometry
+            # the curve stays drawn either way; its scale may follow the rule
             control.uncheck()
             playwright.expect(rule).to_have_count(0)
-            assert curve_path.get_attribute("d") == geometry
+            playwright.expect(curve.locator("path")).to_have_count(1)
             control.check()
             playwright.expect(rule).to_have_count(1)
         n_frames = len(page.frames)

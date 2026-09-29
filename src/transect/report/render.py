@@ -188,9 +188,11 @@ def render_report(
                         ),
                         f"phase-cards-{idx}",
                         card_id_prefix,
+                        # flushes.turn is the first post-flush turn; the
+                        # summarization call is the model turn before it
                         mark_compaction_turns(
                             my_extras.excerpts,
-                            my_flushes.turn[my_flushes.compaction_prompt.notna()],
+                            my_flushes.turn[my_flushes.compaction_prompt.notna()] - 1,
                         )
                         if my_extras
                         else None,

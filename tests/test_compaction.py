@@ -9,6 +9,7 @@ from fixtures.generate_eval_log import (
 )
 from helpers import StubTranscript, model_turn, run_item
 from inspect_ai.event import CompactionEvent
+from inspect_ai.log import read_eval_log
 from inspect_ai.model import ChatMessageUser
 from inspect_scout import Transcript
 from test_frames import raw_row
@@ -46,6 +47,12 @@ def test_recorded_prompt_and_nudge_survive_to_the_stored_report(fixture_logs, tm
     assert "attachment://" not in "".join(prompts)
     template = results.transcript_info.compaction_prompt.iloc[0]
     assert "{addendums}" in template
+    # flushes.turn is the first post-flush turn on the 0-based axis, so the
+    # summarization call (whose input ends with the prompt) is the turn before
+    log = read_eval_log(next(fixture_logs.glob("*.eval")), resolve_attachments=True)
+    model_turns = [e for e in log.samples[0].events if e.event == "model" and e.output]
+    for flush in flushes.itertuples():
+        assert model_turns[flush.turn - 1].input[-1].text == flush.compaction_prompt
     # identical nudges share one pooled message id in the log, so each flush
     # must still get the warning issued in its own window
     nudges = flushes.compaction_nudge
