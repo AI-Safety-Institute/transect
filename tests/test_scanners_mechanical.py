@@ -162,6 +162,25 @@ def test_human_messages_become_interventions_by_source(source, channel):
     assert intervention["turn"] == 1
 
 
+def test_operator_messages_sit_on_the_event_turn_axis():
+    """A model turn absent from the history (a summarization call) still
+    counts on the shared axis, so an operator message after it precedes
+    the turn the timeline says it does, not one earlier."""
+    turns = [model_turn(text) for text in ("working", "recap", "blend", "final")]
+    working, _recap, blend, final = turns
+    messages = [
+        ChatMessageUser(content="the task", source="input"),
+        working.output.message,
+        # recap is the summarizer: a model turn with no message in the history
+        blend.output.message,
+        ChatMessageUser(content="steer", source="operator"),
+        final.output.message,
+    ]
+    value = run_scan(human_intervention(), turns, messages=messages)
+    (intervention,) = value.value["interventions"]
+    assert intervention["turn"] == 3
+
+
 def test_the_first_input_message_is_the_task_not_an_intervention():
     messages = [ChatMessageUser(content="the task prompt", source="input")]
     value = run_scan(human_intervention(), [], messages=messages).value
