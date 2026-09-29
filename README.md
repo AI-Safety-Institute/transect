@@ -232,10 +232,12 @@ Top to bottom, everything on a shared turn axis:
 
 - **Flags**: a red flag at the very top marks scan execution failures; it
   links to the run-wide "Scan execution & coverage" section at the bottom.
-- **Eval setup**: model, scaffold, verbatim prompts, limits, run summary.
+- **Eval setup**: model, scaffold, verbatim prompts (including Inspect's
+  compaction prompt and memory nudge), compaction threshold, limits, run summary.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
-- **Token telemetry**: per-turn token measures and context size, compactions marked.
+- **Token telemetry**: per-turn token measures and context size, compactions
+  and any recorded compaction threshold marked.
 - **Sub-agent activity**: one swimlane per spawned sub-agent, with its classified role.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
@@ -262,7 +264,7 @@ object, ready for a notebook or your own Python:
 frames = results.frames()  # dict of name -> DataFrame
 frames["transcript_info"]  # one row per transcript: task, model, outcome, setup
 frames["token_timeline"]  # per-turn token usage + context size
-frames["flushes"]  # context compactions, tokens before/after
+frames["flushes"]  # compaction tokens, role, metadata, Inspect prompt + nudge
 frames["interventions"]  # mid-run human interventions
 frames["lane_activity"]  # per-turn sub-agent tool activity
 frames["phases"]  # stitched phases + reliability
@@ -318,9 +320,12 @@ erDiagram
         string error "None unless the run errored"
         string limit "the terminating limit, if one"
         object scaffold_prompt "recorded value, including structured content"
+        string compaction "recorded strategy config, including threshold"
+        string source_type "eval_log for Inspect"
         bool header_available "False on OpenClaw imports"
         int message_limit "None = not set / not found"
         string system_prompt "verbatim; the long prompts sit last"
+        string compaction_prompt "configured Inspect template, if recorded"
     }
     token_timeline["token_timeline (one row per model turn)"] {
         int turn PK
@@ -334,6 +339,14 @@ erDiagram
         string type
         int tokens_before
         int tokens_after
+        string role
+        string strategy
+        int messages_before
+        int messages_after
+        string trigger
+        object metadata "complete event metadata"
+        string compaction_prompt "summarization prompt as the model saw it"
+        string compaction_nudge "save-to-memory warning before compaction"
     }
     interventions["interventions (one row per human intervention)"] {
         int turn FK

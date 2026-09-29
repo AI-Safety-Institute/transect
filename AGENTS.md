@@ -91,6 +91,23 @@ scanner change take effect; run a new scan and retain both results for compariso
   data" / an explicit note - never a fabricated zero, never a silently
   missing section. Unclassified spans are listed as unclassified;
   a classifier that joined zero spans warns loudly.
+- **Compaction text is Inspect-only.** Inspect records neither the
+  summarization prompt nor the memory nudge on the `CompactionEvent`;
+  `scanners/compaction.py` locates both in the surrounding model-event
+  inputs (its docstring states the structural criteria) for `eval_log`
+  transcripts. `flushes` carries the per-event text;
+  `transcript_info.compaction_prompt` carries the configured template
+  from `agent_args`, which the report uses only when no recorded prompt
+  is available. Never substitute the installed Inspect version's default
+  prompt for unrecorded text. OpenClaw exports carry only the summary
+  output (`compactionSummary.summary`, not surfaced) - no prompt or nudge
+  exists to extract, so those columns are None there.
+- **Compaction thresholds come from recorded configuration.** The report
+  reads `transcript_info.compaction` and shows absolute thresholds as an
+  optional dotted line on the context chart. Fractions appear in Core
+  setup only; never resolve them using the installed model database or
+  infer a threshold from `tokens_before`. Unrecorded thresholds render
+  no row, line, or toggle.
 - **Review units.** Phase `verifier_reviews` retains the original
   selected review units through display merging;
   `transect.reliability.review_units` is the review-population read.

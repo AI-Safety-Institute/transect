@@ -34,6 +34,7 @@ from helpers import (
     demo_judge,
     narrate_answer,
     narrative,
+    scripted_groups,
     seg,
     seg_answer,
     verify_answer,
@@ -95,7 +96,11 @@ def kroll_flagged_judge():
         if "Narrate these phases:" in text:
             return narrate_answer(
                 *(
-                    narrative(int(k), headline=f"Scripted headline for {label}")
+                    narrative(
+                        int(k),
+                        headline=f"Scripted headline for {label}",
+                        groups=scripted_groups(text, int(k)),
+                    )
                     for k, label in re.findall(r"PHASE (\d+) \[(\w+),", text)
                 )
             )
@@ -122,7 +127,7 @@ def run(store: Path, **judge_setup) -> None:
     if store.exists():
         shutil.rmtree(store)
     transect(
-        logs="examples/logs",
+        logs="examples/logs/house_price_demo.eval",
         spec="examples/spec.yaml",
         scans_dir=str(store.relative_to(ROOT)),
         viewer=False,
@@ -188,6 +193,9 @@ def check_planted_signals(store: Path, regime: str) -> None:
         assert not lines, f"{errors_file} records scan errors:\n{lines}"
     frames = load(str(store.relative_to(ROOT))).frames()
     phases, turns = frames["phases"], frames["phase_turns"]
+    assert (phases.narration_group_status == "complete").all(), (
+        "scripted narrator groups must partition every phase"
+    )
     if regime == "kroll":
         reviewed = phases[phases.verifier_selected.fillna(False)]
         assert len(reviewed) == 2, f"expected 2 reviewed phases: {len(reviewed)}"

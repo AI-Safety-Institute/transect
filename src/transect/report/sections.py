@@ -8,7 +8,10 @@ templates - autoescape escapes at interpolation time, so never
 pre-escape a value here (it would double-escape).
 """
 
+import json
+import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import pandas as pd
@@ -60,6 +63,48 @@ def section(
 
 
 _NOT_FOUND = "not recorded by source"
+
+
+@dataclass(frozen=True)
+class CompactionThreshold:
+    """A recorded setting and its token count, when the unit is absolute."""
+
+    label: str
+    tokens: int | None
+
+
+def compaction_threshold(info: pd.DataFrame) -> CompactionThreshold | None:
+    """Read the saved Inspect configuration without resolving runtime defaults.
+
+    Inspect distinguishes integer token counts from fractional floats.
+    A recorded fraction alone cannot locate a line on a token axis: the
+    runtime model capacity is not recorded alongside this setting.
+    """
+    if not len(info) or info.iloc[0].get("source_type") != "eval_log":
+        return None
+    raw = info.iloc[0].get("compaction")
+    if not isinstance(raw, str):
+        return None
+    try:
+        config = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(config, dict):
+        return None
+    threshold = config.get("threshold")
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(threshold)
+        or threshold <= 0
+    ):
+        return None
+    if isinstance(threshold, int) or threshold > 1:
+        tokens = int(threshold)
+        return CompactionThreshold(f"{tokens:,} tokens", tokens)
+    return CompactionThreshold(
+        f"{threshold * 100:g}% of context window (token count not recorded)", None
+    )
 
 
 def run_intro_line(info: pd.DataFrame) -> Markup | None:
@@ -115,7 +160,7 @@ def run_intro_line(info: pd.DataFrame) -> Markup | None:
     return _notes.intro_line(text + ".")
 
 
-def eval_setup_blocks(info: pd.DataFrame) -> Markup:
+def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     """The intro's three default-collapsed expandables: Core Setup,
     Additional Config Details, Run Summary. Every row renders even
     when its fact is absent, wording "not recorded by source" (never
@@ -166,6 +211,17 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
             return str(value)
         return "scaffold default" if args_recorded else _NOT_FOUND
 
+    threshold = compaction_threshold(info)
+    compaction_text = scaffold("compaction")
+    if cell(srow, "compaction_prompt") is not None:
+        # the template is its own card below; keep the row to the settings
+        config = json.loads(compaction_text)
+        config.pop("prompt", None)
+        compaction_text = (
+            f"{json.dumps(config)}; see the compaction prompt card below"
+            if config
+            else "see the compaction prompt card below"
+        )
     core_rows = [
         ("model", found(irow, "model"), None),
         (
@@ -204,9 +260,20 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
         ),
         (
             "compaction",
-            scaffold("compaction"),
+            compaction_text,
             "The scaffold's context-compaction setting as configured; "
             "the log does not record the resolved scaffold default.",
+        ),
+        *(
+            [
+                (
+                    "compaction threshold",
+                    threshold.label,
+                    "The configured trigger for compacting input context.",
+                )
+            ]
+            if threshold is not None
+            else []
         ),
         (
             "truncation",
@@ -224,6 +291,13 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
         )
         if (value := cell(srow, name)) is not None
     ]
+    if cell(srow, "source_type") == "eval_log":
+        template = cell(srow, "compaction_prompt")
+        # synthesized drops are detections, not recorded compactions
+        recorded = flushes[flushes.source != "synthesized"]
+        prompts.extend(
+            _compaction_prompts(recorded, str(template) if template else None)
+        )
     config_rows = [
         ("task args", found(srow, "task_args"), None),
         (
@@ -278,6 +352,39 @@ def eval_setup_blocks(info: pd.DataFrame) -> Markup:
         {"title": "Run summary", "rows": summary_rows, "prompts": []},
     ]
     return _notes.setup_blocks(blocks)
+
+
+def _compaction_prompts(
+    flushes: pd.DataFrame, configured_prompt: str | None
+) -> list[tuple[str, str]]:
+    """Distinct recorded texts, or explicit absence. A run that recorded no
+    compaction gets no absence cards: only the configured template, if any,
+    since nothing happened for the text to be missing from."""
+    if not len(flushes):
+        return (
+            [("Compaction prompt (configured template)", configured_prompt)]
+            if configured_prompt
+            else []
+        )
+    prompts = []
+    for field, label in (
+        ("compaction_prompt", "Compaction prompt"),
+        ("compaction_nudge", "Compaction nudge (before compaction)"),
+    ):
+        recorded = [
+            text
+            for text in flushes.sort_values("turn")[field].dropna().unique()
+            if text
+        ]
+        for text in recorded:
+            prompts.append((f"{label} (verbatim)", text))
+        if recorded:
+            continue
+        if field == "compaction_prompt" and configured_prompt:
+            prompts.append((f"{label} (configured template)", configured_prompt))
+        else:
+            prompts.append((label, _NOT_FOUND))
+    return prompts
 
 
 def phase_explanation() -> Markup:
@@ -454,9 +561,12 @@ def token_intro(derived: bool, coincide: bool = False) -> Markup:
     return _notes.token_intro_derived(coincide)
 
 
-def event_legend(has_context_chart: bool) -> Markup:
-    """Legend for the flush-event glyph."""
-    return _notes.event_legend(has_context_chart)
+def event_legend(
+    has_context_chart: bool, flushes: bool = True, threshold: int | None = None
+) -> Markup:
+    """Legend for the flush-event glyph and, when drawn, the compaction
+    threshold rule (``threshold`` in tokens)."""
+    return _notes.event_legend(has_context_chart, flushes, threshold)
 
 
 def flush_line(flushes: pd.DataFrame) -> Markup:
@@ -1069,9 +1179,18 @@ def phase_cards(
                 "color": color,
                 "headline": headline,
                 "group_note": {
-                    "invalid_partition": "Neutral grouping: invalid group ranges.",
-                    "empty_groups": "Neutral grouping: no groups supplied.",
-                    "no_narrative": "Neutral grouping: no usable narrative.",
+                    "invalid_partition": (
+                        "Shown as one turn group: the narrator's groups did "
+                        "not line up with the phase's turns."
+                    ),
+                    "empty_groups": (
+                        "Shown as one turn group: the narrator did not split "
+                        "this phase into turn groups."
+                    ),
+                    "no_narrative": (
+                        "Shown as one turn group: no narration was available "
+                        "for this phase."
+                    ),
                 }.get(p.narration_group_status),
                 "tags": tags,
                 "summary": summary,

@@ -44,6 +44,11 @@ Constraints ledger (detail sits on each named function or constant):
   a real scale-defining attribute of the same mark (`token_stack`'s
   `y_scale=scale`). A mark with no scale to spare targets a `Selection`
   instead (`phase_band`'s label filter and fill-mode checkbox).
+- **A checkbox-bound `Param` on a rule's `stroke_opacity` does not
+  toggle the rule.** Filter its data with a `Selection` instead
+  (`token_stack`'s threshold rule); the y-scale follows the visible
+  marks, so hiding the rule rescales the curve - never pin the domain to
+  the threshold, which squashes a curve far below it for good.
 - **A `sql()` x-expression leaks into the x-scale's auto-inferred
   label.** Pin `x_label=` on any plot with a `sql()`-computed x.
 - **An `x_axis="top"` plot's axis label is pinned near the svg's
@@ -73,7 +78,17 @@ from inspect_viz import Component, Data, Param, Selection
 from inspect_viz.input import checkbox, radio_group, select
 from inspect_viz.interactor import highlight, nearest_x
 from inspect_viz.layout import hconcat
-from inspect_viz.mark import Mark, TextStyles, TipOptions, dot, line, rect, rule_x, text
+from inspect_viz.mark import (
+    Mark,
+    TextStyles,
+    TipOptions,
+    dot,
+    line,
+    rect,
+    rule_x,
+    rule_y,
+    text,
+)
 from inspect_viz.plot import plot
 from inspect_viz.transform import Transform, sql
 
@@ -894,9 +909,17 @@ def token_measures_coincide(one: pd.DataFrame) -> bool:
     )
 
 
+def draws_threshold(one: pd.DataFrame, compaction_threshold: int | None) -> bool:
+    """Whether `token_stack` draws a threshold rule for this transcript:
+    an absolute token count and a context series to draw it against.
+    Exported so the section's legend reads the same decision."""
+    return compaction_threshold is not None and bool(one.context.notna().any())
+
+
 def token_stack(
     one: pd.DataFrame,
     flushes: pd.DataFrame | None,
+    compaction_threshold: int | None = None,
 ) -> tuple[list[Component], int]:
     """Token telemetry for one transcript: a continuous-x bar chart (up
     to three selectable measures plus a linear/log scale toggle) and,
@@ -956,6 +979,13 @@ def token_stack(
     (`_flush_column`) since a plot carries one tip-bearing mark; the
     context chart's rule is unlabelled. Interventions get their own chart
     (`interventions_chart`), never these.
+
+    A recorded absolute compaction threshold adds a dotted horizontal
+    rule to the context chart and a checkbox above it. The checkbox
+    filters the rule's data with a Selection, and the y-scale follows:
+    hiding a threshold far above the curve gives the curve the chart back.
+    No threshold control is emitted without context data or an absolute
+    token count; cumulative spend and output do not measure input context.
     """
     per_turn = one.sort_values("turn")
     if not len(per_turn):
@@ -1051,6 +1081,34 @@ def token_stack(
     context_data = Data.from_dataframe(wide[["turn", "context"]].dropna())
     context_hover = _hover_selection()  # this plot's own, never shared
     # with the bars chart's `hover` above
+    threshold_controls: list[Component] = []
+    threshold_marks: list[Mark] = []
+    if compaction_threshold is not None and draws_threshold(one, compaction_threshold):
+        threshold_data = Data.from_dataframe(
+            pd.DataFrame({"threshold": [compaction_threshold], "visible": ["show"]})
+        )
+        threshold_selection = Selection.single(cross=False)
+        threshold_controls.append(
+            checkbox(
+                data=threshold_data,
+                label=f"Compaction threshold: {compaction_threshold:,} tokens (dotted)",
+                target=threshold_selection,
+                field="visible",
+                checked=True,
+                values=("show", "hide"),
+            )
+        )
+        threshold_marks.append(
+            rule_y(
+                threshold_data,
+                filter_by=threshold_selection,
+                y="threshold",
+                stroke="#9467bd",
+                stroke_dasharray="2,3",
+                stroke_width=1.5,
+                pointer_events="none",
+            )
+        )
     context_chart = plot(
         line(
             context_data,
@@ -1069,6 +1127,7 @@ def token_stack(
             context_hover,
         ),  # after nearest_x, never before it - see docstring
         *flush_rules(),
+        *threshold_marks,
         width=width,
         height=_CONTEXT_HEIGHT,
         y_label="context",
@@ -1083,10 +1142,16 @@ def token_stack(
     derived_height = _section_height(
         _TOKEN_HEIGHT + _CONTEXT_HEIGHT,
         tip_rows=_tip_rows(bars_channels),
-        widget_rows=2,
+        widget_rows=2 + len(threshold_controls),
     )
     return (
-        [measure_selector, scale_selector, bars_chart, context_chart],
+        [
+            measure_selector,
+            scale_selector,
+            bars_chart,
+            *threshold_controls,
+            context_chart,
+        ],
         derived_height,
     )
 

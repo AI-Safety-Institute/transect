@@ -149,14 +149,16 @@ def test_token_timeline_reconstructs_context_and_new_work(demo_results):
     """The timeline carries one row per turn; spot rows and the run
     total pin the derived token views against the committed log."""
     timeline = demo_results.token_timeline.sort_values("turn")
-    assert sorted(timeline.turn) == list(range(16))
+    assert sorted(timeline.turn) == list(range(17))
     assert set(timeline.agent_lane.dropna()) == {"eda", "alt_model", "reviewer"}
     spots = timeline.set_index("turn")
-    assert (spots.loc[0, "new_work"], spots.loc[0, "context"]) == (879, 785)
+    assert (spots.loc[0, "new_work"], spots.loc[0, "context"]) == (1020, 926)
     assert spots.loc[9, "agent_lane"] == "alt_model"
-    assert (spots.loc[10, "new_work"], spots.loc[10, "context"]) == (2030, 1767)
-    assert (spots.loc[15, "new_work"], spots.loc[15, "context"]) == (2470, 2226)
-    assert timeline.new_work.sum() == 24517
+    # turn 10 is the summarization call; turn 11 runs on the compacted window
+    assert (spots.loc[10, "new_work"], spots.loc[10, "context"]) == (3664, 2743)
+    assert (spots.loc[11, "new_work"], spots.loc[11, "context"]) == (1491, 1228)
+    assert (spots.loc[16, "new_work"], spots.loc[16, "context"]) == (2005, 1761)
+    assert timeline.new_work.sum() == 28466
 
 
 def test_subagent_spans_are_listed_even_unjudged(demo_results):
@@ -169,7 +171,7 @@ def test_subagent_spans_are_listed_even_unjudged(demo_results):
         [
             ("eda", 4, 5, 5, 2, 1902.0),
             ("alt_model", 8, 9, 9, 2, 2853.0),
-            ("reviewer", 12, 14, 14, 3, 5562.0),
+            ("reviewer", 13, 15, 15, 3, 6470.0),
         ],
         columns=[
             "agent_lane",
@@ -192,17 +194,19 @@ def test_subagent_spans_are_listed_even_unjudged(demo_results):
     )
 
 
-def test_flushes_frame_carries_the_planted_compaction(demo_results):
+def test_flushes_frame_carries_the_demo_compaction(demo_results):
     """The demo's one compaction lands with its exact recorded facts."""
     flushes = demo_results.flushes
     expected = pd.DataFrame(
         [
             {
-                "turn": 10,
+                "turn": 11,
                 "type": "summary",
-                "source": "react",
-                "tokens_before": 1900,
-                "tokens_after": 600,
+                "source": "inspect",
+                "tokens_before": 1982,
+                "tokens_after": 658,
+                "strategy": "CompactionSummary",
+                "trigger": "threshold",
             }
         ]
     )
@@ -211,6 +215,12 @@ def test_flushes_frame_carries_the_planted_compaction(demo_results):
         expected,
         check_dtype=False,
     )
+    # the configured instructions are substituted into the recorded prompt
+    assert (
+        "Keep the fold protocol and every CV RMSLE figure."
+        in (flushes.compaction_prompt.iloc[0])
+    )
+    assert flushes.compaction_nudge.iloc[0].startswith("Context compaction approaching")
 
 
 def test_interventions_frame_carries_the_planted_interventions(demo_results):
@@ -219,7 +229,7 @@ def test_interventions_frame_carries_the_planted_interventions(demo_results):
     interventions = demo_results.interventions.sort_values("turn")
     assert list(zip(interventions.turn, interventions.channel, strict=True)) == [
         (10, "operator"),
-        (15, "input_event"),
+        (16, "input_event"),
     ]
     assert interventions.content.iloc[0].startswith("Operator note: we are time-boxed")
     assert interventions.initiator.tolist() == ["human", "agent"]
@@ -236,9 +246,9 @@ def test_lane_activity_frame_tracks_each_sub_agent_span(demo_results):
             (5, "eda", 1, 5),
             (8, "alt_model", 1, 9),
             (9, "alt_model", 1, 9),
-            (12, "reviewer", 1, 14),
-            (13, "reviewer", 1, 14),
-            (14, "reviewer", 1, 14),
+            (13, "reviewer", 1, 15),
+            (14, "reviewer", 1, 15),
+            (15, "reviewer", 1, 15),
         ],
         columns=["turn", "agent_lane", "tool_calls", "span_end_turn"],
     )
@@ -254,9 +264,9 @@ def test_transcript_info_describes_the_run(demo_results):
     assert row.model == "mockllm/model"
     assert row.epoch == 1
     assert row.task_name == "house_price_demo"
-    assert row.wallclock_seconds == 1843.0
+    assert row.wallclock_seconds == 1886.0
     assert row.success is None
-    assert row.message_count == 34
+    assert row.message_count == 35
     assert row.total_tokens > 0
     assert row.error is None and row.limit is None
     assert str(row.source_file).endswith(".eval")
@@ -465,6 +475,10 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
                     "source": "inspect",
                     "tokens_before": 900,
                     "tokens_after": 350,
+                    "role": None,
+                    "metadata": None,
+                    "compaction_prompt": None,
+                    "compaction_nudge": None,
                 }
             ]
         },
@@ -503,6 +517,10 @@ def test_a_recorded_flush_without_tokens_after_infers_it():
                     "source": "inspect",
                     "tokens_before": 850,
                     "tokens_after": 0,
+                    "role": None,
+                    "metadata": None,
+                    "compaction_prompt": None,
+                    "compaction_nudge": None,
                 }
             ]
         },

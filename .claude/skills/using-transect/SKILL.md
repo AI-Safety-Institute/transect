@@ -250,6 +250,23 @@ too, but nothing here requires it.)
   judge saw, judged and filled (fewer than the `turn_start..turn_end`
   width - tool-only and sub-agent turns in range are not counted); `new_work` sums are
   new-content tokens, not billable cost.
+- `flushes` preserves compaction `role`, full `metadata`, `strategy`,
+  `messages_before`, `messages_after`, and `trigger`. For Inspect `.eval`
+  logs it also carries `compaction_prompt` (the summarization prompt as
+  the model saw it) and `compaction_nudge` (the save-to-memory warning
+  issued before compaction). The nudge only exists when the run had a
+  `memory` tool and the strategy's memory warning on; native provider
+  compaction records no prompt. Unrecorded text is missing, including on
+  OpenClaw (whose export has no prompt or nudge) and synthesized drops.
+  The configured template is `transcript_info.compaction_prompt`; the
+  report uses it only when no observed prompt is available. These fields
+  require a fresh scan; old stores cannot recover them by re-rendering.
+- `transcript_info.compaction` retains the recorded strategy configuration,
+  including its threshold when available. Re-rendering shows absolute
+  thresholds as a toggleable dotted line on the context-window chart.
+  A percentage without a recorded token count appears only in Core setup;
+  missing thresholds add no row, line, or toggle. The eval's total token
+  limit and the observed size before a flush are not compaction thresholds.
 
 Starter recipes:
 
@@ -279,7 +296,7 @@ f["subagents"].groupby("label").new_work.sum()
 
 For source reading, use the report's excerpts and Scout-viewer deep links;
 frames are not a complete transcript reconstruction, but they do carry
-source text (prompts, interventions, delegated task text, judge
+source text (prompts, compaction prompts and nudges, interventions, delegated task text, judge
 explanations) - check the fields before sharing an export.
 
 ## 7. Extending

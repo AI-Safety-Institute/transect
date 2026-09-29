@@ -21,7 +21,11 @@ from transect.report._jinja import jinja_env
 from transect.report.colors import _UNJUDGED_GREY, _label_colors, _phase_colors
 from transect.report.display import MEMBER_NO_VOTE, member_display, multi_roll_models
 from transect.report.embed import embed_section
-from transect.report.excerpts import SpawnPrompt, read_transcript_extras
+from transect.report.excerpts import (
+    SpawnPrompt,
+    mark_compaction_turns,
+    read_transcript_extras,
+)
 from transect.report.lanes_layout import pack_lanes
 from transect.report.style import _STYLE, _WIDGET_STYLE_CSS
 from transect.tags import select_tags
@@ -107,7 +111,7 @@ def render_report(
                 "eval_setup",
                 sections.section(
                     "Eval setup",
-                    [sections.eval_setup_blocks(my_info)],
+                    [sections.eval_setup_blocks(my_info, my_flushes)],
                 ),
             )
         )
@@ -184,7 +188,14 @@ def render_report(
                         ),
                         f"phase-cards-{idx}",
                         card_id_prefix,
-                        my_extras.excerpts if my_extras else None,
+                        # flushes.turn is the first post-flush turn; the
+                        # summarization call is the model turn before it
+                        mark_compaction_turns(
+                            my_extras.excerpts,
+                            my_flushes.turn[my_flushes.compaction_prompt.notna()] - 1,
+                        )
+                        if my_extras
+                        else None,
                         lanes=tool_lanes,
                         tool_counts=tool_counts,
                         turn_tags=my_tags,
@@ -226,14 +237,26 @@ def render_report(
                 derived, coincide=derived and charts.token_measures_coincide(one)
             )
         ]
-        components, stack_height = charts.token_stack(one, my_flushes)
+        threshold = sections.compaction_threshold(my_info)
+        components, stack_height = charts.token_stack(
+            one, my_flushes, threshold.tokens if threshold is not None else None
+        )
         token_blocks.append(
             _chart(components, stack_height)
             if components
             else Markup("<p>No timeline data.</p>")
         )
-        if flush_turns:
-            token_blocks.append(sections.event_legend(derived))
+        drawn_threshold = (
+            threshold.tokens
+            if threshold is not None and charts.draws_threshold(one, threshold.tokens)
+            else None
+        )
+        if flush_turns or drawn_threshold is not None:
+            token_blocks.append(
+                sections.event_legend(
+                    derived, flushes=bool(flush_turns), threshold=drawn_threshold
+                )
+            )
         if flush_turns:
             token_blocks.append(sections.flush_line(my_flushes))
         add(("token_telemetry", sections.section("Token telemetry", token_blocks)))

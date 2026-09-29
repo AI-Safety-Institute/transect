@@ -467,7 +467,7 @@ def test_cohort_scanner_without_a_loader_judges_the_whole_transcript(
         memoize=False,
     )
     results = transect.transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=transect.Spec(),
         judge_models=[doves, hawks],
         scans_dir=str(tmp_path / "scans"),
@@ -555,7 +555,7 @@ def test_custom_judged_layer_conforms_to_the_reliability_contract(demo_log, tmp_
     )
     # the factory form: the roster rides transect()'s own judge_models
     results = transect.transect(
-        logs=str(demo_log.parent),
+        logs=str(demo_log),
         spec=transect.Spec(),
         judge_models=[doves, hawks],
         scans_dir=str(tmp_path / "scans"),

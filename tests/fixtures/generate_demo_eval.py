@@ -18,9 +18,9 @@ from typing import Any, cast
 from inspect_ai import Task, eval as inspect_eval, task
 from inspect_ai.agent import handoff, react
 from inspect_ai.dataset import Sample
-from inspect_ai.event import CompactionEvent, InputEvent
+from inspect_ai.event import InputEvent
 from inspect_ai.log import EvalLog, read_eval_log, write_eval_log
-from inspect_ai.model import ChatMessageUser, ModelOutput, get_model
+from inspect_ai.model import ChatMessageUser, CompactionSummary, ModelOutput, get_model
 from inspect_ai.tool import Tool, tool
 
 MOCK = "mockllm/model"
@@ -105,6 +105,21 @@ def python_exec() -> Tool:
             code: The python source to run.
         """
         return PYTHON_OUTPUTS.get(label, "ok\n")
+
+    return execute
+
+
+@tool
+def memory() -> Tool:
+    async def execute(command: str, path: str, file_text: str = "") -> str:
+        """Save or read a note in the workspace memory directory.
+
+        Args:
+            command: create, view or str_replace.
+            path: The note's path under /memories.
+            file_text: The note's content, for create.
+        """
+        return "ok\n"
 
     return execute
 
@@ -259,6 +274,33 @@ def scripted(outputs: list[ModelOutput]):
     return get_model(MOCK, memoize=False, custom_outputs=outputs)
 
 
+# The lead compacts once, between the alt_model handoff and the blend. The
+# threshold sits between the lead's context at the alt_model delegation
+# call and at the blend call, so the memory warning band (90% of it)
+# catches the delegation call and the log records Inspect's real
+# summarization prompt and memory nudge. The summarizer is its own scripted
+# model so the lead's script is not consumed; a second compaction would
+# exhaust it and fail the run.
+COMPACTION_THRESHOLD = 1800
+COMPACTION_INSTRUCTIONS = "Keep the fold protocol and every CV RMSLE figure."
+LEAD_SUMMARY = (
+    "- Task Overview\nPredict Kaggle house SalePrice; evaluated on RMSE of "
+    "log SalePrice; produce submission.csv (Id, SalePrice). Working as lead "
+    "with EDA, alt-model and reviewer sub-agents.\n\n- Current State\n"
+    "Installed scikit-learn and pandas; inspected data/train.csv (1460 rows, "
+    "81 columns). EDA confirmed SalePrice is right-skewed, so the target is "
+    "log1p(SalePrice). Ridge baseline over 28 numeric features, fixed 5-fold "
+    "split, CV RMSLE 0.1428. alt_model trained gradient boosting on the same "
+    "folds and beat ridge on every fold (CV RMSLE 0.1302).\n\n"
+    "- Important Discoveries\nThe two models' fold errors are only partly "
+    "correlated, so a blend should beat both. Every comparison must reuse the "
+    "baseline's folds.\n\n- Next Steps\nBlend ridge and gbm predictions, "
+    "write submission.csv, hand it to the reviewer, then submit.\n\n"
+    "- Context to Preserve\nOperator is time-boxed: blend the two existing "
+    "models rather than trying a third family."
+)
+
+
 @task
 def house_price_demo() -> Task:
     eda = react(
@@ -287,11 +329,17 @@ def house_price_demo() -> Task:
         tools=[
             bash(),
             python_exec(),
+            memory(),
             handoff(eda),
             handoff(alt_model),
             handoff(reviewer),
         ],
         model=scripted(LEAD_SCRIPT),
+        compaction=CompactionSummary(
+            threshold=COMPACTION_THRESHOLD,
+            instructions=COMPACTION_INSTRUCTIONS,
+            model=scripted([says(LEAD_SUMMARY)]),
+        ),
     )
     return Task(
         name="house_price_demo",
@@ -308,11 +356,44 @@ OPERATOR_NOTE = (
 INPUT_ANSWER = "y"
 
 
+def check_compaction(sample: Any) -> None:
+    """Fail loudly if the run did not compact exactly once, between the
+    alt_model handoff and the blend, with the summarization prompt and a
+    preceding memory nudge recorded."""
+    events = sample.events
+
+    def model_index(needle: str) -> int:
+        return next(
+            i
+            for i, e in enumerate(events)
+            if e.event == "model" and needle in (e.output.completion or "")
+        )
+
+    flushes = [i for i, e in enumerate(events) if e.event == "compaction"]
+    assert len(flushes) == 1, f"expected one compaction, got {len(flushes)}"
+    (flush,) = flushes
+    summarizer = events[flush - 1]
+    assert summarizer.event == "model" and LEAD_SUMMARY in (
+        summarizer.output.completion or ""
+    ), "the event before the compaction is not the summarization call"
+    assert COMPACTION_INSTRUCTIONS in summarizer.input[-1].text
+    assert model_index("alternative model family") < flush < model_index("Blending"), (
+        "compaction must land between the alt_model handoff and the blend"
+    )
+    assert any(
+        m.role == "user" and m.text.startswith("Context compaction approaching")
+        for e in events[:flush]
+        if e.event == "model"
+        for m in e.input
+    ), "no memory nudge recorded before the compaction"
+
+
 def plant_operator_events(path: Path) -> None:
-    """Insert a compaction and two human interventions into the log."""
+    """Insert two human interventions into the log and check its compaction."""
     log = read_eval_log(str(path), resolve_attachments=True)
     assert log.samples
     sample = log.samples[0]
+    check_compaction(sample)
 
     def model_index(needle: str) -> int:
         for index, event in enumerate(sample.events):
@@ -322,17 +403,6 @@ def plant_operator_events(path: Path) -> None:
                 return index
         raise LookupError(needle)
 
-    blend = model_index("Blending")
-    sample.events.insert(
-        blend,
-        CompactionEvent(
-            type="summary",
-            source="react",
-            tokens_before=1900,
-            tokens_after=600,
-            timestamp=sample.events[blend - 1].timestamp,
-        ),
-    )
     submit = model_index("Stepping back")
     sample.events.insert(
         submit,

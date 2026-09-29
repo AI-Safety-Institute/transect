@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from inspect_ai.log import read_eval_log, write_eval_log
 
 import transect
 from transect import load, render
 from transect.api import _run
+from transect.frames.flushes import flushes_df
 from transect.report import charts, sections
 from transect.report.embed import (
     _TIP_EXTRA_LINE_PX,
@@ -22,7 +24,7 @@ from transect.spec import Spec
 
 SCENARIOS = {
     "demo-with-subagents": (
-        "examples/logs",
+        "examples/logs/house_price_demo.eval",
         {},
         ["Eval setup", "Token telemetry", "Sub-agent activity", "Human interventions"],
     ),
@@ -59,7 +61,15 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     html = Path(results.report_paths[0]).read_text()
     for section in sections:
         assert section in html
+    if name == "openclaw-import":
+        assert "Compaction nudge" not in html
+    else:
+        assert "Compaction nudge (before compaction)" in html
     assert "Traceback" not in html
+    # the Inspect logs record a compaction threshold (row + chart toggle)
+    recorded = name != "openclaw-import"
+    assert ("compaction threshold</span>" in html) == recorded
+    assert ("Compaction threshold:" in html) == recorded
     assert len(html) > 20_000
 
 
@@ -148,7 +158,12 @@ def test_judged_report_renders_all_sections_from_a_stored_scan(store, tmp_path):
     _assert_no_page_errors(results.report_paths[0])
 
 
-def _assert_no_page_errors(report_path: str, min_frames: int = 6) -> None:
+def _assert_no_page_errors(
+    report_path: str,
+    min_frames: int = 6,
+    setup_prompts: dict[str, str] | None = None,
+    compaction_threshold: int | None = None,
+) -> None:
     """Load the report in a real browser and require zero page errors
     (inspect-viz widget failures are console-only and blank charts
     silently). Skips without playwright or without the CDN."""
@@ -172,12 +187,57 @@ def _assert_no_page_errors(report_path: str, min_frames: int = 6) -> None:
         page.goto(Path(report_path).resolve().as_uri())
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(2000)
+        if setup_prompts:
+            page.get_by_text("Core setup", exact=True).click()
+            for label, text in setup_prompts.items():
+                summary = page.locator("summary").filter(has_text=label)
+                summary.click()
+                content = summary.locator("..").locator(".prompt-verbatim")
+                assert content.is_visible()
+                assert content.inner_text() == text
+        if compaction_threshold is not None:
+            label = f"Compaction threshold: {compaction_threshold:,} tokens (dotted)"
+            frame = next(f for f in page.frames if f.get_by_label(label).count())
+            control = frame.get_by_label(label)
+            rule = frame.locator('[stroke="#9467bd"][stroke-dasharray="2,3"] line')
+            curve = frame.locator('[aria-label="line"][stroke="#4c78a8"]')
+            playwright.expect(control).to_be_checked()
+            playwright.expect(rule).to_have_count(1)
+            playwright.expect(curve).to_have_count(1)
+            # the curve stays drawn either way; its scale may follow the rule
+            control.uncheck()
+            playwright.expect(rule).to_have_count(0)
+            playwright.expect(curve.locator("path")).to_have_count(1)
+            control.check()
+            playwright.expect(rule).to_have_count(1)
         n_frames = len(page.frames)
         browser.close()
     if cdn_failures:
         pytest.skip(f"inspect-viz CDN unreachable: {cdn_failures[0]}")
     assert errors == []
     assert n_frames >= min_frames
+
+
+def test_recorded_compaction_threshold_survives_replay_and_toggles(demo_log, tmp_path):
+    """A saved absolute threshold renders in Core setup and toggles a dotted rule."""
+    log = read_eval_log(str(demo_log))
+    # a threshold above the demo's context peak: the rule then sits clear of
+    # the curve, so hiding it visibly changes the chart
+    log.plan.steps[-1].params["compaction"] = {"type": "summary", "threshold": 4000}
+    path = tmp_path / "threshold.eval"
+    write_eval_log(log, str(path))
+    scans = tmp_path / "scan"
+    _run(logs=str(path), spec=Spec(), scans_dir=str(scans))
+    path.unlink()
+    results = load(str(scans))
+    results.transcripts_location = None
+    report = tmp_path / "report.html"
+    render(results, report_path=str(report), viewer=False, open_report=False)
+    html = report.read_text()
+    assert "compaction threshold</span>" in html
+    assert "4,000 tokens" in html
+    assert "dotted purple = configured compaction threshold (4,000 tokens)" in html
+    _assert_no_page_errors(str(report), min_frames=2, compaction_threshold=4000)
 
 
 def test_tip_floor_budgets_one_or_two_wrapping_rows():
@@ -212,6 +272,10 @@ def test_spend_bars_floor_covers_the_declared_tooltip_rows():
     assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
 
 
+def empty_flushes() -> pd.DataFrame:
+    return flushes_df(pd.DataFrame(), pd.DataFrame(columns=["transcript_id"]))
+
+
 def test_eval_setup_renders_container_values():
     """Container values in the bypass fields render as compact JSON
     (escaped); an empty container reads as unconfigured, not []."""
@@ -226,7 +290,7 @@ def test_eval_setup_renders_container_values():
         ],
         dtype=object,
     )
-    html = str(sections.eval_setup_blocks(info))
+    html = str(sections.eval_setup_blocks(info, empty_flushes()))
     text = html_mod.unescape(html)
     assert '["<b>x</b>", "a & b"]' in text
     assert '["docker", "compose.yaml"]' in text

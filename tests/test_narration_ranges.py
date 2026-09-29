@@ -17,7 +17,7 @@ from helpers import (
 from transect.frames import phase_turn_votes_df, phases_df
 from transect.frames.turn_groups import turn_groups_df
 from transect.report import sections
-from transect.report.excerpts import Excerpt
+from transect.report.excerpts import COMPACTION_NOTE, Excerpt, mark_compaction_turns
 from transect.scanners.phases import decision_phases
 from transect.scanners.phases_common import StitchedPhase, TurnGroup
 from transect.scanners.phases_narrate import validate_turn_groups
@@ -116,9 +116,11 @@ def test_neutral_fallback_reaches_the_report_without_unsupported_group_prose():
             None,
             "cards",
             "phase",
-            excerpts=excerpts,
+            excerpts=mark_compaction_turns(excerpts, [2, 5]),
         )
     )
     assert "Unsupported range claim" not in html
     assert "Source evidence 9" in html
     assert "Source evidence 0" in html
+    # turn 2 is a summarization call and says so; turn 5 has no excerpt to mark
+    assert html.count(COMPACTION_NOTE) == 1

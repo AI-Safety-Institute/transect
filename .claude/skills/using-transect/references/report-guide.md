@@ -43,6 +43,18 @@ LLM prose), then three default-collapsed expandables:
   prompt, tool roster, attempts, submit, compaction, truncation,
   approval), and the verbatim initial prompts (system message +
   first task message the model actually saw) as sub-expandables.
+  For Inspect `.eval` logs, two compaction cards follow: the
+  summarization prompt and the save-to-memory nudge issued before
+  compaction, each distinct recorded text once (per-event text is in
+  `flushes`). The cards appear only when the log recorded a compaction
+  (or, with none, just the configured template if one was set). Absent
+  text reads "not recorded by source" - expected when the run had no
+  `memory` tool (no nudge is issued) or used native provider compaction
+  (no prompt is recorded). OpenClaw exports carry neither, so those
+  cards do not appear.
+  A recorded compaction threshold also appears here, as a token count or
+  a percentage of the context window. The threshold row is absent when
+  unrecorded.
 - **Additional config details**: task args/file/version, the
   eval-level limits as configured, epochs + reducer, fail_on_error,
   sandbox, generation config, model roles, dataset shape, scorers.
@@ -164,9 +176,23 @@ The measure radio picks what the bars show - in the simplest terms:
 - **linear/log scale**: linear for comparing turns at a glance; log
   when a few huge turns flatten everything else - it makes the small
   turns readable again without hiding the big ones. Dashed red rules mark context flushes (compactions);
-the flush list expandable gives each one's turn, type/source, and
-tokens before -> after. A context-window sawtooth drop at a flush is
-the compaction doing its job.
+the flush list expandable gives, for each one, the turn it precedes
+(events sit between turns, drawn at the half-turn), type/source, and
+tokens before -> after as the compaction event recorded them. Those are
+not chart readings: the chart's context is each call's reported input,
+so at a summary flush the flush turn is the summarization call itself
+(whole conversation plus summary prompt) and the first call after it
+adds tool definitions back on top of the kept messages. A
+context-window sawtooth drop at a flush is the compaction doing its job.
+
+A recorded absolute compaction threshold appears as a dotted purple
+horizontal line on the context-window chart, initially visible, with its
+own legend line under the chart next to the flush legend. The checkbox
+above that chart toggles it (the vertical scale follows).
+The line and checkbox are absent when no token threshold is recorded.
+A percentage alone stays in Core setup: the report does not look up a
+model capacity to convert it. The run's total token limit and the size
+observed before a flush are not substitutes for a configured threshold.
 
 The raw ModelUsage counters ride the frame beside the derived views,
 under Inspect's normalized contract (`input_tokens` excludes cache
@@ -244,15 +270,17 @@ and `basis` (reasoning-bearing vs attributed) instead of dividing by
 
 One expandable card per phase, chronological - the drill-down for the
 timeline. Headlines and summaries retain the complete generated text. A note on
-the collapsed card explains neutral grouping caused by invalid ranges, empty
-groups, or no usable narrative. This is separate from classification warnings. Each card: narrated headline and summary (LLM narrator
+the collapsed card says the phase is shown as one turn group and why (the
+narrator supplied no groups, its groups did not line up with the phase's
+turns, or no narration was available). This is separate from classification warnings. Each card: narrated headline and summary (LLM narrator
 output - descriptive, not a verdict), the class-box (the judge's
 classification + mean confidence in one container - neutral when
 healthy, red with a warning glyph and the issue text when a
 reliability issue fired), tag line (turn range, reasoning turns,
 spend, tool calls, sub-agents, compaction/intervention-during-phase),
 per-member judge ballots with support, turn-group excerpts from the
-transcript, and a deep link. The class-box flags on: a verifier
+transcript (a turn whose text is Inspect's compaction summary is marked
+as the summarizer's call, not the agent's), and a deep link. The class-box flags on: a verifier
 overturn (naming the pre-overturn label), low mean confidence
 (<= 0.6), or the confidently-split case (high confidence, low
 agreement). When any of these surface, bring in the transect-diagnostics

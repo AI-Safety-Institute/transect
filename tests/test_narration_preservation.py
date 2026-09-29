@@ -35,6 +35,11 @@ SUMMARY = (
 )
 
 
+EMPTY_GROUPS_NOTE = (
+    "Shown as one turn group: the narrator did not split this phase into turn groups."
+)
+
+
 def scan_narrative(items, *, narrate=True):
     judge = scripted_judge(seg_answer(seg(0, 3, "setup", 0.9)), narrate_answer(*items))
     return run_scan(
@@ -74,11 +79,17 @@ def cards(raw):
             [narrative(0, groups=[group(1, 2)])],
             True,
             "invalid_partition",
-            "invalid group ranges",
+            "the narrator's groups did not line up with the phase's turns",
             0,
         ),
-        ([narrative(0)], True, "empty_groups", "no groups supplied", 0),
-        ([], True, "no_narrative", "no usable narrative", 1),
+        (
+            [narrative(0)],
+            True,
+            "empty_groups",
+            "the narrator did not split this phase into turn groups",
+            0,
+        ),
+        ([], True, "no_narrative", "no narration was available for this phase", 1),
         ([], False, "not_run", None, 0),
     ],
 )
@@ -93,9 +104,12 @@ def test_group_status_is_stamped_and_fallback_visible(
     assert phases_df(raw).iloc[0].narration_group_status == status
     html = cards(raw)
     if note:
-        assert f"Neutral grouping: {note}." in html.split("</summary>", 1)[0]
+        assert (
+            f"Shown as one turn group: {escape(note)}."
+            in html.split("</summary>", 1)[0]
+        )
     else:
-        assert "Neutral grouping:" not in html
+        assert "Shown as one turn group:" not in html
 
 
 def test_blank_headline_keeps_template_without_changing_group_status():
@@ -140,7 +154,7 @@ def test_complete_narration_survives_public_load_and_render(reloaded_narration):
     assert escape(HEADLINE.strip()) in html
     assert escape(SUMMARY.strip()) in html
     assert "<script>alert(1)</script>" not in html
-    assert "Neutral grouping: no groups supplied." in html
+    assert EMPTY_GROUPS_NOTE in html
 
 
 def test_full_narration_and_fallback_note_in_browser(reloaded_narration):
@@ -159,7 +173,7 @@ def test_full_narration_and_fallback_note_in_browser(reloaded_narration):
             assert card.get_attribute("open") is None
             note = card.locator(":scope > summary .narration-group-note")
             assert note.is_visible()
-            assert note.inner_text() == "Neutral grouping: no groups supplied."
+            assert note.inner_text() == EMPTY_GROUPS_NOTE
             assert HEADLINE.strip() in card.locator(":scope > summary").inner_text()
             card.locator(":scope > summary").click()
             assert card.locator(":scope > p").first.text_content() == SUMMARY.strip()
