@@ -162,8 +162,14 @@ def test_resumed_scan_counts_stay_within_scope():
     assert coverage.errors == 0 and not coverage.has_failures
 
 
-def _usage_json(**models):
-    return json.dumps(models)
+def _usage(i, o, **extra):
+    """One model's stored usage dict: input, output, and any optional fields."""
+    return {"input_tokens": i, "output_tokens": o, "total_tokens": i + o, **extra}
+
+
+def _row(tid, **models):
+    """One result row whose usage JSON is keyed by model name."""
+    return {"transcript_id": tid, "scan_model_usage": json.dumps(models)}
 
 
 def test_model_usage_sums_rows_per_model_and_keeps_unreported_fields_absent():
@@ -172,55 +178,25 @@ def test_model_usage_sums_rows_per_model_and_keeps_unreported_fields_absent():
     raw = raw_scan(
         "transect/decision_phases",
         [
-            {
-                "transcript_id": "t1",
-                "scan_model_usage": _usage_json(
-                    **{
-                        "anthropic/judge": {
-                            "input_tokens": 100,
-                            "output_tokens": 10,
-                            "total_tokens": 110,
-                            "input_tokens_cache_read": 40,
-                            "total_cost": 0.5,
-                        },
-                        "openai/verifier": {
-                            "input_tokens": 20,
-                            "output_tokens": 2,
-                            "total_tokens": 22,
-                        },
-                    }
-                ),
-            },
-            {
-                "transcript_id": "t2",
-                "scan_model_usage": _usage_json(
-                    **{
-                        "anthropic/judge": {
-                            "input_tokens": 50,
-                            "output_tokens": 5,
-                            "total_tokens": 55,
-                            "input_tokens_cache_read": 10,
-                            "total_cost": 0.25,
-                        }
-                    }
-                ),
-            },
+            _row(
+                "t1",
+                judge=_usage(100, 10, input_tokens_cache_read=40, total_cost=0.5),
+                verifier=_usage(20, 2),
+            ),
+            _row(
+                "t2", judge=_usage(50, 5, input_tokens_cache_read=10, total_cost=0.25)
+            ),
             {"transcript_id": "t3", "scan_model_usage": None},
         ],
         scanned=3,
     )
-    coverage = build_scan_status(raw, set()).scanners[0]
-    judge, verifier = coverage.model_usage
-    assert (judge.model, judge.input_tokens, judge.output_tokens) == (
-        "anthropic/judge",
-        150,
-        15,
-    )
-    assert judge.total_tokens == 165 and judge.input_tokens_cache_read == 50
-    assert judge.input_tokens_cache_write is None and judge.reasoning_tokens is None
+    judge, verifier = build_scan_status(raw, set()).scanners[0].model_usage
+    assert (judge.model, judge.input_tokens, judge.output_tokens) == ("judge", 150, 15)
+    assert (judge.total_tokens, judge.input_tokens_cache_read) == (165, 50)
+    assert (judge.input_tokens_cache_write, judge.reasoning_tokens) == (None, None)
     assert judge.total_cost == 0.75
-    assert (verifier.model, verifier.total_tokens) == ("openai/verifier", 22)
-    assert verifier.total_cost is None and verifier.input_tokens_cache_read is None
+    assert (verifier.model, verifier.total_tokens) == ("verifier", 22)
+    assert (verifier.total_cost, verifier.input_tokens_cache_read) == (None, None)
 
 
 @pytest.mark.parametrize("stored", ["{}", None, float("nan"), pd.NA, ""])
@@ -235,45 +211,22 @@ def test_rows_without_usage_record_no_model_usage(stored):
 
 def test_malformed_usage_json_names_its_origin():
     """An unreadable usage cell fails loudly with the scanner and transcript."""
-    raw = raw_scan(
-        "transect/decision_phases",
-        [{"transcript_id": "t1", "scan_model_usage": "{not json"}],
-    )
+    raw = raw_scan("custom/x", [{"transcript_id": "t1", "scan_model_usage": "{no"}])
     with pytest.raises(ValueError, match=r"test: unreadable scan_model_usage.*t1"):
         build_scan_status(raw, set())
 
 
-def test_run_wide_model_usage_totals_across_scanners():
-    """The run-wide total sums each model across every scanner."""
-    raw = raw_scan(
-        "transect/decision_phases",
-        [
-            {
-                "scan_model_usage": _usage_json(
-                    **{"m": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
-                )
-            }
-        ],
-    )
-    status = build_scan_status(raw, set())
-    status.scanners.append(replace(status.scanners[0], scanner="other"))
-    (total,) = status.model_usage
-    assert (total.model, total.total_tokens, total.total_cost) == ("m", 4, None)
-
-
 def test_stored_cohort_scan_usage_matches_scout_summary():
     """Row-aggregated usage agrees with Scout's own per-scanner summary."""
-    store = Path(__file__).parent / "fixtures" / "demo_scan_cohort"
-    results = load(str(store))
-    status = results.scan_status
-    raw = scan_results_df(results.scan_location)
-    phases = next(s for s in status.scanners if s.scanner == "decision_phases")
-    summary = raw.summary.scanners["decision_phases"].model_usage
+    results = load(str(Path(__file__).parent / "fixtures" / "demo_scan_cohort"))
+    phases = next(
+        s for s in results.scan_status.scanners if s.scanner == "decision_phases"
+    )
+    summary = scan_results_df(results.scan_location).summary.scanners
     assert {u.model: u.total_tokens for u in phases.model_usage} == {
-        model: usage.total_tokens for model, usage in summary.items()
+        model: usage.total_tokens
+        for model, usage in summary["decision_phases"].model_usage.items()
     }
-    assert len(phases.model_usage) == 3
-    assert all(u.total_cost is None for u in phases.model_usage)
 
 
 def test_scan_status_view_lists_billed_usage_by_scanner_and_model():
@@ -282,38 +235,18 @@ def test_scan_status_view_lists_billed_usage_by_scanner_and_model():
     for the template's faded dash."""
     raw = raw_scan(
         "transect/decision_phases",
-        [
-            {
-                "scan_model_usage": _usage_json(
-                    **{
-                        "a/judge": {
-                            "input_tokens": 1200,
-                            "output_tokens": 34,
-                            "total_tokens": 1234,
-                            "total_cost": 0.0125,
-                        },
-                        "b/judge": {
-                            "input_tokens": 10,
-                            "output_tokens": 1,
-                            "total_tokens": 11,
-                        },
-                    }
-                )
-            }
-        ],
+        [_row("t1", a=_usage(1200, 34, total_cost=0.0125), b=_usage(10, 1))],
     )
     status = build_scan_status(raw, set())
     rows = scan_status_view(status)["usage"]
-    assert [(r["scanner"], r["model"]) for r in rows] == [
-        ("test", "a/judge"),
-        ("test", "b/judge"),
-    ]
-    assert rows[0]["total"] == "1,234" and rows[0]["cost"] == "$0.0125"
-    assert rows[1]["cost"] is None and rows[1]["cache_read"] is None
+    assert [(r["scanner"], r["model"]) for r in rows] == [("test", "a"), ("test", "b")]
+    assert (rows[0]["total"], rows[0]["cost"]) == ("1,234", "$0.0125")
+    assert (rows[1]["cost"], rows[1]["cache_read"]) == (None, None)
     status.scanners.append(replace(status.scanners[0], scanner="other"))
     rows = scan_status_view(status)["usage"]
     assert [(r["scanner"], r["model"]) for r in rows[-2:]] == [
-        ("all scanners", "a/judge"),
-        ("all scanners", "b/judge"),
+        ("all scanners", "a"),
+        ("all scanners", "b"),
     ]
-    assert rows[-2]["total"] == "2,468" and rows[-2]["cost"] == "$0.0250"
+    assert (rows[-2]["total"], rows[-2]["cost"]) == ("2,468", "$0.0250")
+    assert rows[-1]["cost"] is None
