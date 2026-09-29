@@ -227,18 +227,25 @@ def human_intervention() -> Scanner[Transcript]:
         # summary compaction appended. Counting assistant messages alone
         # would drift by one after every model turn whose output never
         # enters the history (a summarization call, a sub-agent's turns).
-        turn_of_output = {
-            event.output.message.id: turn
-            for turn, (event, _calls) in enumerate(model_turns(transcript))
-            if event.output.message.id is not None
-        }
-        # a summary message stands for the flush before it; the flush's turn
-        # is the first post-flush turn, the same value context_flush records
-        post_flush_turns = iter(
+        history_ids = {m.id for m in transcript.messages if m.role == "assistant"}
+        turn_of_output: dict[str, int] = {}
+        unrecorded: list[tuple[int, str]] = []
+        for turn, (event, _calls) in enumerate(model_turns(transcript)):
+            output = event.output.message
+            if output.id is None:
+                continue
+            # first occurrence wins: a cached generate replays an output
+            turn_of_output.setdefault(output.id, turn)
+            if output.id not in history_ids and event.output.completion:
+                unrecorded.append((turn, event.output.completion))
+        # summary flushes by the turn they precede (as context_flush records
+        # them), the fallback anchor for a summary message whose summarizer
+        # completion is not embedded in it
+        summary_flushes = [
             turn
             for turn, event in _non_model_events(transcript)
-            if event.event == "compaction"
-        )
+            if event.event == "compaction" and event.type == "summary"
+        ]
         next_turn = 0
         seen_task_prompt = False
         for message in transcript.messages:
@@ -252,7 +259,28 @@ def human_intervention() -> Scanner[Transcript]:
             if message.role != "user":
                 continue
             if (getattr(message, "metadata", None) or {}).get("summary"):
-                next_turn = max(next_turn, next(post_flush_turns, next_turn + 1))
+                # Inspect wraps the summarizer's completion verbatim in this
+                # message, and a summarizer's output is never in the history,
+                # so the message is anchored to its own summarizer turn - not
+                # to the nearest compaction event, which may be a trim, an
+                # edit, a native compaction or another lane's flush
+                summarizer = next(
+                    (
+                        turn
+                        for turn, completion in unrecorded
+                        if turn >= next_turn and completion in (message.text or "")
+                    ),
+                    None,
+                )
+                if summarizer is not None:
+                    next_turn = summarizer + 1
+                else:
+                    # a flush at or behind the axis belongs to an earlier
+                    # window (its summarizer is already counted); trim, edit
+                    # and native flushes never qualify by type
+                    ahead = next((t for t in summary_flushes if t > next_turn), None)
+                    if ahead is not None:
+                        next_turn = ahead
                 continue
             source = getattr(message, "source", None)
             if source not in ("operator", "input"):

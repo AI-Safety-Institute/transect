@@ -164,32 +164,69 @@ def test_human_messages_become_interventions_by_source(source, channel):
 
 
 @pytest.mark.parametrize(
-    ("note_at", "turn"),
-    [("before_summary", 1), ("after_summary", 2), ("after_blend", 3)],
+    ("shape", "turn"),
+    [
+        ("before_summary", 1),
+        ("after_summary", 2),
+        ("after_blend", 3),
+        # a trim flush earlier in the run must not be mistaken for the
+        # summarizer's flush
+        ("trim_then_summary", 2),
+        # a native compaction (summary type, no summarizer call, no summary
+        # message) earlier in the run, likewise
+        ("native_then_summary", 2),
+        # Inspect summarizes again when a summary overshoots: two summarizer
+        # turns, one flush, one message wrapping the last completion
+        ("two_pass_summary", 3),
+        # a cached generate replays an earlier output id at a later turn; the
+        # first occurrence places the message, and the axis never moves back
+        ("replayed_output", 2),
+    ],
 )
-def test_operator_messages_sit_on_the_event_turn_axis(note_at, turn):
+def test_operator_messages_sit_on_the_event_turn_axis(shape, turn):
     """A summarization call is a model turn with no assistant message in the
-    history; its summary message stands for it, so an operator note before,
-    right after, or later than that footprint precedes the turn the
-    timeline says it does."""
-    turns = [model_turn(text) for text in ("working", "recap", "blend", "final")]
-    working, _recap, blend, final = turns
+    history; the summary message that wraps its completion stands for it, so
+    an operator note anywhere around that footprint precedes the turn the
+    timeline says it does, whatever other compactions the run recorded."""
+    working, recap, blend, final = (
+        model_turn(text) for text in ("working", "recap text", "blend", "final")
+    )
     note = ChatMessageUser(content="steer", source="operator")
-    summary = ChatMessageUser(content="[SUMMARY] recap", metadata={"summary": True})
+    summary = ChatMessageUser(
+        content="[SUMMARY]\n<summary>\nrecap text\n</summary>\nContinue.",
+        metadata={"summary": True},
+    )
     flush = CompactionEvent(type="summary", source="inspect")
-    events = [working, turns[1], flush, blend, final]
-    history = {
-        "before_summary": [note, summary, blend.output.message],
-        "after_summary": [summary, note, blend.output.message],
-        "after_blend": [summary, blend.output.message, note],
-    }[note_at]
-    messages = [
-        ChatMessageUser(content="the task", source="input"),
-        working.output.message,
-        *history,
-        final.output.message,
-    ]
-    value = run_scan(human_intervention(), events, messages=messages).value
+    events = [working, recap, flush, blend, final]
+    task = ChatMessageUser(content="the task", source="input")
+    if shape == "before_summary":
+        history = [working.output.message, note, summary, blend.output.message]
+    elif shape == "after_summary":
+        history = [working.output.message, summary, note, blend.output.message]
+    elif shape == "after_blend":
+        history = [working.output.message, summary, blend.output.message, note]
+    elif shape == "trim_then_summary":
+        events = [working, CompactionEvent(type="trim", source="inspect"), *events[1:]]
+        history = [working.output.message, summary, note, blend.output.message]
+    elif shape == "native_then_summary":
+        events = [
+            working,
+            CompactionEvent(type="summary", source="inspect"),
+            *events[1:],
+        ]
+        history = [working.output.message, summary, note, blend.output.message]
+    elif shape == "two_pass_summary":
+        first_pass = model_turn("too long")
+        events = [working, first_pass, recap, flush, blend, final]
+        history = [working.output.message, summary, note, blend.output.message]
+    else:
+        replay = model_turn("replayed")
+        replay.output = working.output
+        events = [working, recap, flush, replay, final]
+        history = [working.output.message, summary, note, replay.output.message]
+    value = run_scan(
+        human_intervention(), events, messages=[task, *history, final.output.message]
+    ).value
     (intervention,) = value["interventions"]
     assert intervention["turn"] == turn
 
