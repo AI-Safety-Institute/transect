@@ -80,9 +80,11 @@ class SpawnPrompt:
     section's expandable renders it.
 
     Attributes:
-        text: The task text, whitespace-flattened and capped at
-            `TEXT_CHARS` - the same idiom `Excerpt.text` uses.
-        truncated: Whether `text` was cut.
+        text: The task text. Read from the transcript it is the whole
+            text; the judge's stored copy (the per-span fallback in
+            `render._subagent_section`) carries the scanner's cap.
+        truncated: Whether `text` was cut - only ever True on the stored
+            copy.
     """
 
     text: str
@@ -291,8 +293,9 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
 def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
     """Each sub-agent span's own spawn prompt, in full, keyed by
     ``agent_span_id``. Uncapped: the expandable exists for a human to
-    read the whole task, and the judge's own capped copy is the
-    fallback only when this store read is unavailable.
+    read the whole task. The judge's own capped copy fills in per span
+    when this read yields nothing for it (no store, or a span whose
+    metadata carries no task text).
 
     Reads directly off each ``span_begin`` event already present on
     ``transcript.events`` - the same object `_turn_excerpts` reads, so

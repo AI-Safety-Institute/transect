@@ -167,9 +167,12 @@ def human_intervention() -> Scanner[Transcript]:
       the recorded text minus the question); a console input_screen
       recording has no separate question, so ``prompt`` is None and
       the recording is the content. Channel "approval" is an
-      ApprovalEvent decided by the human approver: ``prompt`` is the
-      tool call put to them, ``outcome`` the decision, ``content`` the
-      explanation.
+      ApprovalEvent decided by inspect's built-in human approver
+      (approver name "human", ACP-routed approvals included; a custom
+      approver registered under another name is not counted):
+      ``prompt`` is the tool call put to them, ``outcome`` the
+      decision, ``content`` the explanation. A "modify" decision
+      records the decision, not the modified call.
 
     The first user message that arrived on a human channel (operator
     or input) is the task prompt, never an intervention.
@@ -224,7 +227,7 @@ def human_intervention() -> Scanner[Transcript]:
             elif event.event == "approval" and event.approver == "human":
                 call = event.call
                 arguments = (
-                    json.dumps(call.arguments, ensure_ascii=False)
+                    json.dumps(call.arguments, ensure_ascii=False, default=str)
                     if call.arguments
                     else ""
                 )
@@ -248,15 +251,25 @@ def human_intervention() -> Scanner[Transcript]:
 
 def _input_answer(event: Any, prompt: str | None) -> str:
     """The human's side of an InputEvent: the structured answer when one
-    was recorded, else the recorded text with the question (which
-    inspect prepends to it) removed."""
+    was recorded (nested values as JSON), else the recorded text with the
+    question (which inspect prepends to it) removed. Empty on a declined
+    or cancelled request: the text is only inspect's marker line, and
+    ``outcome`` carries the fact."""
     content = getattr(event, "content", None)
     if isinstance(content, dict) and content:
-        return "\n".join(f"{name}: {value}" for name, value in content.items())
+        return "\n".join(
+            f"{name}: {_json_text(value)}" for name, value in content.items()
+        )
+    if getattr(event, "outcome", None) in ("declined", "cancelled"):
+        return ""
     text = (event.input or "").strip()
     if prompt and text.startswith(prompt):
         text = text[len(prompt) :].strip()
     return text
+
+
+def _json_text(value: Any) -> str:
+    return value if isinstance(value, str) else json.dumps(value, default=str)
 
 
 def _span_ends(

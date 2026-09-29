@@ -1,6 +1,6 @@
 [project]
 name = "transect"
-version = "0.1.9"
+version = "0.1.10"
 description = "Transect: transcript analysis for agent evals, built on inspect-scout"
 license-files = ["LICENSE", "LICENSES/*.txt"]
 requires-python = ">=3.12"
