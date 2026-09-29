@@ -149,7 +149,8 @@ def test_no_compaction_events_means_no_flushes():
 )
 def test_human_messages_become_interventions_by_source(source, channel):
     """Operator steering and post-task console input register with
-    their channel and the count of assistant turns before them."""
+    their channel and the model turn they precede (assistant messages are
+    counted when no event stream records them)."""
     messages = [
         ChatMessageUser(content="the task", source="input"),
         ChatMessageAssistant(content="working"),
@@ -162,23 +163,35 @@ def test_human_messages_become_interventions_by_source(source, channel):
     assert intervention["turn"] == 1
 
 
-def test_operator_messages_sit_on_the_event_turn_axis():
-    """A model turn absent from the history (a summarization call) still
-    counts on the shared axis, so an operator message after it precedes
-    the turn the timeline says it does, not one earlier."""
+@pytest.mark.parametrize(
+    ("note_at", "turn"),
+    [("before_summary", 1), ("after_summary", 2), ("after_blend", 3)],
+)
+def test_operator_messages_sit_on_the_event_turn_axis(note_at, turn):
+    """A summarization call is a model turn with no assistant message in the
+    history; its summary message stands for it, so an operator note before,
+    right after, or later than that footprint precedes the turn the
+    timeline says it does."""
     turns = [model_turn(text) for text in ("working", "recap", "blend", "final")]
     working, _recap, blend, final = turns
+    note = ChatMessageUser(content="steer", source="operator")
+    summary = ChatMessageUser(content="[SUMMARY] recap", metadata={"summary": True})
+    flush = CompactionEvent(type="summary", source="inspect")
+    events = [working, turns[1], flush, blend, final]
+    history = {
+        "before_summary": [note, summary, blend.output.message],
+        "after_summary": [summary, note, blend.output.message],
+        "after_blend": [summary, blend.output.message, note],
+    }[note_at]
     messages = [
         ChatMessageUser(content="the task", source="input"),
         working.output.message,
-        # recap is the summarizer: a model turn with no message in the history
-        blend.output.message,
-        ChatMessageUser(content="steer", source="operator"),
+        *history,
         final.output.message,
     ]
-    value = run_scan(human_intervention(), turns, messages=messages)
-    (intervention,) = value.value["interventions"]
-    assert intervention["turn"] == 3
+    value = run_scan(human_intervention(), events, messages=messages).value
+    (intervention,) = value["interventions"]
+    assert intervention["turn"] == turn
 
 
 def test_the_first_input_message_is_the_task_not_an_intervention():

@@ -1,12 +1,12 @@
 {
-  "scan_id": "fGiTbBdc8dJavWpZsAouQh",
+  "scan_id": "8UVg8HKZuSCRTmEVFjjPoY",
   "scan_name": "transect",
-  "timestamp": "2026-09-29T14:04:30.467600+01:00",
+  "timestamp": "2026-09-29T16:26:50.390673+01:00",
   "revision": {
     "type": "git",
     "origin": "git@github.com:AI-Safety-Institute/transect.git",
     "version": "0.0.0-dev.0+unknown",
-    "commit": "5a61d70"
+    "commit": "8634281"
   },
   "packages": {
     "inspect_ai": "0.3.268",
@@ -28,31 +28,31 @@
     "token_timeline": {
       "name": "transect/token_timeline",
       "version": 0,
-      "package_version": "0.1.11",
+      "package_version": "0.1.12",
       "params": {}
     },
     "context_flush": {
       "name": "transect/context_flush",
       "version": 0,
-      "package_version": "0.1.11",
+      "package_version": "0.1.12",
       "params": {}
     },
     "human_intervention": {
       "name": "transect/human_intervention",
       "version": 0,
-      "package_version": "0.1.11",
+      "package_version": "0.1.12",
       "params": {}
     },
     "eval_setup": {
       "name": "transect/eval_setup",
       "version": 0,
-      "package_version": "0.1.11",
+      "package_version": "0.1.12",
       "params": {}
     },
     "decision_phases": {
       "name": "transect/decision_phases",
       "version": 0,
-      "package_version": "0.1.11",
+      "package_version": "0.1.12",
       "params": {
         "spec": {
           "phases": [
@@ -149,7 +149,7 @@
     "subagent_classification": {
       "name": "transect/subagent_classification",
       "version": 0,
-      "package_version": "0.1.11",
+      "package_version": "0.1.12",
       "params": {
         "spec": {
           "phases": [

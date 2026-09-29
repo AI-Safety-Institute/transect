@@ -228,7 +228,7 @@ def test_interventions_frame_carries_the_planted_interventions(demo_results):
     full content."""
     interventions = demo_results.interventions.sort_values("turn")
     assert list(zip(interventions.turn, interventions.channel, strict=True)) == [
-        (10, "operator"),
+        (11, "operator"),
         (16, "input_event"),
     ]
     assert interventions.content.iloc[0].startswith("Operator note: we are time-boxed")

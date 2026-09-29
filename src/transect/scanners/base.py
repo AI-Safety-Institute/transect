@@ -167,7 +167,10 @@ def context_flush() -> Scanner[Transcript]:
     return execute
 
 
-@scanner(messages="all", events=cast("list[Any]", ["model", "input", "approval"]))
+@scanner(
+    messages="all",
+    events=cast("list[Any]", ["model", "input", "approval", "compaction"]),
+)
 def human_intervention() -> Scanner[Transcript]:
     """Mid-run human interactions. Detection is structural, via inspect's
     ChatMessage.source field and its human-facing events - scaffold-
@@ -219,25 +222,37 @@ def human_intervention() -> Scanner[Transcript]:
             )
 
         # Human messages live in the history, not the event stream, so their
-        # turn is the event turn of the assistant message before them plus
-        # one. Counting assistant messages instead would drift by one after
-        # every summary compaction: the summarization call is a model turn
-        # whose output never enters the history.
+        # turn is read off the history's footprints of model turns: the
+        # assistant message a turn produced, or the summary message a
+        # summary compaction appended. Counting assistant messages alone
+        # would drift by one after every model turn whose output never
+        # enters the history (a summarization call, a sub-agent's turns).
         turn_of_output = {
             event.output.message.id: turn
             for turn, (event, _calls) in enumerate(model_turns(transcript))
-            if event.output.message is not None
+            if event.output.message.id is not None
         }
+        # a summary message stands for the flush before it; the flush's turn
+        # is the first post-flush turn, the same value context_flush records
+        post_flush_turns = iter(
+            turn
+            for turn, event in _non_model_events(transcript)
+            if event.event == "compaction"
+        )
         next_turn = 0
         seen_task_prompt = False
         for message in transcript.messages:
             if message.role == "assistant":
                 # an assistant message no event recorded (a history without
-                # its event stream) still advances the count by one
+                # its event stream) still advances the count by one; a
+                # repeated id (a cached generate) never moves the axis back
                 recorded = turn_of_output.get(message.id)
-                next_turn = next_turn + 1 if recorded is None else recorded + 1
+                next_turn = max(next_turn + 1, 0 if recorded is None else recorded + 1)
                 continue
             if message.role != "user":
+                continue
+            if (getattr(message, "metadata", None) or {}).get("summary"):
+                next_turn = max(next_turn, next(post_flush_turns, next_turn + 1))
                 continue
             source = getattr(message, "source", None)
             if source not in ("operator", "input"):
