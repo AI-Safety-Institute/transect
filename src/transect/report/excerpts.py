@@ -24,8 +24,9 @@ Excerpt text is agent/user content: untrusted. It is carried as plain
 import asyncio
 import sys
 from bisect import bisect_left, bisect_right
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,9 @@ class Excerpt:
         text: The turn's own text, whitespace-flattened and capped at
             `TEXT_CHARS`.
         truncated: Whether `text` was cut - the card says so.
+        note: A marker the card shows beside the lane, or ``None``;
+            `mark_compaction_turns` sets it on turns whose "output" is
+            Inspect's summarizer speaking, not the agent.
     """
 
     turn: int
@@ -72,6 +76,29 @@ class Excerpt:
     tools: str
     text: str
     truncated: bool
+    note: str | None = None
+
+
+COMPACTION_NOTE = "compaction summary call (the summarizer, not the agent)"
+
+
+def mark_compaction_turns(
+    excerpts: dict[int, Excerpt], turns: Iterable[int]
+) -> dict[int, Excerpt]:
+    """Note the turns that were summarization calls.
+
+    A summary compaction's ``generate()`` is a model event like any other,
+    so it holds a turn on the shared axis and its excerpt is the summary
+    body. Unmarked, a card presents that as the agent pausing to recap;
+    ``turns`` comes from the flushes frame (a flush with a recorded
+    ``compaction_prompt`` sits on the summarization call's own turn), so
+    the card's marker and the flush list can never disagree.
+    """
+    marked = dict(excerpts)
+    for turn in turns:
+        if turn in marked:
+            marked[turn] = replace(marked[turn], note=COMPACTION_NOTE)
+    return marked
 
 
 @dataclass(frozen=True)

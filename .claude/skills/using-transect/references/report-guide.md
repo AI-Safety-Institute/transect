@@ -267,7 +267,8 @@ healthy, red with a warning glyph and the issue text when a
 reliability issue fired), tag line (turn range, reasoning turns,
 spend, tool calls, sub-agents, compaction/intervention-during-phase),
 per-member judge ballots with support, turn-group excerpts from the
-transcript, and a deep link. The class-box flags on: a verifier
+transcript (a turn whose text is Inspect's compaction summary is marked
+as the summarizer's call, not the agent's), and a deep link. The class-box flags on: a verifier
 overturn (naming the pre-overturn label), low mean confidence
 (<= 0.6), or the confidently-split case (high confidence, low
 agreement). When any of these surface, bring in the transect-diagnostics

@@ -223,19 +223,12 @@ Top to bottom, everything on a shared turn axis:
 
 - **Flags**: a red flag at the very top marks scan execution failures; it
   links to the run-wide "Scan execution & coverage" section at the bottom.
-- **Eval setup**: model, scaffold, verbatim prompts, limits, run summary.
-  Inspect `.eval` reports also show the compaction prompt and the
-  pre-compaction memory nudge below the system/task prompts in Core setup,
-  each distinct recorded text once. The configured prompt template is
-  shown only when no recorded prompt is available; missing text reads
-  "data not found". Recorded compaction thresholds also appear in Core
-  setup, as token counts or context-window percentages.
+- **Eval setup**: model, scaffold, verbatim prompts (including Inspect's
+  compaction prompt and memory nudge), compaction threshold, limits, run summary.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
-- **Token telemetry**: per-turn token measures and context size, compactions marked.
-  A recorded absolute compaction threshold adds a dotted line on the
-  context-window chart, with an on/off checkbox. Missing or percentage-only
-  thresholds do not produce a line or checkbox.
+- **Token telemetry**: per-turn token measures and context size, compactions
+  and any recorded compaction threshold marked.
 - **Sub-agent activity**: one swimlane per spawned sub-agent, with its classified role.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.

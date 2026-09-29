@@ -21,7 +21,11 @@ from transect.report._jinja import jinja_env
 from transect.report.colors import _UNJUDGED_GREY, _label_colors, _phase_colors
 from transect.report.display import MEMBER_NO_VOTE, member_display, multi_roll_models
 from transect.report.embed import embed_section
-from transect.report.excerpts import SpawnPrompt, read_transcript_extras
+from transect.report.excerpts import (
+    SpawnPrompt,
+    mark_compaction_turns,
+    read_transcript_extras,
+)
 from transect.report.lanes_layout import pack_lanes
 from transect.report.style import _STYLE, _WIDGET_STYLE_CSS
 from transect.tags import select_tags
@@ -183,7 +187,12 @@ def render_report(
                         ),
                         f"phase-cards-{idx}",
                         card_id_prefix,
-                        my_extras.excerpts if my_extras else None,
+                        mark_compaction_turns(
+                            my_extras.excerpts,
+                            my_flushes.turn[my_flushes.compaction_prompt.notna()],
+                        )
+                        if my_extras
+                        else None,
                         lanes=tool_lanes,
                         tool_counts=tool_counts,
                         turn_tags=my_tags,

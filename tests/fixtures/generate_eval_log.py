@@ -7,13 +7,6 @@ Run from the repo root:
 Writes one .eval into tests/fixtures/logs/ (committed). A 2-sample react()
 run against mockllm with scripted tool calls (bash, think, submit), so tests
 exercise real transcript structure without API keys, Docker, or network.
-
-The run compacts: a small ``CompactionSummary`` threshold and a tool named
-``memory`` (the name is what arms Inspect's pre-compaction nudge) make
-each sample flush several times, so the log carries Inspect's real
-recorded shape for the summarization prompt and the memory nudge. Token
-usage is left to mockllm's own counting rather than pinned, because the
-compaction handler calibrates against reported usage.
 """
 
 import itertools
