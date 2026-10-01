@@ -28,6 +28,7 @@ from helpers import (
     verify_answer,
     voter,
 )
+from inspect_ai.log import read_eval_log
 from test_subagent_classification import span_item
 
 from transect.api import _run
@@ -235,6 +236,23 @@ def test_interventions_frame_carries_the_planted_interventions(demo_results):
     assert interventions.initiator.tolist() == ["human", "agent"]
     assert interventions.prompt.iloc[1].startswith("Submit the blended predictions")
     assert interventions.content.iloc[1] == "y"
+
+
+def test_flush_and_intervention_scanners_share_one_turn_axis(demo_results):
+    """Three independent readings of where the demo's compaction sits agree:
+    the flush turn from the event walk, the first model input that carried
+    the compaction summary message, and the operator note placed after it."""
+    log = read_eval_log(str(DEMO_LOG), resolve_attachments=True)
+    sample = log.samples[0]
+    turns = [e for e in sample.events if e.event == "model" and e.output]
+    (summary,) = [m for m in sample.messages if (m.metadata or {}).get("summary")]
+    first_seen = next(
+        turn for turn, e in enumerate(turns) if summary.id in {m.id for m in e.input}
+    )
+    (flush_turn,) = demo_results.flushes.turn
+    interventions = demo_results.interventions
+    (note_turn,) = interventions[interventions.channel == "operator"].turn
+    assert flush_turn == first_seen == note_turn == 11
 
 
 def test_lane_activity_frame_tracks_each_sub_agent_span(demo_results):
