@@ -167,7 +167,10 @@ def context_flush() -> Scanner[Transcript]:
     return execute
 
 
-@scanner(messages="all", events=cast("list[Any]", ["model", "input", "approval"]))
+@scanner(
+    messages="all",
+    events=cast("list[Any]", ["model", "input", "approval", "compaction"]),
+)
 def human_intervention() -> Scanner[Transcript]:
     """Mid-run human interactions. Detection is structural, via inspect's
     ChatMessage.source field and its human-facing events - scaffold-
@@ -218,26 +221,54 @@ def human_intervention() -> Scanner[Transcript]:
                 }
             )
 
-        # Human messages live in the history, not the event stream, so their
-        # turn is the event turn of the assistant message before them plus
-        # one. Counting assistant messages instead would drift by one after
-        # every summary compaction: the summarization call is a model turn
-        # whose output never enters the history.
-        turn_of_output = {
-            event.output.message.id: turn
-            for turn, (event, _calls) in enumerate(model_turns(transcript))
-            if event.output.message is not None
-        }
+        # Human messages live in the history, not the event stream. The log
+        # records which model call first saw each message: the first model
+        # event whose input carries its id (or merged it into a combined
+        # message) is the turn it precedes. A message no input records (one
+        # planted into the history, a history without its event stream)
+        # falls back to the history's footprints of model turns.
+        first_seen: dict[str, int] = {}
+        turn_of_output: dict[str, int] = {}
+        for turn, (event, _calls) in enumerate(model_turns(transcript)):
+            for seen in event.input:
+                combined = (getattr(seen, "metadata", None) or {}).get("combined_from")
+                for seen_id in (seen.id, *(combined or [])):
+                    if seen_id is not None:
+                        first_seen.setdefault(seen_id, turn)
+            output_id = event.output.message.id
+            if output_id is not None:
+                # first occurrence wins: a cached generate replays an output
+                turn_of_output.setdefault(output_id, turn)
+        # summary flushes by the turn they precede (as context_flush records
+        # them): the fallback footprint for a summary message no input saw
+        summary_flushes = [
+            turn
+            for turn, event in _non_model_events(transcript)
+            if event.event == "compaction" and event.type == "summary"
+        ]
         next_turn = 0
         seen_task_prompt = False
         for message in transcript.messages:
             if message.role == "assistant":
-                # an assistant message no event recorded (a history without
-                # its event stream) still advances the count by one
-                recorded = turn_of_output.get(message.id)
-                next_turn = next_turn + 1 if recorded is None else recorded + 1
+                # an assistant message no event recorded still advances the
+                # axis by one; a repeated id never moves it back
+                recorded = turn_of_output.get(message.id or "")
+                next_turn = max(next_turn + 1, 0 if recorded is None else recorded + 1)
                 continue
             if message.role != "user":
+                continue
+            seen = first_seen.get(message.id or "")
+            if (getattr(message, "metadata", None) or {}).get("summary"):
+                # a compaction summary stands for the summarizer turn before
+                # it; unseen, it takes the first summary flush ahead of the
+                # axis (a flush at or behind it belongs to an earlier window,
+                # and trim, edit and native flushes never qualify by type)
+                if seen is not None:
+                    next_turn = max(next_turn, seen)
+                else:
+                    ahead = next((t for t in summary_flushes if t > next_turn), None)
+                    if ahead is not None:
+                        next_turn = ahead
                 continue
             source = getattr(message, "source", None)
             if source not in ("operator", "input"):
@@ -245,7 +276,14 @@ def human_intervention() -> Scanner[Transcript]:
             if not seen_task_prompt:
                 seen_task_prompt = True
                 continue
-            entry(next_turn, source, "human", (message.text or "").strip())
+            if seen is not None:
+                next_turn = max(next_turn, seen)
+            entry(
+                seen if seen is not None else next_turn,
+                source,
+                "human",
+                (message.text or "").strip(),
+            )
 
         for turn, event in _non_model_events(transcript):
             if event.event == "input":
