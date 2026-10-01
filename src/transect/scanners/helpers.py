@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeGuard
 
 from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_build
 from inspect_ai.tool import ToolCall
@@ -26,11 +26,11 @@ class SpanActivity:
     tool_counts: dict[str, int] = field(default_factory=dict)
 
 
-def is_model_turn(event: Any) -> bool:
+def is_model_turn(event: Any) -> TypeGuard[ModelEvent]:
     """Whether an event holds a slot on the report's turn axis: a model
     event that produced output. Every count of turns derives from this one
     predicate, so no two surfaces can disagree about what a turn is."""
-    return bool(event.event == "model" and event.output)
+    return isinstance(event, ModelEvent) and event.output is not None
 
 
 def model_turns(transcript: Transcript) -> Iterator[tuple[Any, list[ToolCall]]]:
