@@ -4,7 +4,8 @@
     epoch is its own transcript). A shortfall with errors is
     ran-and-failed; a shortfall without errors was never reached.
     Per-label coverage lives in each transcript's reliability
-    audit; this block only accounts for execution. -#}
+    audit; this block only accounts for execution. The usage table
+    is the judges' own spend, not the agent's Token spend. -#}
 <section id="scan-status" class="section"><h3>Scan execution &amp; coverage</h3>
 <p class="meta explainer">Run-wide record for the stored scan (all epochs): <strong>execution {{ scan_status_view.execution }}</strong>. Execution completion does not establish usable labels; per-label coverage is in the {% if n_transcripts %}<a href="#reliability-audit">reliability audit</a>{% else %}reliability audit{% endif %}.</p>
 <div class="relmap-scroll"><table class="relmap">
@@ -19,5 +20,15 @@
 {% endif %}
 {% if scan_status_view.errors %}
 <details class="event event-list"><summary>{{ scan_status_view.errors|length }} recorded analysis error(s)</summary><ol>{% for error in scan_status_view.errors %}<li>{{ error.scanner }}{% if error.transcript_id %} · transcript {{ error.transcript_id }}{% endif %} · {{ error.message }}</li>{% endfor %}</ol></details>
+{% endif %}
+<h4>Billed model usage</h4>
+{% if scan_status_view.usage %}
+<p class="meta explainer">Tokens the scanners themselves billed, by scanner and judge model, summed over the stored results.</p>
+<div class="relmap-scroll"><table class="relmap">
+<tr><th>scanner</th><th>model</th><th>input</th><th>output</th><th>total</th><th>cache read</th><th>cache write</th><th>reasoning</th><th>cost</th></tr>
+{% for row in scan_status_view.usage %}<tr{% if row.is_total %} class="relmap-group"{% endif %}>{% if row.first %}<th rowspan="{{ row.group_size }}">{{ row.scanner }}</th>{% endif %}<td>{{ row.model }}</td>{% for cell in (row.input, row.output, row.total, row.cache_read, row.cache_write, row.reasoning, row.cost) %}<td>{% if cell is none %}<span class="relmap-absent" title="not reported">-</span>{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>
+{% endfor %}</table></div>
+{% else %}
+<p class="meta">The stored results record no billed model usage: no judge scanner ran, every judge call was cached, or the store carries no usage column.</p>
 {% endif %}
 </section>

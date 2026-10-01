@@ -231,7 +231,8 @@ to reload that exact scan rather than whichever scan is latest in its parent.
 Top to bottom, everything on a shared turn axis:
 
 - **Flags**: a red flag at the very top marks scan execution failures; it
-  links to the run-wide "Scan execution & coverage" section at the bottom.
+  links to the run-wide "Scan execution & coverage" section at the bottom,
+  which also tables the judges' own token usage.
 - **Eval setup**: model, scaffold, verbatim prompts (including Inspect's
   compaction prompt and memory nudge), compaction threshold, limits, run summary.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
