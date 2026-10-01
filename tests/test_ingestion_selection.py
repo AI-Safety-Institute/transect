@@ -2,6 +2,8 @@
 one-sample/epoch selection rules."""
 
 import asyncio
+import importlib
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -268,3 +270,17 @@ def test_eval_log_scan_selects_the_requested_sample(fixture_logs, tmp_path):
     )
     assert set(results.token_timeline.sample_id) == {"fixture-sample-1"}
     assert (results.token_timeline.epoch == 1).all()
+
+
+def test_vendored_importer_notice_and_docstring_pin_the_same_upstream_commit():
+    """The third-party notice cites the commit the importer docstring was
+    vendored from, so a re-vendor cannot update one and leave the other
+    stale."""
+    # transect.ingestion re-exports the loader function under the subpackage's
+    # name, so the module itself must be resolved through importlib.
+    vendored = importlib.import_module("transect.ingestion.openclaw_telemetry_hal")
+    notice = (Path(__file__).parents[1] / "LICENSES" / "README.md").read_text()
+    notice_sha = re.search(r"at commit `([0-9a-f]+)`", notice)
+    docstring_sha = re.search(r"inspect_scout @ ([0-9a-f]+)", vendored.__doc__ or "")
+    assert notice_sha and docstring_sha
+    assert notice_sha.group(1) == docstring_sha.group(1)
