@@ -26,15 +26,37 @@ class SpanActivity:
     tool_counts: dict[str, int] = field(default_factory=dict)
 
 
+def is_model_turn(event: Any) -> bool:
+    """Whether an event holds a slot on the report's turn axis: a model
+    event that produced output. Every count of turns derives from this one
+    predicate, so no two surfaces can disagree about what a turn is."""
+    return bool(event.event == "model" and event.output)
+
+
 def model_turns(transcript: Transcript) -> Iterator[tuple[Any, list[ToolCall]]]:
     """Yield (model event, its tool calls) per model turn, in event order.
 
-    Shared across scanners: enumerate() over this is the turn axis."""
+    Shared across scanners and the report: enumerate() over this is the
+    turn axis. Agent turns, Inspect's summarization calls and sub-agent
+    turns all hold a slot; `events_between_turns` places everything else."""
     for event in transcript.events:
-        if event.event != "model" or not event.output:
+        if not is_model_turn(event):
             continue
         message = event.output.message
         yield event, (message.tool_calls or []) if message else []
+
+
+def events_between_turns(transcript: Transcript) -> Iterator[tuple[int, Any]]:
+    """Yield (turn, event) for every event that is not a model turn, where
+    turn is the number of model turns before it: the turn the event
+    precedes. A flush, an input event or a span start recorded at turn t
+    sits between turns t-1 and t, and the charts draw it at t - 0.5."""
+    turns = 0
+    for event in transcript.events:
+        if is_model_turn(event):
+            turns += 1
+            continue
+        yield turns, event
 
 
 def span_activity(
@@ -48,7 +70,7 @@ def span_activity(
     """
     activity = SpanActivity()
     for event in transcript.events:
-        if isinstance(event, ModelEvent) and event.output:
+        if is_model_turn(event):
             agent = nearest_agent_span(spans, getattr(event, "span_id", None))
             if agent is not None and agent.id == span_id:
                 message = event.output.message

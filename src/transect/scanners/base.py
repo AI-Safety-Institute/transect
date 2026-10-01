@@ -9,7 +9,12 @@ from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
 from transect.scanners.compaction import compaction_texts
-from transect.scanners.helpers import main_lane_id, model_turns, nearest_agent_span
+from transect.scanners.helpers import (
+    events_between_turns,
+    main_lane_id,
+    model_turns,
+    nearest_agent_span,
+)
 
 # inspect-ai ModelUsage attribute names, used verbatim as dataframe columns
 _USAGE_FIELDS = (
@@ -142,7 +147,7 @@ def context_flush() -> Scanner[Transcript]:
     async def execute(transcript: Transcript) -> Result:
         flushes: list[dict[str, Any]] = []
         texts = iter(compaction_texts(transcript))
-        for turn, event in _non_model_events(transcript):
+        for turn, event in events_between_turns(transcript):
             if event.event != "compaction":
                 continue
             flushes.append(
@@ -243,7 +248,7 @@ def human_intervention() -> Scanner[Transcript]:
         # them): the fallback footprint for a summary message no input saw
         summary_flushes = [
             turn
-            for turn, event in _non_model_events(transcript)
+            for turn, event in events_between_turns(transcript)
             if event.event == "compaction" and event.type == "summary"
         ]
         next_turn = 0
@@ -285,7 +290,7 @@ def human_intervention() -> Scanner[Transcript]:
                 (message.text or "").strip(),
             )
 
-        for turn, event in _non_model_events(transcript):
+        for turn, event in events_between_turns(transcript):
             if event.event == "input":
                 prompt = (getattr(event, "message", None) or "").strip() or None
                 entry(
@@ -352,7 +357,7 @@ def _span_ends(
     span excluded). Turn anchor = the initiating model turn (0-based).
     """
     ends: list[dict[str, Any]] = []
-    for turns_before, event in _non_model_events(transcript):
+    for turns_before, event in events_between_turns(transcript):
         if event.event != "span_end":
             continue
         span_id = getattr(event, "id", None)
@@ -379,7 +384,7 @@ def _lane_activity(
     hits: Counter[tuple[int, str, str]] = Counter()
     busy_ms: Counter[tuple[int, str, str]] = Counter()
     started_at: dict[tuple[int, str, str], Any] = {}
-    for turns_before, event in _non_model_events(transcript):
+    for turns_before, event in events_between_turns(transcript):
         if event.event != "tool":
             continue
         if getattr(event, "agent_span_id", None) is not None:
@@ -416,16 +421,6 @@ def _lane_activity(
             }
         )
     return rows
-
-
-def _non_model_events(transcript: Transcript):
-    """Yield (n_model_turns_before, event) for every non-model event."""
-    turns = 0
-    for event in transcript.events:
-        if event.event == "model" and event.output:
-            turns += 1
-            continue
-        yield turns, event
 
 
 def _sub_agent_span(spans: dict[str, Any], span_id, main_id):

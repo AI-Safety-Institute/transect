@@ -17,6 +17,7 @@ from transect.scanners.cohort import (
     roll_cache,
 )
 from transect.scanners.helpers import (
+    events_between_turns,
     main_span,
     model_turns,
     span_task_text,
@@ -861,12 +862,9 @@ def _span_anchors(transcript: Any, subagent_spans: list[Any]) -> list[tuple[Any,
     """
     wanted = {id(sp) for sp in subagent_spans}
     anchors: list[tuple[Any, int]] = []
-    n_model = 0
-    for event in transcript.events:
-        if event.event == "model" and event.output:
-            n_model += 1
-        elif event.event == "span_begin" and id(event) in wanted:
-            anchors.append((event, n_model - 1))  # -1: nothing precedes
+    for turns_before, event in events_between_turns(transcript):
+        if event.event == "span_begin" and id(event) in wanted:
+            anchors.append((event, turns_before - 1))  # -1: nothing precedes
     return anchors
 
 
