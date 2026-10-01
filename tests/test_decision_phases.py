@@ -102,6 +102,7 @@ def test_reasoning_blocks_enter_the_digest_and_its_prompt_line():
     assert (thinking_only.turn, thinking_only.text) == (1, "")
     assert thinking_only.reasoning == "try a different split"
     assert (plain.reasoning, plain.text) == ("", "plain text turn")
+    assert digest_line(plain) == "2: plain text turn"
 
 
 @pytest.mark.parametrize(
@@ -113,6 +114,7 @@ def test_reasoning_blocks_enter_the_digest_and_its_prompt_line():
             "the gist",
         ),
         (ContentReasoning(reasoning="", summary="summary only"), "summary only"),
+        (ContentReasoning(reasoning="  \n ", summary="padded"), "padded"),
         (ContentReasoning(reasoning="payload", redacted=True), None),
     ],
 )

@@ -226,9 +226,9 @@ def card_excerpts(
         always, so a caller zips it against its own groups without a
         length branch; a range with nothing to show gets ``([], 0)``.
         ``n_more`` counts the range's *excerpt-bearing* turns that did
-        not fit - turns with no text of their own were never
-        candidates and are not counted (the card's tag line already
-        reports the phase's turn counts).
+        not fit - turns with no text or reasoning of their own were
+        never candidates and are not counted (the card's tag line
+        already reports the phase's turn counts).
     """
     if not ranges:
         return []
@@ -307,7 +307,7 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
         text_chars: Per-turn character cap.
 
     Returns:
-        ``{turn: Excerpt}`` for the turns carrying text.
+        ``{turn: Excerpt}`` for the turns carrying text or reasoning.
     """
     spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
     found: dict[int, Excerpt] = {}

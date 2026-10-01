@@ -62,7 +62,7 @@ def message_reasoning(message: Any) -> str:
         if not isinstance(block, ContentReasoning):
             continue
         text = block.reasoning if not block.redacted else ""
-        text = (text or block.summary or "").strip()
+        text = text.strip() or (block.summary or "").strip()
         if text:
             parts.append(" ".join(text.split()))
     return " ".join(parts)

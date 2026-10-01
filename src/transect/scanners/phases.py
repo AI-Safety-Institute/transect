@@ -535,7 +535,7 @@ def turn_digests(
                     goal = (f"[{label}] " if label else "") + task_text
                     delegations.append(goal[:snippet_chars])
         if not text and not reasoning and not delegations:
-            continue  # tool-call-only turn: nothing classifiable
+            continue  # content-free tool-call-only turn: nothing classifiable
         digest = _digest(turn)
         digest.text = text[:snippet_chars]
         digest.reasoning = reasoning[:snippet_chars]

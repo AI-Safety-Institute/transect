@@ -853,7 +853,8 @@ _STRIP_BASIS_WHY = {
     "judged": "judged: reasoning turn scored by the judge(s)",
     "filled": "not judged: inherits the previous label",
     "attributed": (
-        "not judged: tool-only/failed/sub-agent turn; takes the surrounding label"
+        "not judged: content-free tool-only/failed/sub-agent turn; "
+        "takes the surrounding label"
     ),
     "refusal": "not judged: the judge refused",
     "no_answer": "not judged: no valid judge answer",
