@@ -155,10 +155,10 @@ def test_token_timeline_reconstructs_context_and_new_work(demo_results):
     assert (spots.loc[0, "new_work"], spots.loc[0, "context"]) == (1020, 926)
     assert spots.loc[9, "agent_lane"] == "alt_model"
     # turn 10 is the summarization call; turn 11 runs on the compacted window
-    assert (spots.loc[10, "new_work"], spots.loc[10, "context"]) == (3664, 2743)
+    assert (spots.loc[10, "new_work"], spots.loc[10, "context"]) == (3588, 2667)
     assert (spots.loc[11, "new_work"], spots.loc[11, "context"]) == (1491, 1228)
     assert (spots.loc[16, "new_work"], spots.loc[16, "context"]) == (2005, 1761)
-    assert timeline.new_work.sum() == 28466
+    assert timeline.new_work.sum() == 27221
 
 
 def test_subagent_spans_are_listed_even_unjudged(demo_results):
@@ -169,9 +169,9 @@ def test_subagent_spans_are_listed_even_unjudged(demo_results):
     assert subagents.label.isna().all()
     expected = pd.DataFrame(
         [
-            ("eda", 4, 5, 5, 2, 1902.0),
-            ("alt_model", 8, 9, 9, 2, 2853.0),
-            ("reviewer", 13, 15, 15, 3, 6470.0),
+            ("eda", 4, 5, 5, 2, 1750.0),
+            ("alt_model", 8, 9, 9, 2, 2701.0),
+            ("reviewer", 13, 15, 15, 3, 6242.0),
         ],
         columns=[
             "agent_lane",
@@ -203,7 +203,7 @@ def test_flushes_frame_carries_the_demo_compaction(demo_results):
                 "turn": 11,
                 "type": "summary",
                 "source": "inspect",
-                "tokens_before": 1982,
+                "tokens_before": 1906,
                 "tokens_after": 658,
                 "strategy": "CompactionSummary",
                 "trigger": "threshold",
