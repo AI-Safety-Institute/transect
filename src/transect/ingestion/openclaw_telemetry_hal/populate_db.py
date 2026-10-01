@@ -8,9 +8,9 @@ By default it reads the plugin's usual output at
 ``~/.openclaw/logs/telemetry.jsonl``; pass a directory or a specific ``.jsonl``
 file as the first argument to override.
 
-Prefer ``transect.api.run()`` for real work: unlike this script it skips
-transcripts already in the database and writes to ``<scans_dir>/transcripts``
-rather than a directory inside the installed package.
+Prefer ``transect.transect()`` for real work: each invocation imports into a
+new retained snapshot at ``<scans_dir>/transcript_snapshots/<id>`` rather than
+a directory inside the installed package.
 """
 
 import asyncio

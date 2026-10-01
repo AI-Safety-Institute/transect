@@ -14,7 +14,7 @@ placement, roll-up aggregate drops, durationMs-derived tool widths), and
 upstream #652 made message-id assignment linear per lane (a large-capture
 import speed-up), so the code modules mirror upstream byte-for-byte. The only local deltas are
 this docstring and ``populate_db.py``'s usage docstring (transect module path +
-pointer to ``transect.api.run``). Upstream's ``README.md`` and ``tests/`` are not
+pointer to ``transect.transect``). Upstream's ``README.md`` and ``tests/`` are not
 vendored; transect keeps its own importer tests at
 ``tests/test_ingestion_selection.py``.
 """
