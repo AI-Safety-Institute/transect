@@ -44,7 +44,9 @@ def message_reasoning(message: Any) -> str:
     A redacted block falls back to its summary, as does a block whose
     provider reports only a summary; blocks with neither readable field
     are skipped. "" for a plain-string message or one without
-    reasoning blocks.
+    reasoning blocks. (``ContentReasoning.text`` is not used: it wraps
+    the text in replay-oriented ``<think>`` tags and drops a
+    summary-only unredacted block.)
 
     Args:
         message: An assistant chat message (or None).
