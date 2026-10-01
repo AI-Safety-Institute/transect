@@ -27,6 +27,8 @@ from typing import Any
 
 from inspect_scout import Transcript
 
+from transect.scanners.helpers import is_model_turn
+
 _MEMORY_WARNING_PREFIX = "Context compaction approaching. Use memory() to save"
 
 
@@ -49,7 +51,7 @@ def compaction_texts(transcript: Transcript) -> list[dict[str, str | None]]:
     nudge: dict[str | None, str] = {}
     for event in events:
         lane = event.span_id
-        if event.event == "model":
+        if is_model_turn(event):
             last_model[lane] = event
             for message in event.input:
                 if (
@@ -68,7 +70,6 @@ def compaction_texts(transcript: Transcript) -> list[dict[str, str | None]]:
                 and summarization.input
                 and summarization.input[-1].role == "user"
                 and summarization.input[-1].id not in history_ids
-                and summarization.output
                 and summarization.output.message.id not in history_ids
             ):
                 prompt = summarization.input[-1].text

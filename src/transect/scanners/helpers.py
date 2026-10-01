@@ -27,9 +27,12 @@ class SpanActivity:
 
 
 def is_model_turn(event: Any) -> TypeGuard[ModelEvent]:
-    """Whether an event holds a slot on the report's turn axis: a model
-    event that produced output. Every count of turns derives from this one
-    predicate, so no two surfaces can disagree about what a turn is."""
+    """Whether an event holds a slot on the report's turn axis. Every model
+    event does, a failed generate's empty placeholder output included:
+    Inspect never records a model event without an output object, so the
+    None test only guards hand-built events. Every count of turns derives
+    from this one predicate, so no two surfaces can disagree about what a
+    turn is."""
     return isinstance(event, ModelEvent) and event.output is not None
 
 
@@ -280,11 +283,7 @@ def _span_details(main: TimelineSpan) -> tuple[dict[str, Any], set[str]]:
             if item.utility:
                 utility_ids.add(item.id)
             for sub in item.content:
-                if (
-                    isinstance(sub, TimelineEvent)
-                    and isinstance(sub.event, ModelEvent)
-                    and sub.event.output
-                ):
+                if isinstance(sub, TimelineEvent) and is_model_turn(sub.event):
                     first_models.setdefault(item.id, sub.event)
                     break
             _walk(item)

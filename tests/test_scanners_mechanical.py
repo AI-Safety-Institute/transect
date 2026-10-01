@@ -113,11 +113,12 @@ def test_span_ends_record_sub_agent_completions_only():
 
 
 def test_context_flush_records_compaction_events_at_their_turn():
-    """A compaction event lands with the count of model turns before it
-    and the event's own type/source/token fields."""
+    """A compaction event lands with the count of model turns before it,
+    a failed generate's placeholder turn included, and the event's own
+    type/source/token fields."""
     events = [
         model_turn("a"),
-        model_turn("b"),
+        model_turn("", error="boom"),
         CompactionEvent(
             type="summary", source="inspect", tokens_before=900, tokens_after=200
         ),
