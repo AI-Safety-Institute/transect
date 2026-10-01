@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, JsonValue
 from transect.scanners.cohort import LabelSource, VerifierReview, ci_half_width
 from transect.spec import Phase, Spec
 
-SNIPPET_CHARS = 300  # per-digest text cap shown to the judge
+SNIPPET_CHARS = 300  # per-digest cap on text, reasoning, and each delegation
 
 # per-phase evidence cap (digest lines shown to a judge)
 EVIDENCE_LINES = 200
@@ -46,6 +46,7 @@ class Digest(BaseModel):
 
     turn: int
     text: str = ""
+    reasoning: str = ""  # the turn's reasoning-block text, when recorded
     tools: list[str] = []
     delegations: list[str] = []
     event_id: str | None = None  # source model event uuid (viewer anchor)
@@ -424,9 +425,12 @@ def _retry_cache(cache: bool | CachePolicy) -> CachePolicy | None:
 
 
 def digest_line(d: Digest) -> str:
-    """Render one digest as a single prompt line: index, text, tool
-    names, then each delegation behind a [DELEGATES] marker."""
+    """Render one digest as a single prompt line: index, reasoning
+    behind a [THINKING] marker, text, tool names, then each delegation
+    behind a [DELEGATES] marker."""
     parts = [f"{d.turn}:"]
+    if d.reasoning:
+        parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
     if d.text:
         parts.append(d.text.replace("\n", " "))
     if d.tools:

@@ -18,6 +18,7 @@ from transect.scanners.cohort import (
 )
 from transect.scanners.helpers import (
     main_span,
+    message_reasoning,
     model_turns,
     span_task_text,
     strip_subagent_scaffold,
@@ -58,11 +59,11 @@ _OPENCLAW_SCAFFOLD_USER_MESSAGES = ("[openclaw heartbeat poll]",)  # exact match
 
 # Appended to the judged phases when the spec declares no operational bucket
 _SYSTEM_HEAD = (
-    "You are segmenting an autonomous agent's turns (its own text AND the "
-    "[DELEGATES] tasks it hands to sub-agents) into CONTIGUOUS PHASES of "
-    "the task it is working on. Each phase is a run of consecutive turns "
-    "doing ONE activity. Label each phase with the single best-fitting "
-    "phase name:\n"
+    "You are segmenting an autonomous agent's turns (its [THINKING] "
+    "reasoning, its own text, AND the [DELEGATES] tasks it hands to "
+    "sub-agents) into CONTIGUOUS PHASES of the task it is working on. "
+    "Each phase is a run of consecutive turns doing ONE activity. Label "
+    "each phase with the single best-fitting phase name:\n"
 )
 
 _RULES = (
@@ -76,7 +77,9 @@ _RULES = (
     "'{ops}' — do NOT force them into a substantive component.\n"
     "4. Delegation turns (marked [DELEGATES]) are the agent handing work "
     "to a sub-agent — classify the phase by the delegated task's purpose.\n"
-    "5. confidence is your 0.0-1.0 certainty in BOTH the boundary and the "
+    "5. [THINKING] text is the agent's internal reasoning — treat it as "
+    "evidence of the turn's activity, same as its visible text.\n"
+    "6. confidence is your 0.0-1.0 certainty in BOTH the boundary and the "
     "label of the phase.\n"
 )
 
@@ -136,7 +139,8 @@ def decision_phases(
         k_rolls: Rolls of one model; mutually exclusive with a
             multi-model list.
         chunk: Digests per segmentation call.
-        snippet_chars: Per-digest text cap shown to the judge.
+        snippet_chars: Per-digest cap on turn text, reasoning, and
+            each delegation shown to the judge.
         cache: Judge-call caching. The default ``True`` is inspect's
             standard on-disk response cache; ``False`` always hits
             the API.
@@ -211,8 +215,8 @@ def decision_phases(
               the voting regimes: by at least one voting member).
             - "filled": digest turn no judge covered; inherits the
               previous (consensus) label at low confidence.
-            - "attributed": no digest - tool-call-only / failed /
-              sub-agent turns; the judge never saw it, so by
+            - "attributed": no digest - content-free tool-call-only /
+              failed / sub-agent turns; the judge never saw it, so by
               projection it takes the phase whose turn range
               contains it (or the nearest preceding phase, for
               turns in a gap).
@@ -478,7 +482,9 @@ def turn_digests(
 ) -> list[Digest]:
     """Build one digest per reasoning-bearing main-lane turn.
 
-    Digests are a sparse selection over model turns. The main lane
+    Digests are a sparse selection over model turns: a turn is
+    eligible when it carries visible text, reasoning-block content
+    (when the source records it), or a delegation. The main lane
     comes from the transcript's timeline. Sub-agent activity lives
     in child spans and is represented only by delegation lines,
     folded in at the last eligible turn preceding each span_begin.
@@ -486,8 +492,8 @@ def turn_digests(
     Args:
         transcript: The transcript to digest (Scout ``Transcript`` or
             any object with compatible ``events``/``messages``).
-        snippet_chars: Per-digest cap on turn text and on each
-            delegation string.
+        snippet_chars: Per-digest cap on turn text, on reasoning, and
+            on each delegation string.
 
     Returns:
         ``Digest`` records in turn order.
@@ -517,6 +523,7 @@ def turn_digests(
         eligible_turns.append(turn)
         message = event.output.message
         text = (message.text or "").strip() if message else ""
+        reasoning = message_reasoning(message)
         delegations: list[str] = []
         if not subagent_spans:  # span-less sources: delegations ride tool-call args
             for call in calls:
@@ -527,10 +534,11 @@ def turn_digests(
                     task_text = strip_subagent_scaffold(str(task))
                     goal = (f"[{label}] " if label else "") + task_text
                     delegations.append(goal[:snippet_chars])
-        if not text and not delegations:
+        if not text and not reasoning and not delegations:
             continue  # tool-call-only turn: nothing classifiable
         digest = _digest(turn)
         digest.text = text[:snippet_chars]
+        digest.reasoning = reasoning[:snippet_chars]
         digest.tools = [c.function for c in calls]
         digest.delegations.extend(delegations)
         digest.event_id = getattr(event, "uuid", None)

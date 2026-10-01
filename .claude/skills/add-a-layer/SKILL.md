@@ -90,9 +90,10 @@ The pieces, and the rules that make them work:
 
 - **Loader**: the loader is how you choose the unit of judgement,
   not a requirement. `transect.reasoning_turns()` yields one item per
-  main-lane reasoning turn (sub-agent spawn tasks inlined behind a
-  `[DELEGATES]` marker) - the right unit for a second per-turn
-  facet. For another unit shape, write your own `@loader`; whatever
+  main-lane reasoning turn (reasoning blocks inlined behind a
+  `[THINKING]` marker when the source records them, sub-agent spawn
+  tasks behind a `[DELEGATES]` marker) - the right unit for a second
+  per-turn facet. For another unit shape, write your own `@loader`; whatever
   metadata you put on each yielded item (e.g. `{"turn": n}`) rides
   into the frame as columns, and the item id becomes the frame's
   `item` column. No loader is valid too: `@scanner(messages="all")`
