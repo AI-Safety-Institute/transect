@@ -20,7 +20,15 @@ from inspect_ai.agent import handoff, react
 from inspect_ai.dataset import Sample
 from inspect_ai.event import InputEvent
 from inspect_ai.log import EvalLog, read_eval_log, write_eval_log
-from inspect_ai.model import ChatMessageUser, CompactionSummary, ModelOutput, get_model
+from inspect_ai.model import (
+    ChatMessageUser,
+    CompactionSummary,
+    Content,
+    ContentReasoning,
+    ContentText,
+    ModelOutput,
+    get_model,
+)
 from inspect_ai.tool import Tool, tool
 
 MOCK = "mockllm/model"
@@ -134,6 +142,18 @@ def calls(name: str, content: str, **arguments: object) -> ModelOutput:
     )
 
 
+def thinking_calls(
+    name: str, reasoning: str, content: str = "", **arguments: object
+) -> ModelOutput:
+    """A tool call preceded by a reasoning block (visible text optional)."""
+    output = calls(name, content, **arguments)
+    blocks: list[Content] = [ContentReasoning(reasoning=reasoning)]
+    if content:
+        blocks.append(ContentText(text=content))
+    output.message.content = blocks
+    return output
+
+
 def submits(answer: str, content: str) -> ModelOutput:
     return calls("submit", content, answer=answer)
 
@@ -202,15 +222,15 @@ LEAD_SCRIPT = [
         "installing the libraries this task needs.",
         cmd="pip install -q scikit-learn pandas",
     ),
-    calls(
+    thinking_calls(
         "bash",
-        "Starting with a look at the workspace layout. Before touching "
-        "anything, a working hypothesis: sale prices in datasets like "
-        "this are usually right-skewed, so modelling log SalePrice "
-        "should beat modelling raw prices.",
+        "Before touching anything, a working hypothesis: sale prices in "
+        "datasets like this are usually right-skewed, so modelling log "
+        "SalePrice should beat modelling raw prices.",
+        content="Starting with a look at the workspace layout.",
         cmd="ls data/",
     ),
-    calls(
+    thinking_calls(
         "bash",
         "Checking the schema and scale of the data. Published solutions "
         "for this dataset consistently pair a log-price target with "
@@ -281,7 +301,7 @@ def scripted(outputs: list[ModelOutput]):
 # summarization prompt and memory nudge. The summarizer is its own scripted
 # model so the lead's script is not consumed; a second compaction would
 # exhaust it and fail the run.
-COMPACTION_THRESHOLD = 1800
+COMPACTION_THRESHOLD = 1750
 COMPACTION_INSTRUCTIONS = "Keep the fold protocol and every CV RMSLE figure."
 LEAD_SUMMARY = (
     "- Task Overview\nPredict Kaggle house SalePrice; evaluated on RMSE of "

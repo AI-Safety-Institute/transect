@@ -107,7 +107,7 @@ armed (the Sub-agent activity summary line does the same).
   (mean)" when a vote decided, "(verifier)" after an overturn, bare
   for a single judge), the decided label source, and the turn's basis
   (how it got its label): `judged` directly; `filled` (inherits the
-  previous label); `attributed` (tool-only/failed turn); `refusal` /
+  previous label); `attributed` (content-free tool-only/failed turn); `refusal` /
   `no_answer` / `missing_turn` (unjudged). On a turn whose phase the
   verifier re-labelled, agreement reads "n/a (verifier re-label)" -
   the member ballots still show, they just no longer decide.
@@ -118,8 +118,8 @@ armed (the Sub-agent activity summary line does the same).
   coverage, not disagreement. Confirm in the audit's Member coverage
   row (votes produced vs asked, longest missed stretch) before
   reading anything into the labels there. Grey strip runs can also
-  legitimately cross phase boundaries (leading/trailing tool-only
-  turns belong to a phase without being judged).
+  legitimately cross phase boundaries (leading/trailing content-free
+  tool-only turns belong to a phase without being judged).
 - Legend chips count phases/turns per label. Reserved buckets (ops,
   none_of_the_above) chip even at zero - an unused escape hatch is
   information.
@@ -279,8 +279,10 @@ healthy, red with a warning glyph and the issue text when a
 reliability issue fired), tag line (turn range, reasoning turns,
 spend, tool calls, sub-agents, compaction/intervention-during-phase),
 per-member judge ballots with support, turn-group excerpts from the
-transcript (a turn whose text is Inspect's compaction summary is marked
-as the summarizer's call, not the agent's), and a deep link. The class-box flags on: a verifier
+transcript (a turn's recorded reasoning renders as a muted italic
+`[thinking]` line above its text; a turn whose text is Inspect's
+compaction summary is marked as the summarizer's call, not the
+agent's), and a deep link. The class-box flags on: a verifier
 overturn (naming the pre-overturn label), low mean confidence
 (<= 0.6), or the confidently-split case (high confidence, low
 agreement). When any of these surface, bring in the transect-diagnostics

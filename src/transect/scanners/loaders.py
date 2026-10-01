@@ -25,9 +25,10 @@ from transect.scanners.phases_common import digest_line
 def reasoning_turns(batch: int = 1) -> Loader[Transcript]:
     """One item per reasoning-bearing main-lane turn.
 
-    Each item's message is the turn's digest - the turn's own text,
-    its tool names, and each sub-agent spawn task. The item's
-    metadata carries ``{"turn": n}``.
+    Each item's message is the turn's digest - the turn's reasoning
+    (when the source records reasoning blocks), its own text, its
+    tool names, and each sub-agent spawn task. The item's metadata
+    carries ``{"turn": n}``.
 
     Args:
         batch: With ``batch=N``, one item per window of up to N

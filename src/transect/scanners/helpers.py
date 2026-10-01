@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_build
+from inspect_ai.model import ContentReasoning
 from inspect_ai.tool import ToolCall
 from inspect_scout import Transcript
 
@@ -35,6 +36,36 @@ def model_turns(transcript: Transcript) -> Iterator[tuple[Any, list[ToolCall]]]:
             continue
         message = event.output.message
         yield event, (message.tool_calls or []) if message else []
+
+
+def message_reasoning(message: Any) -> str:
+    """Join a message's reasoning-block text, in block order.
+
+    A redacted block falls back to its summary, as does a block whose
+    provider reports only a summary; blocks with neither readable field
+    are skipped. "" for a plain-string message or one without
+    reasoning blocks. (``ContentReasoning.text`` is not used: it wraps
+    the text in replay-oriented ``<think>`` tags and drops a
+    summary-only unredacted block.)
+
+    Args:
+        message: An assistant chat message (or None).
+
+    Returns:
+        The whitespace-flattened reasoning text, or "".
+    """
+    content = getattr(message, "content", None)
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, ContentReasoning):
+            continue
+        text = block.reasoning if not block.redacted else ""
+        text = text.strip() or (block.summary or "").strip()
+        if text:
+            parts.append(" ".join(text.split()))
+    return " ".join(parts)
 
 
 def span_activity(

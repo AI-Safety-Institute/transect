@@ -1302,8 +1302,8 @@ def reliability_audit(
                 "split by how each turn's label was decided: judged (labelled "
                 "directly); filled (a reasoning turn no judge answer covered, "
                 "inheriting the previous label at low confidence); attributed "
-                "(tool-call-only, failed, or sub-agent turns the judge never "
-                "saw, taking the phase whose range contains them); or "
+                "(content-free tool-call-only, failed, or sub-agent turns the "
+                "judge never saw, taking the phase whose range contains them); or "
                 "unjudged (refusal / no_answer / missing_turn).",
             },
             {

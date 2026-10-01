@@ -32,7 +32,12 @@ from typing import Any
 
 from inspect_scout import TranscriptContent, transcripts_from
 
-from transect.scanners.helpers import model_turns, nearest_agent_span, span_task_text
+from transect.scanners.helpers import (
+    message_reasoning,
+    model_turns,
+    nearest_agent_span,
+    span_task_text,
+)
 
 TEXT_CHARS = 400
 """Per-turn excerpt cap. The full text lives in the Scout viewer."""
@@ -65,10 +70,14 @@ class Excerpt:
             the tail beyond `_TOOLS_SHOWN` is counted, not dropped.
         text: The turn's own text, whitespace-flattened and capped at
             `TEXT_CHARS`.
-        truncated: Whether `text` was cut - the card says so.
+        truncated: Whether `text` or `reasoning` was cut - the card
+            says so.
         note: A marker the card shows beside the lane, or ``None``;
             `mark_compaction_turns` sets it on turns whose "output" is
             Inspect's summarizer speaking, not the agent.
+        reasoning: The turn's reasoning-block text when the source
+            records it, same flattening and cap as `text`; the card
+            renders it as a muted [thinking] line above the text.
     """
 
     turn: int
@@ -77,6 +86,7 @@ class Excerpt:
     text: str
     truncated: bool
     note: str | None = None
+    reasoning: str = ""
 
 
 COMPACTION_NOTE = "compaction summary call (the summarizer, not the agent)"
@@ -216,9 +226,9 @@ def card_excerpts(
         always, so a caller zips it against its own groups without a
         length branch; a range with nothing to show gets ``([], 0)``.
         ``n_more`` counts the range's *excerpt-bearing* turns that did
-        not fit - turns with no text of their own were never
-        candidates and are not counted (the card's tag line already
-        reports the phase's turn counts).
+        not fit - turns with no text or reasoning of their own were
+        never candidates and are not counted (the card's tag line
+        already reports the phase's turn counts).
     """
     if not ranges:
         return []
@@ -277,9 +287,10 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
 
 
 def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, Excerpt]:
-    """Excerpt every model turn of one transcript that carries text.
+    """Excerpt every model turn of one transcript that carries text
+    or reasoning-block content.
 
-    Turns with no text of their own (tool-call-only turns) get no
+    Turns with neither (content-free tool-call-only turns) get no
     excerpt but still consume their turn number, since the axis is
     `helpers.model_turns`' own enumeration - the module docstring has
     why that sharing is load-bearing.
@@ -296,7 +307,7 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
         text_chars: Per-turn character cap.
 
     Returns:
-        ``{turn: Excerpt}`` for the turns carrying text.
+        ``{turn: Excerpt}`` for the turns carrying text or reasoning.
     """
     spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
     found: dict[int, Excerpt] = {}
@@ -304,7 +315,8 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
         message = event.output.message
         raw = (getattr(message, "text", None) or "") if message else ""
         text = " ".join(raw.split())
-        if not text:
+        reasoning = message_reasoning(message)
+        if not text and not reasoning:
             continue
         span = nearest_agent_span(spans, getattr(event, "span_id", None))
         found[turn] = Excerpt(
@@ -312,7 +324,8 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
             lane=span.name if span is not None else _ORCHESTRATOR,
             tools=_tools_label(calls),
             text=text[:text_chars],
-            truncated=len(text) > text_chars,
+            truncated=len(text) > text_chars or len(reasoning) > text_chars,
+            reasoning=reasoning[:text_chars],
         )
     return found
 

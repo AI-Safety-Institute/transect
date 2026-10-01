@@ -6,6 +6,7 @@ from helpers import (
     MODEL,
     PHASES_SPEC,
     REFUSED,
+    StubTranscript,
     group,
     model_turn,
     narrate_answer,
@@ -16,10 +17,10 @@ from helpers import (
     seg_answer,
     verify_answer,
 )
-from inspect_ai.model import get_model
+from inspect_ai.model import ContentReasoning, ContentText, get_model
 
-from transect.scanners.phases import decision_phases, system_prompt
-from transect.scanners.phases_common import StitchedPhase
+from transect.scanners.phases import decision_phases, system_prompt, turn_digests
+from transect.scanners.phases_common import StitchedPhase, digest_line
 from transect.scanners.phases_verify import select_for_verify
 from transect.spec import Spec
 
@@ -79,6 +80,67 @@ def test_every_turn_gets_a_row_with_its_basis():
     bases = {t["turn"]: t["basis"] for t in value["turns"]}
     assert bases[0] == "judged"
     assert len(bases) == 2
+
+
+def test_reasoning_blocks_enter_the_digest_and_its_prompt_line():
+    """Recorded reasoning rides the digest behind a [THINKING] marker,
+    and a thinking-only turn is digest-eligible in its own right."""
+    events = [
+        model_turn(
+            [
+                ContentReasoning(reasoning="I should inspect the data first"),
+                ContentText(text="Loading the csv."),
+            ]
+        ),
+        model_turn([ContentReasoning(reasoning="try a different split")]),
+        model_turn("plain text turn"),
+    ]
+    first, thinking_only, plain = turn_digests(StubTranscript(events))
+    assert digest_line(first) == (
+        "0: [THINKING] I should inspect the data first Loading the csv."
+    )
+    assert (thinking_only.turn, thinking_only.text) == (1, "")
+    assert thinking_only.reasoning == "try a different split"
+    assert (plain.reasoning, plain.text) == ("", "plain text turn")
+    assert digest_line(plain) == "2: plain text turn"
+
+
+@pytest.mark.parametrize(
+    ("block", "expected"),
+    [
+        (ContentReasoning(reasoning="visible chain"), "visible chain"),
+        (
+            ContentReasoning(reasoning="payload", redacted=True, summary="the gist"),
+            "the gist",
+        ),
+        (ContentReasoning(reasoning="", summary="summary only"), "summary only"),
+        (ContentReasoning(reasoning="  \n ", summary="padded"), "padded"),
+        (ContentReasoning(reasoning="payload", redacted=True), None),
+    ],
+)
+def test_unreadable_reasoning_blocks_fall_back_or_drop_the_turn(block, expected):
+    """Redacted or summary-only blocks fall back to readable text; a
+    turn with no readable content yields no digest."""
+    digests = turn_digests(StubTranscript([model_turn([block])]))
+    if expected is None:
+        assert digests == []
+    else:
+        assert [d.reasoning for d in digests] == [expected]
+
+
+def test_a_thinking_only_turn_is_judged_not_attributed():
+    """A turn carrying only reasoning blocks reaches the judge, so its
+    row is judged rather than projection-attributed."""
+    events = [
+        model_turn("set up the environment"),
+        model_turn([ContentReasoning(reasoning="now pick hyperparameters")]),
+        model_turn("running the sweep"),
+    ]
+    judge = scripted_judge(seg_answer(seg(0, 2, "experiment", 0.9)))
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=False, narrate=False), events
+    ).value
+    assert [t["basis"] for t in value["turns"]] == ["judged"] * 3
 
 
 def test_narrator_headlines_and_turn_groups_land_on_the_phase():
