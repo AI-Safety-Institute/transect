@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 from helpers import (
     PHASES_SPEC,
+    StubTranscript,
     group,
     model_turn,
     narrate_answer,
@@ -13,11 +14,17 @@ from helpers import (
     seg,
     seg_answer,
 )
+from inspect_ai.model import ContentReasoning, ContentText
 
 from transect.frames import phase_turn_votes_df, phases_df
 from transect.frames.turn_groups import turn_groups_df
 from transect.report import sections
-from transect.report.excerpts import COMPACTION_NOTE, Excerpt, mark_compaction_turns
+from transect.report.excerpts import (
+    COMPACTION_NOTE,
+    Excerpt,
+    _turn_excerpts,
+    mark_compaction_turns,
+)
 from transect.scanners.phases import decision_phases
 from transect.scanners.phases_common import StitchedPhase, TurnGroup
 from transect.scanners.phases_narrate import validate_turn_groups
@@ -78,6 +85,51 @@ def test_valid_out_of_order_partition_only_reorders_groups():
     first = TurnGroup(turn_start=0, turn_end=3, title="Read", gist="Read config.")
     second = TurnGroup(turn_start=4, turn_end=9, title="Plan", gist="Planned a test.")
     assert validate_turn_groups([second, first], phase(), "Setup") == [first, second]
+
+
+def test_reasoning_turns_are_excerpted_and_rendered_as_thinking_lines():
+    """A reasoning-bearing turn gets an excerpt even with no visible
+    text, and the card renders the reasoning as its own muted line."""
+    events = [
+        model_turn(
+            [
+                ContentReasoning(reasoning="weigh the options"),
+                ContentText(text="Going with option B."),
+            ]
+        ),
+        model_turn([ContentReasoning(reasoning="silent deliberation")]),
+        model_turn(""),
+    ]
+    excerpts = _turn_excerpts(StubTranscript(events))
+    assert sorted(excerpts) == [0, 1]
+    assert (excerpts[0].reasoning, excerpts[0].text) == (
+        "weigh the options",
+        "Going with option B.",
+    )
+    assert (excerpts[1].reasoning, excerpts[1].text) == ("silent deliberation", "")
+    judge = scripted_judge(
+        seg_answer(seg(0, 1, "setup", 0.9)),
+        narrate_answer(narrative(0, groups=[group(0, 1)])),
+    )
+    raw = run_scan(decision_phases(PHASES_SPEC, judge, verify=False), events[:2])
+    frame = pd.DataFrame([{"value": raw.value, "transcript_id": "synthetic"}])
+    html = str(
+        sections.phase_cards(
+            phases_df(frame),
+            turn_groups_df(frame),
+            phase_turn_votes_df(pd.DataFrame()),
+            pd.DataFrame(),
+            [],
+            [],
+            {},
+            None,
+            "cards",
+            "phase",
+            excerpts=excerpts,
+        )
+    )
+    assert html.count("[thinking]") == 2
+    assert "silent deliberation" in html
 
 
 def test_neutral_fallback_reaches_the_report_without_unsupported_group_prose():

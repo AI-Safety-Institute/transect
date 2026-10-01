@@ -234,6 +234,8 @@ body.classified {{ padding-top: 30px; padding-bottom: 30px; }}
                    border-left: 2px solid var(--transect-color-border-subtle);
                    padding-left: 8px; margin: 5px 0; font-size: 0.9rem; }}
 .excerpt-list li > .meta:first-child {{ display: block; }}
+.excerpt-list .excerpt-thinking {{ display: block; font-style: italic;
+                                  color: var(--transect-color-muted); }}
 """
 
 # `.definitions`/`.event-list` scope the muted small font away from
