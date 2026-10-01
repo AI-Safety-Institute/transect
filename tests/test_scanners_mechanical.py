@@ -149,7 +149,8 @@ def test_no_compaction_events_means_no_flushes():
 )
 def test_human_messages_become_interventions_by_source(source, channel):
     """Operator steering and post-task console input register with
-    their channel and the count of assistant turns before them."""
+    their channel and the model turn they precede (assistant messages are
+    counted when no event stream records them)."""
     messages = [
         ChatMessageUser(content="the task", source="input"),
         ChatMessageAssistant(content="working"),
@@ -162,23 +163,136 @@ def test_human_messages_become_interventions_by_source(source, channel):
     assert intervention["turn"] == 1
 
 
-def test_operator_messages_sit_on_the_event_turn_axis():
-    """A model turn absent from the history (a summarization call) still
-    counts on the shared axis, so an operator message after it precedes
-    the turn the timeline says it does, not one earlier."""
-    turns = [model_turn(text) for text in ("working", "recap", "blend", "final")]
-    working, _recap, blend, final = turns
-    messages = [
-        ChatMessageUser(content="the task", source="input"),
-        working.output.message,
-        # recap is the summarizer: a model turn with no message in the history
-        blend.output.message,
-        ChatMessageUser(content="steer", source="operator"),
-        final.output.message,
+def _summary(text="stripped recap"):
+    return ChatMessageUser(content=f"[SUMMARY]\n{text}", metadata={"summary": True})
+
+
+def _flush(type="summary"):
+    return CompactionEvent(type=type, source="inspect")
+
+
+def _intervention_shape(name):
+    """(events, history, expected turn) for one placement shape. Each model
+    turn's ``input`` is what that call saw, as Inspect records it; a shape
+    that omits inputs exercises the footprint fallback instead."""
+    task = ChatMessageUser(content="the task", source="input")
+    note = ChatMessageUser(content="steer", source="operator")
+    summary = _summary()
+    a0 = model_turn("working", input=[task])
+    if name == "before_summary":
+        # the note was drained before the compaction: the summarizer saw it
+        recap = model_turn("recap", input=[task, a0.output.message, note])
+        blend = model_turn("blend", input=[task, summary])
+        return (
+            [a0, recap, _flush(), blend],
+            [task, a0.output.message, note, summary, blend.output.message],
+            1,
+        )
+    if name in ("after_summary", "after_summary_unrecorded"):
+        recap = model_turn("recap", input=[task, a0.output.message])
+        seen = [task, summary, note] if name == "after_summary" else []
+        blend = model_turn("blend", input=seen)
+        return (
+            [a0, recap, _flush(), blend],
+            [task, a0.output.message, summary, note, blend.output.message],
+            2,
+        )
+    if name == "after_blend":
+        recap = model_turn("recap", input=[task, a0.output.message])
+        blend = model_turn("blend", input=[task, summary])
+        final = model_turn("final", input=[task, summary, blend.output.message, note])
+        return (
+            [a0, recap, _flush(), blend, final],
+            [
+                task,
+                a0.output.message,
+                summary,
+                blend.output.message,
+                note,
+                final.output.message,
+            ],
+            3,
+        )
+    if name in ("trim_then_summary", "native_then_summary"):
+        # an earlier flush of another kind (or a native one) must not stand
+        # in for the summarizer; no inputs, so the fallback decides
+        earlier = _flush("trim" if name == "trim_then_summary" else "summary")
+        recap = model_turn("recap")
+        blend = model_turn("blend")
+        return (
+            [a0, earlier, recap, _flush(), blend],
+            [task, a0.output.message, summary, note, blend.output.message],
+            2,
+        )
+    if name == "two_pass_summary":
+        # a summary that overshoots is summarized again: two summarizer
+        # turns, one flush, one message
+        first, second = model_turn("too long"), model_turn("recap")
+        blend = model_turn("blend", input=[task, summary])
+        return (
+            [a0, first, second, _flush(), blend],
+            [task, a0.output.message, summary, note, blend.output.message],
+            3,
+        )
+    if name == "replayed_output":
+        # a cached generate replays an earlier output id at a later turn
+        recap = model_turn("recap")
+        replay = model_turn("replayed", input=[task, summary])
+        replay.output = a0.output
+        return (
+            [a0, recap, _flush(), replay],
+            [task, a0.output.message, summary, note, replay.output.message],
+            2,
+        )
+    if name == "as_tool_lane_flush":
+        # an as_tool sub-agent compacts inside the lead's tool call: its
+        # turns are on the axis, its messages never enter the lead's history
+        sub1, subsum, sub2 = (
+            model_turn("sub"),
+            model_turn("sub recap"),
+            model_turn("sub"),
+        )
+        leadsum = model_turn("recap")
+        a2 = model_turn("blend", input=[task, summary, note])
+        events = [a0, sub1, subsum, _flush(), sub2, leadsum, _flush(), a2]
+        return events, [task, a0.output.message, summary, note, a2.output.message], 5
+    if name == "forced_after_threshold":
+        # overflow recovery replaces the history with the new summary, so
+        # the earlier flush and its summary are gone from the history
+        sum1 = model_turn("recap one")
+        first_summary = _summary("recap one")
+        a2 = model_turn("more", input=[task, first_summary])
+        sum2 = model_turn("recap two")
+        a4 = model_turn("final", input=[task, summary, note])
+        events = [a0, sum1, _flush(), a2, sum2, _flush(), a4]
+        return events, [task, summary, note, a4.output.message], 4
+    raise ValueError(name)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "before_summary",
+        "after_summary",
+        "after_summary_unrecorded",
+        "after_blend",
+        "trim_then_summary",
+        "native_then_summary",
+        "two_pass_summary",
+        "replayed_output",
+        "as_tool_lane_flush",
+        "forced_after_threshold",
+    ],
+)
+def test_operator_messages_sit_on_the_event_turn_axis(shape):
+    """A human message precedes the first model turn whose input saw it;
+    a summarization call (a turn with no assistant message in the history)
+    never shifts that, whatever other compactions the run recorded."""
+    events, history, turn = _intervention_shape(shape)
+    (intervention,) = run_scan(human_intervention(), events, messages=history).value[
+        "interventions"
     ]
-    value = run_scan(human_intervention(), turns, messages=messages)
-    (intervention,) = value.value["interventions"]
-    assert intervention["turn"] == 3
+    assert intervention["turn"] == turn
 
 
 def test_the_first_input_message_is_the_task_not_an_intervention():
