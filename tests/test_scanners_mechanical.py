@@ -18,45 +18,73 @@ def usage(input_tokens=100, output_tokens=10):
     )
 
 
-def test_token_timeline_emits_one_entry_per_model_turn_with_usage():
-    """Every model turn lands as one timeline entry carrying the
-    provider-reported usage fields verbatim; None where unreported."""
+def test_token_timeline_numbers_orchestrator_turns_and_lane_turns():
+    """Main-lane turns take 0,1; a sub-agent's turns take no turn but
+    count within their own lane; usage and timestamps ride along."""
     events = [
-        model_turn("a", usage=usage(100, 10)),
-        model_turn("b"),
-        model_turn("c", usage=usage(300, 30)),
+        *agent_span(
+            "R",
+            "react",
+            inner=[
+                model_turn("lead", usage=usage(100, 10)),
+                *agent_span(
+                    "C",
+                    "eda",
+                    inner=[model_turn("s0"), model_turn("s1")],
+                    parent_id="R",
+                ),
+                model_turn("lead again", usage=usage(300, 30)),
+            ],
+        ),
     ]
     value = run_scan(token_timeline(), events).value
-    timeline = value["timeline"]
-    assert [entry["turn"] for entry in timeline] == [0, 1, 2]
-    assert timeline[0]["input_tokens"] == 100
-    assert timeline[1]["input_tokens"] is None
-    assert timeline[2]["output_tokens"] == 30
+    rows = [(e["turn"], e["lane_turn"], e["agent_lane"]) for e in value["timeline"]]
+    assert rows == [(0, 0, None), (None, 0, "eda"), (None, 1, "eda"), (1, 1, None)]
+    assert value["timeline"][0]["input_tokens"] == 100
+    assert value["timeline"][1]["input_tokens"] is None
+    assert value["timeline"][3]["output_tokens"] == 30
+    assert all(isinstance(e["timestamp"], str) for e in value["timeline"])
 
 
-def test_token_timeline_attributes_turns_to_their_sub_agent_lane():
-    """A sub-agent's own model turns carry its span; main-lane turns
-    carry no lane, even when the lead agent has an agent span (handoff
-    .eval shape)."""
+def test_span_record_anchors_spawn_and_end_by_orchestrator_turn():
+    """Each sub-agent span records the orchestrator turn before its begin
+    and before its end, its activity timestamps, and a recorded end."""
     events = [
         *agent_span(
             "R",
             "react",
             inner=[
                 model_turn("lead"),
-                *agent_span("C", "eda", inner=[model_turn("sub")], parent_id="R"),
-                model_turn("lead again"),
+                *agent_span(
+                    "C",
+                    "eda",
+                    inner=[model_turn("sub"), tool_event("t", span_id="C")],
+                    parent_id="R",
+                ),
+                model_turn("wrap"),
             ],
         ),
     ]
-    value = run_scan(token_timeline(), events).value
-    lanes = [entry["agent_lane"] for entry in value["timeline"]]
-    assert lanes == [None, "eda", None]
+    (span,) = run_scan(token_timeline(), events).value["spans"]
+    assert (span["agent_span_id"], span["agent_lane"]) == ("C", "eda")
+    assert (span["spawn_turn"], span["event_order_end_turn"]) == (0, 0)
+    assert span["end_recorded"] is True
+    assert span["first_at"] <= span["last_at"] <= span["end_at"]
 
 
-def test_lane_activity_counts_tool_events_per_sub_agent_turn():
-    """Tool-only sub-agents (no model turns of their own) surface in
-    lane_activity, anchored to the initiating model turn."""
+def test_a_span_begun_before_any_orchestrator_turn_anchors_at_zero():
+    """A sub-agent spawned before the first main turn still gets a turn."""
+    events = [
+        *agent_span("C", "eda", inner=[model_turn("sub")]),
+        model_turn("lead"),
+    ]
+    (span,) = run_scan(token_timeline(), events).value["spans"]
+    assert span["spawn_turn"] == 0
+
+
+def test_lane_activity_counts_tool_events_per_orchestrator_turn():
+    """Tool-only sub-agents surface in lane_activity, anchored to the
+    orchestrator turn that preceded the tool event."""
     events = [
         model_turn("orchestrator"),
         *agent_span("A", "worker", inner=[tool_event("t1", span_id="A")]),
@@ -92,24 +120,6 @@ def test_lane_activity_excludes_the_main_lane_and_folded_spawn_calls():
     assert [(r["agent_lane"], r["tool_calls"]) for r in value["lane_activity"]] == [
         ("eda", 1)
     ]
-
-
-def test_span_ends_record_sub_agent_completions_only():
-    """span_ends anchors each sub-agent span's close to a turn; the main
-    lane's own span end is not a completion marker."""
-    events = [
-        *agent_span(
-            "R",
-            "react",
-            inner=[
-                model_turn("lead"),
-                *agent_span("C", "eda", inner=[model_turn("sub")], parent_id="R"),
-                model_turn("wrap"),
-            ],
-        ),
-    ]
-    value = run_scan(token_timeline(), events).value
-    assert [(e["agent_span_id"], e["turn"]) for e in value["span_ends"]] == [("C", 1)]
 
 
 def test_context_flush_records_compaction_events_at_their_turn():
