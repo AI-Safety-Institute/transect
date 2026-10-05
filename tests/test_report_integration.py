@@ -364,7 +364,7 @@ def test_tag_chips_and_selectors_ride_the_phase_cards(tmp_path):
     chips, and the control bar gains one filter selector per family."""
 
     scans = Path(__file__).parent / "fixtures" / "demo_scan"
-    per_turn = pd.DataFrame({"turn": [0, 1, 12], "quality": ["good", "good", "poor"]})
+    per_turn = pd.DataFrame({"turn": [0, 1, 7], "quality": ["good", "good", "poor"]})
     results = render(
         load(
             str(scans),
@@ -375,8 +375,8 @@ def test_tag_chips_and_selectors_ride_the_phase_cards(tmp_path):
         open_report=False,
     )
     html = Path(results.report_paths[0]).read_text()
-    # the store's two phases span turns 0-7 and 10-15: good lands only
-    # on the first card, poor only on the second
+    # the store's two phases span orchestrator turns 0-4 and 5-9: good
+    # lands only on the first card, poor only on the second
     assert html.count('data-tags="|quality=good|"') == 1
     assert html.count('data-tags="|quality=poor|"') == 1
     assert html.count("user-chip") >= 2
