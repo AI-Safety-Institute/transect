@@ -200,7 +200,6 @@ def test_an_unresolvable_orchestrator_lane_surfaces_as_a_scan_error(
     """A transcript with no single orchestrator lane errors per scanner,
     is named in the scan status section, and never renders a guessed
     axis."""
-    import transect.scanners.base as base
     import transect.scanners.helpers as helpers
 
     def ambiguous(transcript):
@@ -210,7 +209,6 @@ def test_an_unresolvable_orchestrator_lane_surfaces_as_a_scan_error(
         )
 
     monkeypatch.setattr(helpers, "main_span", ambiguous)
-    monkeypatch.setattr(base, "main_span", ambiguous)
     result = transect.transect(
         str(demo_log),
         transect.Spec(),
