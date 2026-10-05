@@ -7,7 +7,6 @@ from typing import Any
 from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_build
 from inspect_ai.model import ContentReasoning
 from inspect_ai.tool import ToolCall
-from inspect_scout import Transcript
 
 # OPENCLAW-SPECIFIC spawn-prompt scaffold markers.
 _OPENCLAW_SPAWN_CONTEXT_PREFIX = "[subagent context]"
@@ -154,20 +153,18 @@ def message_reasoning(message: Any) -> str:
     return " ".join(parts)
 
 
-def span_activity(
-    transcript: Transcript, span_id: str, spans: dict[str, Any]
-) -> SpanActivity:
+def span_activity(lanes: "Lanes", span_id: str) -> SpanActivity:
     """Collect one sub-agent span's recorded activity.
 
-    Model turns and tool events are attributed via
-    ``nearest_agent_span`` (nested tool spans roll up); the folded
-    spawn call is the orchestrator's, and is excluded.
+    Model turns and tool events are attributed via `Lanes.sub_agent_of`
+    (nested tool spans roll up); the folded spawn call is the
+    orchestrator's, and is excluded.
     """
     activity = SpanActivity()
-    for event in transcript.events:
+    for event in lanes.events:
         if isinstance(event, ModelEvent) and event.output:
-            agent = nearest_agent_span(spans, getattr(event, "span_id", None))
-            if agent is not None and agent.id == span_id:
+            sub = lanes.sub_agent_of(event)
+            if sub is not None and sub.id == span_id:
                 message = event.output.message
                 text = getattr(message, "text", None) if message else None
                 if isinstance(text, str) and text.strip():
@@ -175,8 +172,8 @@ def span_activity(
         elif getattr(event, "event", None) == "tool":
             if getattr(event, "agent_span_id", None) is not None:
                 continue  # folded spawn call
-            agent = nearest_agent_span(spans, getattr(event, "span_id", None))
-            if agent is not None and agent.id == span_id:
+            sub = lanes.sub_agent_of(event)
+            if sub is not None and sub.id == span_id:
                 name = str(getattr(event, "function", None) or "tool")
                 activity.tool_counts[name] = activity.tool_counts.get(name, 0) + 1
     return activity

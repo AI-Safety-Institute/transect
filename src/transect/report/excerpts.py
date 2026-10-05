@@ -35,6 +35,7 @@ from typing import Any
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.scanners.helpers import (
+    Lanes,
     message_reasoning,
     orchestrator_turns,
     span_task_text,
@@ -252,15 +253,15 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
     from each.
 
     ``events`` is the only content asked for: model events for the turns
-    and their text, span_begin events for the lane names and each
-    sub-agent span's spawn-task metadata. Reading messages as well would
+    and their text, span events for the lane tree and each sub-agent
+    span's spawn-task metadata. Reading messages as well would
     double the read for nothing - the turn axis is an event axis.
 
     Each transcript's read is guarded on its own, so the result holds
     every transcript that could be read and omits only those that could
     not (each named on stderr).
     """
-    content = TranscriptContent(events=["model", "span_begin"])
+    content = TranscriptContent(events=["model", "span_begin", "span_end"])
     found: dict[str, TranscriptExtras] = {}
     async with transcripts_from(location).reader() as reader:
         infos = [info async for info in reader.index() if info.transcript_id in wanted]
@@ -344,29 +345,25 @@ def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
     is, so this expandable can never show a different task text than the
     one the sub-agent was classified against.
 
-    Only `span_task_text`'s first-tier source (the span-begin metadata's
-    own ``task``/``prompt`` field) is read here. Its second-tier fallback
-    needs the span's first model event threaded in, which would mean
-    reproducing `helpers.subagent_span_begins`' main-lane detection - a
-    materially bigger apparatus built for a different job. A span with no
-    ``task``/``prompt`` on its metadata is simply absent from the result,
-    the same honest absence a model turn with no text gets.
+    The spans and each one's first model event (the handoff-input
+    fallback `span_task_text` reads when the span's metadata carries no
+    task) come from `helpers.Lanes`, the same resolution the loader
+    uses. A span with no task text from either source is simply absent
+    from the result, the same honest absence a model turn with no text
+    gets.
 
     Args:
         transcript: The transcript to read (anything with ``events``).
 
     Returns:
-        ``{agent_span_id: SpawnPrompt}`` for the spans whose own
-        metadata records a task/prompt.
+        ``{agent_span_id: SpawnPrompt}`` for the spans with task text.
     """
+    lanes = Lanes.of(transcript)
     found: dict[str, SpawnPrompt] = {}
-    for event in transcript.events:
-        if event.event != "span_begin":
-            continue
-        text, _source = span_task_text(event, None)
-        if not text:
-            continue
-        found[event.id] = SpawnPrompt(text=text, truncated=False)
+    for begin in lanes.begins:
+        text, _source = span_task_text(begin, lanes.first_models.get(begin.id))
+        if text:
+            found[begin.id] = SpawnPrompt(text=text, truncated=False)
     return found
 
 
