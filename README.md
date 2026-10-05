@@ -342,6 +342,7 @@ erDiagram
     flushes["flushes (one row per context compaction)"] {
         int turn FK
         string agent_span_id "sub-agent lane; NA on the orchestrator"
+        int lane_turn "first post-flush turn of the compacted lane"
         string type
         int tokens_before
         int tokens_after

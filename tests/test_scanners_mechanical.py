@@ -186,6 +186,7 @@ def test_context_flush_records_compaction_events_at_their_turn():
     assert flush == {
         "turn": 2,
         "agent_span_id": None,
+        "lane_turn": 2,
         "type": "summary",
         "source": "inspect",
         "tokens_before": 900,
@@ -198,8 +199,9 @@ def test_context_flush_records_compaction_events_at_their_turn():
 
 
 def test_a_sub_agent_compaction_is_kept_with_its_lane():
-    """A compaction inside a sub-agent span is a flush row on the
-    orchestrator axis that names its lane; the orchestrator's has none."""
+    """A compaction inside a sub-agent span is a flush row that names its
+    lane and the lane turn it precedes; the orchestrator's names no lane
+    and its lane turn is its axis turn."""
     events = [
         model_turn("lead"),
         *agent_span(
@@ -223,10 +225,8 @@ def test_a_sub_agent_compaction_is_kept_with_its_lane():
         model_turn("lead 2"),
     ]
     value = run_scan(context_flush(), events).value
-    assert [(f["turn"], f["agent_span_id"]) for f in value["flushes"]] == [
-        (1, "C"),
-        (1, None),
-    ]
+    rows = [(f["turn"], f["agent_span_id"], f["lane_turn"]) for f in value["flushes"]]
+    assert rows == [(1, "C", 1), (1, None, 1)]
 
 
 def test_no_compaction_events_means_no_flushes():

@@ -216,6 +216,7 @@ def test_flushes_frame_carries_the_demo_compaction(demo_results):
             {
                 "turn": 7,
                 "agent_span_id": pd.NA,
+                "lane_turn": 7,
                 "type": "summary",
                 "source": "inspect",
                 "tokens_before": 1906,
@@ -487,6 +488,7 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
         {
             "transcript_id": ["tr1"] * 10,
             "turn": range(10),
+            "lane_turn": range(10),
             "context": [1000, 950, 300, 280, 900, 400, 950, 900, 350, 300],
             "agent_span_id": [None] * 10,
             "agent_lane": [None] * 10,
@@ -497,6 +499,8 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
             "flushes": [
                 {
                     "turn": 8,
+                    "agent_span_id": None,
+                    "lane_turn": 8,
                     "type": "context",
                     "source": "inspect",
                     "tokens_before": 900,
@@ -521,21 +525,69 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
     # turn 8's drop is the recorded flush itself: suppressed
 
 
-def test_sub_agent_lanes_never_synthesize_flushes():
-    """A context reset inside a sub-agent lane is that lane's own
-    business; the orchestrator axis synthesises nothing from it."""
+def test_sub_agent_lanes_synthesize_their_own_drops():
+    """A context reset inside a sub-agent lane is detected on that lane's
+    own series and lands tagged with the lane, the lane turn it precedes,
+    and the orchestrator turn the axis was on at the time."""
     timeline = pd.DataFrame(
         {
             "transcript_id": ["tr1"] * 5,
             "turn": [0, 1, None, None, 2],
+            "lane_turn": [0, 1, 0, 1, 2],
             "context": [1000, 1100, 900, 100, 1200],
             "agent_span_id": [None, None, "A", "A", None],
             "agent_lane": [None, None, "a", "a", None],
         }
-    ).astype({"turn": "Int64"})
+    ).astype({"turn": "Int64", "lane_turn": "Int64"})
     frame = flushes_df(pd.DataFrame(), timeline)
-    assert len(frame) == 0
-    assert "agent_span_id" in frame.columns
+    (drop,) = frame.itertuples()
+    assert (drop.agent_span_id, drop.turn, drop.lane_turn) == ("A", 2, 1)
+    assert (drop.source, drop.tokens_before, drop.tokens_after) == (
+        "synthesized",
+        900,
+        100,
+    )
+
+
+def test_a_sub_agent_flush_infers_tokens_after_from_its_own_lane():
+    """A recorded sub-agent compaction without tokens_after reads the
+    next window of its own lane, and suppresses the drop it explains."""
+    timeline = pd.DataFrame(
+        {
+            "transcript_id": ["tr1"] * 3,
+            "turn": [0, None, None],
+            "lane_turn": [0, 0, 1],
+            "context": [1000, 800, 150],
+            "agent_span_id": [None, "A", "A"],
+            "agent_lane": [None, "a", "a"],
+        }
+    ).astype({"turn": "Int64", "lane_turn": "Int64"})
+    recorded = SimpleNamespace(
+        value={
+            "flushes": [
+                {
+                    "turn": 1,
+                    "agent_span_id": "A",
+                    "lane_turn": 1,
+                    "type": "summary",
+                    "source": "inspect",
+                    "tokens_before": 800,
+                    "tokens_after": 0,
+                    "role": None,
+                    "metadata": None,
+                    "compaction_prompt": None,
+                    "compaction_nudge": None,
+                }
+            ]
+        },
+        label=None,
+        answer=None,
+        explanation=None,
+    )
+    frame = flushes_df(pd.DataFrame([raw_row(recorded)]), timeline)
+    (flush,) = frame.itertuples()
+    assert (flush.tokens_after, flush.tokens_after_inferred) == (150, True)
+    assert flush.source == "inspect"
 
 
 def test_a_recorded_flush_without_tokens_after_infers_it():
@@ -546,6 +598,7 @@ def test_a_recorded_flush_without_tokens_after_infers_it():
         {
             "transcript_id": ["tr1"] * 5,
             "turn": range(5),
+            "lane_turn": range(5),
             "context": [1000, 900, 850, 200, 190],
             "agent_span_id": [None] * 5,
             "agent_lane": [None] * 5,
@@ -556,6 +609,8 @@ def test_a_recorded_flush_without_tokens_after_infers_it():
             "flushes": [
                 {
                     "turn": 3,
+                    "agent_span_id": None,
+                    "lane_turn": 3,
                     "type": "context",
                     "source": "inspect",
                     "tokens_before": 850,

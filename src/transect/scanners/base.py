@@ -197,9 +197,11 @@ def context_flush() -> Scanner[Transcript]:
     """Context-window compactions (flushes), from explicit compaction events.
 
     value = {"flushes": [entry, ...]} with one entry per compaction:
-    turn (count of orchestrator turns preceding the flush, i.e. the
-    first post-flush orchestrator turn), agent_span_id (the sub-agent
-    lane the compaction happened in; None on the orchestrator), type,
+    turn (count of main-lane turns preceding the flush, i.e. the first
+    post-flush main-lane turn), agent_span_id (the sub-agent lane the
+    compaction happened in; None on the orchestrator), lane_turn (the
+    first post-flush turn of the compacted lane itself: equal to turn on
+    the orchestrator, the sub-agent's own lane ordinal otherwise), type,
     source, tokens_before, tokens_after, role, metadata - recorded as
     the event reports them (optional facts remain None). Inspect eval logs also
     carry compaction_prompt (the summarization call's formatted prompt)
@@ -215,7 +217,13 @@ def context_flush() -> Scanner[Transcript]:
         spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
         main = main_span(transcript)
         main_events = main_model_event_ids(main)
+        lane_counts: dict[str, int] = {}
         for turn, event in _orchestrator_count_before(transcript, main_events):
+            if event.event == "model" and event.output:
+                lane = _sub_agent_span(spans, getattr(event, "span_id", None), main.id)
+                if lane is not None:
+                    lane_counts[lane.id] = lane_counts.get(lane.id, 0) + 1
+                continue
             if event.event != "compaction":
                 continue
             lane = _sub_agent_span(spans, getattr(event, "span_id", None), main.id)
@@ -223,6 +231,7 @@ def context_flush() -> Scanner[Transcript]:
                 {
                     "turn": turn,
                     "agent_span_id": lane.id if lane is not None else None,
+                    "lane_turn": lane_counts.get(lane.id, 0) if lane else turn,
                     "type": event.type,
                     "source": event.source,
                     "tokens_before": event.tokens_before,
