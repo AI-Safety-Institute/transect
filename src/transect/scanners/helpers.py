@@ -27,15 +27,45 @@ class SpanActivity:
     tool_counts: dict[str, int] = field(default_factory=dict)
 
 
-def model_turns(transcript: Transcript) -> Iterator[tuple[Any, list[ToolCall]]]:
-    """Yield (model event, its tool calls) per model turn, in event order.
-
-    Shared across scanners: enumerate() over this is the turn axis."""
+def all_model_turns(transcript: Any) -> Iterator[tuple[Any, list[ToolCall]]]:
+    """Yield (model event, its tool calls) for every model turn in every
+    lane, in event order. Internal: it carries no numbering, because the
+    turn axis is `orchestrator_turns`."""
     for event in transcript.events:
         if event.event != "model" or not event.output:
             continue
         message = event.output.message
         yield event, (message.tool_calls or []) if message else []
+
+
+def orchestrator_turns(transcript: Any) -> Iterator[tuple[int, Any, list[ToolCall]]]:
+    """Yield ``(turn, model event, tool calls)`` for the orchestrator's turns.
+
+    The orchestrator is the main lane (`main_span`); ``turn`` is the
+    0-based ordinal of its model events with output, in event order.
+    This enumeration is the turn axis: every scanner, frame and chart
+    numbers by it, and a custom scanner must too.
+
+    Args:
+        transcript: A Scout ``Transcript`` or any object with
+            compatible ``events`` and ``timelines``.
+    """
+    main_ids = main_model_event_ids(main_span(transcript))
+    turn = 0
+    for event, calls in all_model_turns(transcript):
+        if id(event) not in main_ids:
+            continue
+        yield turn, event, calls
+        turn += 1
+
+
+def main_model_event_ids(main: TimelineSpan) -> set[int]:
+    """``id()`` of each model event that is the main span's own."""
+    return {
+        id(item.event)
+        for item in main.content
+        if isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
+    }
 
 
 def message_reasoning(message: Any) -> str:
@@ -179,50 +209,35 @@ def span_task_text(span: Any, model_event: Any) -> tuple[str, str]:
     return "", "span_name_only"
 
 
-def main_lane_id(transcript: Any) -> str | None:
-    """The main lane's span id, or None when it cannot be resolved.
-
-    Args:
-        transcript: The transcript whose main lane is resolved.
-
-    Returns:
-        The main span's id, or None.
-    """
-    try:
-        return main_span(transcript).id
-    except Exception:
-        return None
-
-
 def main_span(transcript: Any) -> TimelineSpan:
-    """Resolve the main lane's timeline span.
+    """Resolve the orchestrator's timeline span.
 
+    The span Scout's ``timeline_messages(..., depth=1)`` would scan: the
+    outermost non-utility span holding a direct model event, container
+    spans (the synthetic root, a solvers wrapper) being transparent.
     Uses the transcript's stored timeline when present, else builds one
-    in place - Scout 0.4.45 only auto-builds timelines on the .eval
-    path, so importer/database sources arrive with ``timelines`` empty.
-
-    ``timeline_build`` gives an agent-centric tree: OpenClaw root-lane
-    orchestrators become a synthetic "main" root holding their events;
-    .eval logs get init/solvers/scorers partitioning with the solver
-    agent as root. When the root holds no model events of its own and
-    has exactly one non-utility agent child (a solo agent wrapped in a
-    bare span, no phase spans), that child is the main lane.
+    in place - importer/database sources arrive with ``timelines`` empty.
 
     Args:
         transcript: The transcript whose timeline is resolved.
 
     Returns:
         The ``TimelineSpan`` whose direct content is the main lane.
+
+    Raises:
+        ValueError: When no span holds a model turn, or when a container
+            holds two or more agents that do - there is then no single
+            orchestrator lane to number, and guessing one would put the
+            whole report on the wrong axis.
     """
     timelines = getattr(transcript, "timelines", None)
     timeline = timelines[0] if timelines else timeline_build(transcript.events)
     span = timeline.root
     while True:
-        has_models = any(
+        if any(
             isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
             for item in span.content
-        )
-        if has_models:
+        ):
             return span
         children = [
             item
@@ -230,10 +245,32 @@ def main_span(transcript: Any) -> TimelineSpan:
             if isinstance(item, TimelineSpan)
             and item.span_type == "agent"
             and not item.utility
+            and _holds_model_events(item)
         ]
-        if len(children) != 1:
-            return span
-        span = children[0]
+        if len(children) == 1:
+            span = children[0]
+            continue
+        if not children:
+            raise ValueError(
+                f"transcript has no model turns under its main span {span.name!r}; "
+                "there is no orchestrator lane to number"
+            )
+        names = ", ".join(repr(child.name) for child in children)
+        raise ValueError(
+            f"transcript has {len(children)} top-level agents ({names}) and no "
+            "single orchestrator lane; transect numbers one orchestrator's turns"
+        )
+
+
+def _holds_model_events(span: TimelineSpan) -> bool:
+    """Whether a model event with output lives anywhere in the subtree."""
+    for item in span.content:
+        if isinstance(item, TimelineEvent):
+            if isinstance(item.event, ModelEvent) and item.event.output:
+                return True
+        elif _holds_model_events(item):
+            return True
+    return False
 
 
 def subagent_span_begins(

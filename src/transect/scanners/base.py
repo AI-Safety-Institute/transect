@@ -9,7 +9,7 @@ from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
 from transect.scanners.compaction import compaction_texts
-from transect.scanners.helpers import main_lane_id, model_turns, nearest_agent_span
+from transect.scanners.helpers import all_model_turns, main_span, nearest_agent_span
 
 # inspect-ai ModelUsage attribute names, used verbatim as dataframe columns
 _USAGE_FIELDS = (
@@ -35,12 +35,12 @@ def token_timeline() -> Scanner[Transcript]:
 
     async def execute(transcript: Transcript) -> Result:
         spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
-        main_id = main_lane_id(transcript)
+        main_id = main_span(transcript).id
         lane_activity = _lane_activity(transcript, spans, main_id)
         span_ends = _span_ends(transcript, spans, main_id)
 
         timeline: list[dict[str, Any]] = []
-        for turn, (event, calls) in enumerate(model_turns(transcript)):
+        for turn, (event, calls) in enumerate(all_model_turns(transcript)):
             usage = event.output.usage
             entry: dict[str, Any] = {"turn": turn, "n_tool_calls": len(calls)}
             for field in _USAGE_FIELDS:
@@ -229,7 +229,7 @@ def human_intervention() -> Scanner[Transcript]:
         # falls back to the history's footprints of model turns.
         first_seen: dict[str, int] = {}
         turn_of_output: dict[str, int] = {}
-        for turn, (event, _calls) in enumerate(model_turns(transcript)):
+        for turn, (event, _calls) in enumerate(all_model_turns(transcript)):
             for seen in event.input:
                 combined = (getattr(seen, "metadata", None) or {}).get("combined_from")
                 for seen_id in (seen.id, *(combined or [])):

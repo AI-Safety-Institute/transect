@@ -33,8 +33,8 @@ from typing import Any
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.scanners.helpers import (
+    all_model_turns,
     message_reasoning,
-    model_turns,
     nearest_agent_span,
     span_task_text,
 )
@@ -311,7 +311,7 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
     """
     spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
     found: dict[int, Excerpt] = {}
-    for turn, (event, calls) in enumerate(model_turns(transcript)):
+    for turn, (event, calls) in enumerate(all_model_turns(transcript)):
         message = event.output.message
         raw = (getattr(message, "text", None) or "") if message else ""
         text = " ".join(raw.split())
@@ -385,7 +385,7 @@ def _tool_call_counts(transcript: Any) -> dict[int, int]:
     """
     return {
         turn: len(calls)
-        for turn, (_event, calls) in enumerate(model_turns(transcript))
+        for turn, (_event, calls) in enumerate(all_model_turns(transcript))
         if calls
     }
 

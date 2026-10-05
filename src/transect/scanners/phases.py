@@ -17,9 +17,9 @@ from transect.scanners.cohort import (
     roll_cache,
 )
 from transect.scanners.helpers import (
+    all_model_turns,
     main_span,
     message_reasoning,
-    model_turns,
     span_task_text,
     strip_subagent_scaffold,
     subagent_span_begins,
@@ -332,7 +332,7 @@ def decision_phases(
         member_keys = [member.key for member in members_spec]
         n_members = len(members_spec)
         digests = turn_digests(transcript, snippet_chars=snippet_chars)
-        n_turns = sum(1 for _ in model_turns(transcript))
+        n_turns = sum(1 for _ in all_model_turns(transcript))
         task_prompt = agent_task_prompt(transcript)
         system = system_prompt(spec, task_prompt=task_prompt)
         digest_judgements: list[ConsensusJudgement] = []
@@ -514,7 +514,7 @@ def turn_digests(
         return by_turn[turn]
 
     eligible_turns: list[int] = []  # main-lane, non-failed (anchor targets)
-    for turn, (ev, calls) in enumerate(model_turns(transcript)):
+    for turn, (ev, calls) in enumerate(all_model_turns(transcript)):
         event: Any = ev
         if id(event) not in main_models:
             continue  # sub-agent/init/scorer turn: not the main lane
