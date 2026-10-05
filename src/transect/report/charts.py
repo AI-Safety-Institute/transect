@@ -1491,7 +1491,6 @@ def swimlanes(
     n_turns: int,
     colors: dict[str, str],
     titles: list[dict[str, str]],
-    span_ends_recorded: bool,
     tip_fields: tuple[str, ...],
 ) -> tuple[Component, int]:
     """Sub-agent activity swimlanes: one mark per placed span, packed
@@ -1540,7 +1539,7 @@ def swimlanes(
     both - the "one mark draws, another answers" idiom of
     `_event_hit_rect`, generalized. Hit-rects may overlap between
     adjacent rows (only the visible ticks must not) - opacity 0 either
-    way. ``span_ends_recorded`` now gates only the completion markers.
+    way. ``end_markers`` arrive already filtered to recorded ends.
 
     Y axis carries no ticks (``y_axis=False``, not ``None`` - module
     docstring): row_y values are arbitrary sub-lane placements with no

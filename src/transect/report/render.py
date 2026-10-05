@@ -535,7 +535,6 @@ def _subagent_section(
         n_turns,
         colors,
         titles=row_titles,
-        span_ends_recorded=has_end_markers,
         tip_fields=tip_fields,
     )
     flags = sections.subagent_reliability_flags(subagents, subagent_votes)
