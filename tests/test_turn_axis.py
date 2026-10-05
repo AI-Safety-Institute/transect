@@ -171,13 +171,14 @@ def test_span_turns_follow_timestamps_when_present():
     """The anchor and end turns are the cells holding the span's first
     activity and its end."""
     cells = spine.cells([at(0), at(100), at(150)], last_completed=at(170))
-    span = {
-        "spawn_turn": 0,
-        "started_at": at(20).isoformat(),
-        "ended_at": at(110).isoformat(),
-        "event_order_end_turn": 1,
-    }
-    assert spine.span_turns(span, cells) == {
+    turns = spine.span_turns(
+        cells,
+        spawn_turn=0,
+        started_at=at(20).isoformat(),
+        ended_at=at(110).isoformat(),
+        event_order_end_turn=1,
+    )
+    assert turns == {
         "anchor_turn": 0,
         "end_turn": 1,
         "turn_source": "timestamp",
@@ -187,13 +188,10 @@ def test_span_turns_follow_timestamps_when_present():
 def test_span_turns_fall_back_to_event_order_without_timestamps():
     """Missing timestamps put the span at its spawn turn."""
     cells = spine.cells([at(0), at(100)], last_completed=None)
-    span = {
-        "spawn_turn": 1,
-        "started_at": None,
-        "ended_at": None,
-        "event_order_end_turn": None,
-    }
-    assert spine.span_turns(span, cells) == {
+    turns = spine.span_turns(
+        cells, spawn_turn=1, started_at=None, ended_at=None, event_order_end_turn=None
+    )
+    assert turns == {
         "anchor_turn": 1,
         "end_turn": 1,
         "turn_source": "event_order",

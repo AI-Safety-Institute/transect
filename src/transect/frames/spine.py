@@ -31,9 +31,9 @@ def clock(starts: list[Any], last_completed: Any) -> Cells:
     to event order.
     """
     stamps = [parse(value) for value in starts]
-    if not stamps or any(t is None for t in stamps):
-        return []
     times = [t for t in stamps if t is not None]
+    if not times or len(times) != len(stamps):
+        return []
     if any(a > b for a, b in pairwise(times)):
         return []
     return cells(times, parse(last_completed))
@@ -87,30 +87,36 @@ def turn_of(t: datetime, cells: Cells) -> int:
     return min(max(int(position(t, cells) + 0.5), 0), len(cells) - 1)
 
 
-def span_turns(record: dict[str, Any], cells: Cells) -> dict[str, Any]:
-    """A span record's ``anchor_turn`` / ``end_turn`` / ``turn_source``
-    (the `frames.subagents` columns).
+def span_turns(
+    cells: Cells,
+    *,
+    spawn_turn: int,
+    started_at: Any,
+    ended_at: Any,
+    event_order_end_turn: Any,
+) -> dict[str, Any]:
+    """A span's ``anchor_turn`` / ``end_turn`` / ``turn_source`` (the
+    `frames.subagents` columns).
 
-    With a usable clock and both activity timestamps, the turns are the
-    cells holding the span's first activity and its end (``ended_at``:
-    the recorded end, else the last activity). Otherwise the span sits
-    at its spawn turn, ending at the event-order end when one was
+    With a usable clock and both ISO timestamps, the turns are the cells
+    holding the span's first activity and its end. Otherwise the span
+    sits at its spawn turn, ending at the event-order end when one was
     recorded, and ``turn_source`` says so.
     """
-    spawn = int(record["spawn_turn"])
-    first_at = parse(record.get("started_at"))
-    ended_at = parse(record.get("ended_at"))
-    if cells and first_at is not None and ended_at is not None:
-        anchor = turn_of(first_at, cells)
+    first = parse(started_at)
+    last = parse(ended_at)
+    if cells and first is not None and last is not None:
+        anchor = turn_of(first, cells)
         return {
             "anchor_turn": anchor,
-            "end_turn": max(turn_of(ended_at, cells), anchor),
+            "end_turn": max(turn_of(last, cells), anchor),
             "turn_source": "timestamp",
         }
-    end_turn = record.get("event_order_end_turn")
     return {
-        "anchor_turn": spawn,
-        "end_turn": int(end_turn) if end_turn is not None else spawn,
+        "anchor_turn": spawn_turn,
+        "end_turn": spawn_turn
+        if event_order_end_turn is None
+        else int(event_order_end_turn),
         "turn_source": "event_order",
     }
 

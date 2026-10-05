@@ -98,24 +98,20 @@ def subagents_df(
     subagent_classification results (NaN when the scanner never ran)."""
     judge = _judge_rows(results)
     spine = _structural_spine(timeline_results, lane_activity, token_timeline)
-    if spine is None:
-        merged = judge
-        for col in _SPINE_FLAGS:
-            merged[col] = False
-        for col in _SPINE_TEXT:
-            merged[col] = pd.Series(pd.NA, index=merged.index, dtype="string")
-        for col, dtype in _SPINE_DTYPES:
-            merged[col] = None
-            merged[col] = merged[col].astype(dtype)
-    else:
-        drop = ["agent_lane", "schema_version"] + [
-            c for c in IDENTITY_COLS if c != "transcript_id"
-        ]
-        merged = spine.merge(
-            judge.drop(columns=[c for c in drop if c in judge.columns]),
-            on=["transcript_id", "agent_span_id"],
-            how="outer",
-        )
+    # the judge rows' own copies of the identity and lane columns give
+    # way to the spine's, which exist for every span the scan saw
+    drop = [c for c in (*IDENTITY_COLS, "agent_lane") if c != "transcript_id"]
+    merged = spine.merge(
+        judge.drop(columns=drop),
+        on=["transcript_id", "agent_span_id"],
+        how="outer",
+    )
+    for col in _SPINE_FLAGS:
+        merged[col] = merged[col].fillna(False).astype(bool)
+    for col in _SPINE_TEXT:
+        merged[col] = merged[col].astype("string")
+    for col, dtype in _SPINE_DTYPES:
+        merged[col] = merged[col].astype(dtype)
     merged["label"] = categorical(merged.label, _vocabulary(results))
     merged["label_source"] = categorical(merged.label_source, LABEL_SOURCES)
     merged["status"] = categorical(merged.status, CALL_STATUSES)
@@ -153,7 +149,7 @@ def subagents_df(
         *VERIFIER_COLS,
         "verifier_model",
     ]
-    merged = merged[[c for c in ordered if c in merged.columns]]
+    merged = merged[ordered]
     merged["verifier_selected"] = merged.verifier_selected.fillna(False).astype(bool)
     merged["overturned"] = merged.overturned.fillna(False).astype(bool)
     return with_schema(
@@ -191,66 +187,62 @@ _SPINE_FLAGS = ("end_recorded",)
 _SPINE_TEXT = ("turn_source", "started_at", "ended_at")
 
 
+# the identity and lane columns every structural part carries, so a span
+# present in one source alone still has them after the join (transcript_id
+# is the join key itself)
+_PART_IDENTITY = {
+    col: (col, "first")
+    for col in (*IDENTITY_COLS, "agent_lane")
+    if col != "transcript_id"
+}
+
+
 def _structural_spine(
     timeline_results: pd.DataFrame | None,
     lane_activity: pd.DataFrame | None,
     token_timeline: pd.DataFrame | None,
-) -> pd.DataFrame | None:
+) -> pd.DataFrame:
     """Per-span structural facts: turns and timestamps from the span
-    record, rollups from the two activity frames."""
+    record, rollups from the two activity frames. Every structural
+    column is present (NA-typed) even when no source supplied it."""
     parts = []
     records = _span_turns(timeline_results)
     if records is not None:
         parts.append(records.set_index(["transcript_id", "agent_span_id"]))
     if lane_activity is not None and len(lane_activity):
-        tools = lane_activity.groupby(
-            ["transcript_id", "agent_span_id"], sort=False
-        ).agg(
-            sample_id=("sample_id", "first"),
-            task_set=("task_set", "first"),
-            epoch=("epoch", "first"),
-            agent=("agent", "first"),
-            agent_lane=("agent_lane", "first"),
-            tool_calls=("tool_calls", "sum"),
-            busy_seconds=("busy_seconds", lambda s: s.sum(min_count=1)),
+        parts.append(
+            lane_activity.groupby(["transcript_id", "agent_span_id"], sort=False).agg(
+                **_PART_IDENTITY,
+                tool_calls=("tool_calls", "sum"),
+                busy_seconds=("busy_seconds", lambda s: s.sum(min_count=1)),
+            )
         )
-        parts.append(tools)
     if token_timeline is not None and len(token_timeline):
         agent_rows = token_timeline[token_timeline.agent_span_id.notna()]
         if len(agent_rows):
-            model = agent_rows.groupby(
-                ["transcript_id", "agent_span_id"], sort=False
-            ).agg(
-                sample_id=("sample_id", "first"),
-                task_set=("task_set", "first"),
-                epoch=("epoch", "first"),
-                agent=("agent", "first"),
-                agent_lane=("agent_lane", "first"),
-                output_tokens=("output_tokens", lambda s: s.sum(min_count=1)),
-                new_work=("new_work", lambda s: s.sum(min_count=1)),
-                billable=("billable", lambda s: s.sum(min_count=1)),
+            parts.append(
+                agent_rows.groupby(["transcript_id", "agent_span_id"], sort=False).agg(
+                    **_PART_IDENTITY,
+                    output_tokens=("output_tokens", lambda s: s.sum(min_count=1)),
+                    new_work=("new_work", lambda s: s.sum(min_count=1)),
+                    billable=("billable", lambda s: s.sum(min_count=1)),
+                )
             )
-            parts.append(model)
     if not parts:
-        return None
+        parts = [
+            pd.DataFrame(
+                columns=["transcript_id", "agent_span_id", *_PART_IDENTITY]
+            ).set_index(["transcript_id", "agent_span_id"])
+        ]
     spine = parts[0]
     for part in parts[1:]:
         spine = spine.join(part, how="outer", rsuffix="_m")
         # coalesce the shared identity/lane columns from either source
-        for col in ("sample_id", "task_set", "epoch", "agent", "agent_lane"):
-            twin = f"{col}_m"
-            if twin in spine.columns:
-                spine[col] = spine[col].combine_first(spine[twin])
-                spine = spine.drop(columns=[twin])
+        for col in _PART_IDENTITY:
+            spine[col] = spine[col].combine_first(spine.pop(f"{col}_m"))
     for col in (*_SPINE_FLAGS, *_SPINE_TEXT, *(c for c, _ in _SPINE_DTYPES)):
         if col not in spine.columns:
             spine[col] = None
-    for col in _SPINE_FLAGS:
-        spine[col] = spine[col].fillna(False).astype(bool)
-    for col in _SPINE_TEXT:
-        spine[col] = spine[col].astype("string")
-    for col, dtype in _SPINE_DTYPES:
-        spine[col] = spine[col].astype(dtype)
     return spine.reset_index()
 
 
@@ -273,24 +265,23 @@ def _span_turns(timeline_results: pd.DataFrame | None) -> pd.DataFrame | None:
         )
         for record in value.get("spans") or []:
             end_recorded = bool(record.get("end_recorded"))
-            span = {
-                "spawn_turn": record["spawn_turn"],
-                "started_at": record.get("first_at"),
-                "ended_at": record.get("end_at")
-                if end_recorded
-                else record.get("last_at"),
-                "end_recorded": end_recorded,
-                "event_order_end_turn": record.get("event_order_end_turn"),
-            }
+            started_at = record.get("first_at")
+            ended_at = record.get("end_at") if end_recorded else record.get("last_at")
             rows.append(
                 {
                     **identity_cols,
                     "agent_span_id": record["agent_span_id"],
                     "agent_lane": record["agent_lane"],
-                    "spawn_turn": span["spawn_turn"],
-                    **spine.span_turns(span, cells),
-                    "started_at": span["started_at"],
-                    "ended_at": span["ended_at"],
+                    "spawn_turn": record["spawn_turn"],
+                    **spine.span_turns(
+                        cells,
+                        spawn_turn=record["spawn_turn"],
+                        started_at=started_at,
+                        ended_at=ended_at,
+                        event_order_end_turn=record.get("event_order_end_turn"),
+                    ),
+                    "started_at": started_at,
+                    "ended_at": ended_at,
                     "end_recorded": end_recorded,
                 }
             )
