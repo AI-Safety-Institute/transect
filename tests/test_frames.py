@@ -576,3 +576,52 @@ def test_a_recorded_flush_without_tokens_after_infers_it():
     assert (int(row.tokens_after), bool(row.tokens_after_inferred)) == (200, True)
     # and the same drop is not also synthesized (suppressed as nearby)
     assert (frame.source == "synthesized").sum() == 0
+
+
+def test_phase_rollups_split_orchestrator_and_delegated_spend(raw_phases):
+    """Orchestrator spend sums the phase's own turns; delegated spend
+    sums the spans spawned inside the phase; the count follows spawns."""
+    phase_turns = pd.DataFrame(
+        {"transcript_id": ["tr1"] * 4, "turn": [0, 1, 2, 3], "phase_index": [0] * 4}
+    )
+    timeline = pd.DataFrame(
+        {
+            "transcript_id": ["tr1"] * 6,
+            "turn": [0, 1, None, None, 2, 3],
+            "new_work": [10, 20, 500, 600, 30, 40],
+        }
+    ).astype({"turn": "Int64"})
+    subagents = pd.DataFrame(
+        {
+            "transcript_id": ["tr1", "tr1", "tr1"],
+            "agent_span_id": ["A", "B", "C"],
+            "spawn_turn": [1, 3, 9],
+            "new_work": [1100.0, None, 5.0],
+        }
+    )
+    phases = phases_df(
+        raw_phases,
+        phase_turns=phase_turns,
+        token_timeline=timeline,
+        subagents=subagents,
+    )
+    (phase,) = phases.itertuples()
+    assert phase.new_work_tokens == 100
+    assert phase.delegated_new_work_tokens == 1100
+    assert phase.n_subagents == 2
+
+
+def test_phase_delegated_spend_is_absent_not_zero_without_usage(raw_phases):
+    """Tool-only lanes spawned in a phase count, but contribute NA spend."""
+    subagents = pd.DataFrame(
+        {
+            "transcript_id": ["tr1"],
+            "agent_span_id": ["A"],
+            "spawn_turn": [1],
+            "new_work": [None],
+        }
+    ).astype({"new_work": "Float64"})
+    phases = phases_df(raw_phases, subagents=subagents)
+    (phase,) = phases.itertuples()
+    assert pd.isna(phase.delegated_new_work_tokens)
+    assert phase.n_subagents == 1

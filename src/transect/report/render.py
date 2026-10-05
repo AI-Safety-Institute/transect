@@ -196,7 +196,6 @@ def render_report(
                         )
                         if my_extras
                         else None,
-                        lanes=tool_lanes,
                         tool_counts=tool_counts,
                         turn_tags=my_tags,
                         tag_layer_of=tag_layer_of,

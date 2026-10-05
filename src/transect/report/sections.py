@@ -1040,7 +1040,6 @@ def phase_cards(
     container_id: str,
     card_id_prefix: str,
     excerpts: dict[int, Excerpt] | None = None,
-    lanes: pd.DataFrame | None = None,
     tool_counts: dict[int, int] | None = None,
     turn_tags: pd.DataFrame | None = None,
     tag_layer_of: dict[str, str] | None = None,
@@ -1048,9 +1047,9 @@ def phase_cards(
     """Phase cards: one expandable card per phase, chronological (the
     drill-down under the Phase timeline band).
 
-    The spend tag is per-turn new_work summed over the phase's range
-    across all model-turn lanes; the label says "new-work tokens" and
-    must not claim orchestrator-only spend. Each card's ``data-*``
+    The spend tag is the phase's orchestrator new-work
+    (``phases.new_work_tokens``), and the label says so; delegated spend
+    has its own frame column and chart. Each card's ``data-*``
     attributes (documented in `templates/phase_cards.html.j2`) are
     read by `phase_card_controls`' sort/filter JS and reuse the values
     the visible tag line computes, so the two cannot disagree.
@@ -1065,26 +1064,19 @@ def phase_cards(
     sorted_phases = phases.sort_values("phase_index").reset_index(drop=True)
     after_flush_flags = _card_event_flags(sorted_phases, flush_turns)
     after_intervention_flags = _card_event_flags(sorted_phases, intervention_turns)
-    # one spawn turn per span (its first lane_activity row) - the cards'
-    # sub-agent count + filter
-    spawn_turns = (
-        lanes.groupby("agent_span_id").turn.min().tolist()
-        if lanes is not None and len(lanes)
-        else []
-    )
     cards = []
     for pos, (_, p) in enumerate(sorted_phases.iterrows()):
         color, _hatch = colors.get(p.phase, (_UNJUDGED_GREY, None))
-        # the frames' dense-attributed rollup - the same number the
-        # band and the spend chart report (declared-range sums drop
-        # tool-only turns outside the judged ranges)
+        # the frames' dense-attributed orchestrator rollup - the same
+        # number the band and the spend chart report (declared-range sums
+        # drop tool-only turns outside the judged ranges)
         spend = p.new_work_tokens if pd.notna(p.new_work_tokens) else 0
         tags = [
             f"turns {int(p.turn_start)}–{int(p.turn_end)}",
             # n_turns counts the phase's reasoning-bearing (digest) turns,
             # which can be fewer than the range width (tool-only turns)
             f"{int(p.n_turns)} reasoning turn(s)",
-            f"{int(spend):,} new-work tokens",
+            f"{int(spend):,} orchestrator new-work tokens",
         ]
         n_tools = (
             sum(
@@ -1096,9 +1088,10 @@ def phase_cards(
         )
         if n_tools is not None:
             tags.append(f"{n_tools} tool call(s)")
-        n_subagents = sum(1 for t in spawn_turns if p.turn_start <= t <= p.turn_end)
+        # spans whose spawn turn lies in the phase (frames.phases)
+        n_subagents = int(p.n_subagents) if pd.notna(p.n_subagents) else 0
         if n_subagents:
-            tags.append(f"{n_subagents} sub-agent(s)")
+            tags.append(f"{n_subagents} sub-agent(s) spawned")
         if any(p.turn_start <= t <= p.turn_end for t in flush_turns or []):
             tags.append("compaction during phase")
         if any(p.turn_start <= t <= p.turn_end for t in intervention_turns or []):

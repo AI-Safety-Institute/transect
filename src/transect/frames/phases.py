@@ -60,12 +60,16 @@ Columns (identity prefix explained in common.py):
   confidences.
 - confidence_source: who the confidence describes - single_judge /
   majority_vote / verifier.
-- new_work_tokens: per-phase spend - token_timeline ``new_work``
-  summed over the turns assigned to the phase.
+- new_work_tokens: orchestrator new-work summed over the orchestrator
+  turns the dense map assigns to the phase (tool-only turns included).
+- delegated_new_work_tokens: new-work of the sub-agent spans spawned
+  inside the phase (``subagents.spawn_turn`` in the phase's range); NA
+  when no such span carries usage (tool-only lanes), never 0.
+- n_subagents: sub-agent spans spawned inside the phase.
 - schema_version: the frames contract version.
 """
 
-from typing import get_args
+from typing import Any, get_args
 
 import pandas as pd
 
@@ -101,12 +105,14 @@ def phases_df(
     results: pd.DataFrame,
     phase_turns: pd.DataFrame | None = None,
     token_timeline: pd.DataFrame | None = None,
+    subagents: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """decision_phases results -> one row per stitched phase.
 
     ``phase_index`` is the phase's position within its transcript.
     ``phase_turns`` + ``token_timeline`` (both optional) feed the
-    ``new_work_tokens`` rollup; without them the column is NaN."""
+    ``new_work_tokens`` rollup, ``subagents`` the delegated rollup and
+    the spawn count; without them those columns are NaN."""
     rows = []
     vocabulary: list[str] = []
     for _, r in results.iterrows():
@@ -196,6 +202,9 @@ def phases_df(
     )
     df["verifier_status"] = categorical(df.verifier_status, CALL_STATUSES)
     df["new_work_tokens"] = _new_work_rollup(df, phase_turns, token_timeline)
+    delegated, n_subagents = _delegated_rollup(df, subagents)
+    df["delegated_new_work_tokens"] = delegated
+    df["n_subagents"] = n_subagents
     return with_schema(df)
 
 
@@ -204,9 +213,10 @@ def _new_work_rollup(
     phase_turns: pd.DataFrame | None,
     token_timeline: pd.DataFrame | None,
 ) -> pd.Series:
-    """Dense-attributed per-phase spend: token_timeline ``new_work``
-    summed over the turns the dense map assigns to each phase (all
-    lanes; tool-only turns included). NaN without the inputs."""
+    """Dense-attributed per-phase orchestrator spend: token_timeline
+    ``new_work`` summed over the orchestrator turns the dense map
+    assigns to each phase (tool-only turns included; sub-agent rows
+    carry no turn and never join). NaN without the inputs."""
     if (
         phase_turns is None
         or token_timeline is None
@@ -214,7 +224,8 @@ def _new_work_rollup(
         or "new_work" not in token_timeline.columns
     ):
         return pd.Series(pd.NA, index=phases.index, dtype="Float64")
-    per_turn = token_timeline.groupby(
+    orchestrator = token_timeline[token_timeline.turn.notna()]
+    per_turn = orchestrator.groupby(
         ["transcript_id", "turn"], as_index=False
     ).new_work.sum()
     rollup = (
@@ -228,3 +239,31 @@ def _new_work_rollup(
         rollup, on=["transcript_id", "phase_index"], how="left"
     )
     return out.new_work.set_axis(phases.index).astype("Float64")
+
+
+def _delegated_rollup(
+    phases: pd.DataFrame, subagents: pd.DataFrame | None
+) -> tuple[pd.Series, pd.Series]:
+    """Per-phase delegated spend and spawn count: the sub-agent spans
+    whose ``spawn_turn`` lies in the phase's range. Spend is NA when no
+    member span carries usage (tool-only lanes), never 0; both are NA
+    without the input."""
+    if subagents is None or not len(subagents):
+        return (
+            pd.Series(pd.NA, index=phases.index, dtype="Float64"),
+            pd.Series(pd.NA, index=phases.index, dtype="Int64"),
+        )
+    spend: list[Any] = []
+    counts: list[int] = []
+    for p in phases.itertuples():
+        members = subagents[
+            (subagents.transcript_id == p.transcript_id)
+            & (subagents.spawn_turn >= p.turn_start)
+            & (subagents.spawn_turn <= p.turn_end)
+        ]
+        counts.append(len(members))
+        spend.append(members.new_work.sum(min_count=1) if len(members) else pd.NA)
+    return (
+        pd.Series(spend, index=phases.index, dtype="Float64"),
+        pd.Series(counts, index=phases.index, dtype="Int64"),
+    )
