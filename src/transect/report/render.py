@@ -455,8 +455,6 @@ def _subagent_section(
         else dict.fromkeys(by_label, _UNJUDGED_GREY)
     )
 
-    has_end_markers = bool(subagents.end_recorded.any())
-    has_boxes = any(span.boxed for span in lanes)
     # the packing footprint matches what is drawn: a tick's fixed
     # footprint when any span is a tick, else the box floor, so two
     # sliver-floored boxes never render overlapping
@@ -575,8 +573,6 @@ def _subagent_section(
                 label_of,
                 subagents,
                 classification_ran,
-                has_boxes,
-                has_end_markers,
             ),
             sections.reliability_warnings(flags),
             _chart([component], chart_height),

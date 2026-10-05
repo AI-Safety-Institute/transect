@@ -634,16 +634,14 @@ def subagent_notes(
     label_of: dict,
     subagents: pd.DataFrame,
     classification_ran: bool,
-    has_boxes: bool,
-    has_end_markers: bool,
 ) -> Markup:
     """The Sub-agent activity section's prose, rendered above its chart
     (the label legend renders below it - `subagent_legend`).
 
     ``lanes`` / ``label_of`` are the same span-grouping the orchestrator
-    built for the chart; ``has_boxes`` says whether any span draws as a
-    wall-clock box (the how-to-read line), ``has_end_markers`` whether
-    any span's recorded end draws the completion glyph.
+    built for the chart. The how-to-read line renders when any span
+    draws as a wall-clock box, its completion-glyph clause when any
+    span's end was recorded.
     """
     # three states, honestly distinguished: no classification at all
     # (grey note, and NO label vocabulary anywhere; classification joined
@@ -687,7 +685,11 @@ def subagent_notes(
         }
 
     return _subagent_tpl.subagent_notes(
-        state, summary, has_boxes, has_end_markers, _END_MARKER_GLYPH
+        state,
+        summary,
+        any(span.boxed for span in lanes),
+        bool(subagents.end_recorded.any()),
+        _END_MARKER_GLYPH,
     )
 
 
