@@ -92,9 +92,9 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
             metadata = f["metadata"] or {}
             # indexed, not .get: a store scanned before these fields existed
             # must fail loudly here (it needs a re-scan, not a fallback)
-            details = {name: f[name] for name in _RECORDED_COLUMNS}
+            details = {name: f[name] for name in ("lane_turn", *_RECORDED_COLUMNS)}
             details.update({name: metadata.get(name) for name in _METADATA_COLUMNS})
-            f = {**f, "lane_turn": f["lane_turn"], "tokens_after_inferred": False}
+            f = {**f, "tokens_after_inferred": False}
             lane = lanes.get(_lane_key(f.get("agent_span_id")))
             if (
                 not f.get("tokens_after")
@@ -120,8 +120,10 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
             identity_row = lane.iloc[0]
             identity_cols = {ours: identity_row.get(ours) for ours in IDENTITY_COLS}
             nearby = recorded.get((transcript_id, lane_key), set())
+            span_id = None if lane_key == "__main__" else lane_key
             rows.extend(
-                {**identity_cols, **drop} for drop in _synthesized_drops(lane, nearby)
+                {**identity_cols, "agent_span_id": span_id, **drop}
+                for drop in _synthesized_drops(lane, nearby)
             )
     columns = [
         *IDENTITY_COLS,
@@ -180,12 +182,9 @@ def _lane_frames(group: pd.DataFrame) -> dict[str, pd.DataFrame]:
 def _synthesized_drops(lane: pd.DataFrame, nearby: set[int]):
     """The 0.6x sustained-drop scan over one lane's context series,
     ``nearby`` being the lane turns of that lane's recorded flushes."""
-    ctx = lane[["axis_turn", "lane_turn", "agent_span_id", "context"]].dropna(
-        subset=["lane_turn", "context"]
-    )
+    ctx = lane[["axis_turn", "lane_turn", "context"]].dropna()
     axis_turns = ctx.axis_turn.tolist()
     lane_turns = ctx.lane_turn.tolist()
-    span_ids = ctx.agent_span_id.tolist()
     values = ctx.context.tolist()
     for i in range(1, len(values)):
         prev, cur = values[i - 1], values[i]
@@ -197,10 +196,8 @@ def _synthesized_drops(lane: pd.DataFrame, nearby: set[int]):
         lane_turn = int(lane_turns[i])
         if any(abs(lane_turn - r) <= 1 for r in nearby):
             continue
-        span_id = span_ids[i]
         yield {
             "turn": int(axis_turns[i]),
-            "agent_span_id": None if pd.isna(span_id) else str(span_id),
             "lane_turn": lane_turn,
             "type": "token_drop",
             "source": "synthesized",
