@@ -8,9 +8,11 @@ dataframes nor rendered reports should be treated as text-free exports.
 This module preserves:
 
 - **Same turn axis as everything else.** `_turn_excerpts` iterates
-  `helpers.model_turns`, the one iteration `token_timeline` and the
-  phases scanner both enumerate, so turn *n* here is turn *n* on the
-  charts, in the phase ranges, and in the narrator's turn groups.
+  `helpers.orchestrator_turns`, the one enumeration every scanner
+  numbers by, so turn *n* here is turn *n* on the charts, in the phase
+  ranges, and in the narrator's turn groups. Sub-agent turns are not
+  on that axis and never become excerpt rows: the cards show what the
+  judges read.
 - **Bounded page size.** A real run's groups span more than a thousand
   turns, so the whole store is never inlined: only turns inside a turn
   group, at `TEXT_CHARS` each, under a per-card budget
@@ -33,9 +35,8 @@ from typing import Any
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.scanners.helpers import (
-    all_model_turns,
     message_reasoning,
-    nearest_agent_span,
+    orchestrator_turns,
     span_task_text,
 )
 
@@ -287,13 +288,13 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
 
 
 def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, Excerpt]:
-    """Excerpt every model turn of one transcript that carries text
-    or reasoning-block content.
+    """Excerpt every orchestrator turn of one transcript that carries
+    text or reasoning-block content.
 
     Turns with neither (content-free tool-call-only turns) get no
     excerpt but still consume their turn number, since the axis is
-    `helpers.model_turns`' own enumeration - the module docstring has
-    why that sharing is load-bearing.
+    `helpers.orchestrator_turns`' own enumeration - the module docstring
+    has why that sharing is load-bearing.
 
     Provider-failure placeholder turns (the OpenClaw
     ``[assistant turn failed ...]`` text) are excerpted like any other
@@ -309,19 +310,17 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
     Returns:
         ``{turn: Excerpt}`` for the turns carrying text or reasoning.
     """
-    spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
     found: dict[int, Excerpt] = {}
-    for turn, (event, calls) in enumerate(all_model_turns(transcript)):
+    for turn, event, calls in orchestrator_turns(transcript):
         message = event.output.message
         raw = (getattr(message, "text", None) or "") if message else ""
         text = " ".join(raw.split())
         reasoning = message_reasoning(message)
         if not text and not reasoning:
             continue
-        span = nearest_agent_span(spans, getattr(event, "span_id", None))
         found[turn] = Excerpt(
             turn=turn,
-            lane=span.name if span is not None else _ORCHESTRATOR,
+            lane=_ORCHESTRATOR,
             tools=_tools_label(calls),
             text=text[:text_chars],
             truncated=len(text) > text_chars or len(reasoning) > text_chars,
@@ -372,20 +371,18 @@ def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
 
 
 def _tool_call_counts(transcript: Any) -> dict[int, int]:
-    """Per-turn tool-call counts on the same `helpers.model_turns` axis
-    the excerpts use - every model turn, text-bearing or not (a
-    tool-only turn has calls but no excerpt), so the phase cards can sum
-    a turn range for their tool-call sort and tag.
+    """Per-turn tool-call counts on the same `helpers.orchestrator_turns`
+    axis the excerpts use - every orchestrator turn, text-bearing or not
+    (a tool-only turn has calls but no excerpt), so the phase cards can
+    sum a turn range for their tool-call sort and tag.
 
     Descriptive, not an audited total: it counts the calls the
-    transcript's own model turns record. Sub-agent tool events that
-    ride OUTSIDE model turns (the .eval handoff shape `frames.lane_activity`
-    covers) are not in it - summing both here would double-count the
-    OpenClaw shape, where sub-agent turns are model turns too.
+    orchestrator's own model turns record; a sub-agent's tool calls are
+    its own (`frames.lane_activity`, the subagents frame).
     """
     return {
         turn: len(calls)
-        for turn, (_event, calls) in enumerate(all_model_turns(transcript))
+        for turn, _event, calls in orchestrator_turns(transcript)
         if calls
     }
 

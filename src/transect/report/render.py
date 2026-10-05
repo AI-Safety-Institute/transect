@@ -77,8 +77,14 @@ def render_report(
     transcripts = []
     for idx, transcript_id in enumerate(order):
         one = _mine(timeline, transcript_id)
+        # the orchestrator's rows: the turn axis every chart draws on
+        main = one[one.turn.notna()]
         my_info = _mine(results.transcript_info, transcript_id)
-        my_flushes = _mine(results.flushes, transcript_id).sort_values("turn")
+        all_flushes = _mine(results.flushes, transcript_id).sort_values("turn")
+        # charts, tags and the compaction excerpt marks read the
+        # orchestrator's own compactions; a sub-agent lane's stay in
+        # the frame (frames.flushes)
+        my_flushes = all_flushes[all_flushes.agent_span_id.isna()]
         flush_turns = list(my_flushes.turn)
         my_interventions = _mine(results.interventions, transcript_id).sort_values(
             "turn",
@@ -88,7 +94,6 @@ def render_report(
         my_phases = _mine(results.phases, transcript_id)
         my_turn_votes = _mine(results.phase_turn_votes, transcript_id)
         my_definitions = _mine(results.label_definitions, transcript_id)
-        tool_lanes = _mine(results.lane_activity, transcript_id)
         my_phase_turns = _mine(results.phase_turns, transcript_id)
         my_subagents = _mine(results.subagents, transcript_id)
         my_tags = (
@@ -135,10 +140,10 @@ def render_report(
             # the scan's own per-turn tool counts when emitted, else
             # the render-time store read
             tool_counts: dict[int, int] | None = None
-            if one.n_tool_calls.notna().any():
+            if main.n_tool_calls.notna().any():
                 tool_counts = {
                     int(turn): int(n)
-                    for turn, n in zip(one.turn, one.n_tool_calls, strict=True)
+                    for turn, n in zip(main.turn, main.n_tool_calls, strict=True)
                     if pd.notna(n)
                 }
             elif my_extras:
@@ -177,7 +182,7 @@ def render_report(
                         my_phases,
                         my_groups,
                         my_turn_votes,
-                        one,
+                        main,
                         flush_turns,
                         intervention_turns,
                         phase_colors,
@@ -218,7 +223,7 @@ def render_report(
         # (only when the transcript has any)
         if len(my_interventions):
             intervention_component, intervention_height = charts.interventions_chart(
-                my_interventions, int(one.turn.max()) + 1
+                my_interventions, int(main.turn.max()) + 1
             )
             interventions_section = sections.section(
                 "Human interventions",
@@ -230,15 +235,15 @@ def render_report(
             )
             add(("interventions", interventions_section))
         # 3. token telemetry
-        derived = charts.has_derived_token_views(one)
+        derived = charts.has_derived_token_views(main)
         token_blocks = [
             sections.token_intro(
-                derived, coincide=derived and charts.token_measures_coincide(one)
+                derived, coincide=derived and charts.token_measures_coincide(main)
             )
         ]
         threshold = sections.compaction_threshold(my_info)
         components, stack_height = charts.token_stack(
-            one, my_flushes, threshold.tokens if threshold is not None else None
+            main, my_flushes, threshold.tokens if threshold is not None else None
         )
         token_blocks.append(
             _chart(components, stack_height)
@@ -247,7 +252,7 @@ def render_report(
         )
         drawn_threshold = (
             threshold.tokens
-            if threshold is not None and charts.draws_threshold(one, threshold.tokens)
+            if threshold is not None and charts.draws_threshold(main, threshold.tokens)
             else None
         )
         if flush_turns or drawn_threshold is not None:
@@ -262,10 +267,10 @@ def render_report(
         # 4. sub-agent activity (the votes slice is shared with the
         # audit section below)
         my_subagent_votes = _mine(results.subagent_votes, transcript_id)
-        lanes, render_subagents = _span_lanes(one, tool_lanes)
-        if render_subagents:
+        lanes = _span_lanes(my_subagents)
+        if lanes:
             subagent_section = _subagent_section(
-                one,
+                int(main.turn.max()) + 1 if len(main) else 0,
                 lanes,
                 my_subagents,
                 my_subagent_votes,
@@ -275,11 +280,11 @@ def render_report(
             )
             add(("subagents", subagent_section))
         # 5. token spend by phase / sub-agent label / custom tag family
-        spend_data = sections.spend_data(one, my_phases, phase_colors, my_subagents)
+        spend_data = sections.spend_data(main, my_phases, phase_colors, my_subagents)
         family_groups = [
             (family, layer_name, bars)
             for family, layer_name in tag_layer_of.items()
-            if (bars := sections.tag_spend_bars(one, my_tags, family))
+            if (bars := sections.tag_spend_bars(main, my_tags, family))
         ]
         spend_blocks = []
         if spend_data:
@@ -322,7 +327,7 @@ def render_report(
             ctx = custom.SectionContext(
                 transcript_id=transcript_id,
                 frame=layer_frame,
-                n_turns=int(one.turn.max()) + 1 if len(one) else 0,
+                n_turns=int(main.turn.max()) + 1 if len(main) else 0,
             )
             add(
                 (
@@ -404,7 +409,7 @@ def validate_section_order(
 
 
 def _subagent_section(
-    one: pd.DataFrame,
+    n_turns: int,
     lanes: list[tuple],
     subagents: pd.DataFrame,
     subagent_votes: pd.DataFrame,
@@ -418,11 +423,11 @@ def _subagent_section(
 
     One row-block per classification label; concurrent same-label spans
     pack into sub-lanes (`lanes_layout.pack_lanes`). A box marks a
-    span's turn extent where the source records span ends, a tick only
-    its start turn where it does not. ``lanes`` comes from
-    `_span_lanes`, which also decides whether the section renders.
+    span's wall-clock extent on the orchestrator axis where the source
+    recorded timestamps, a tick only its spawn turn where it did not
+    (`frames.subagents` ``position_source``). ``lanes`` comes from
+    `_span_lanes`; ``n_turns`` is the orchestrator turn count.
     """
-    n_turns = int(one.turn.max()) + 1
     label_of = {
         row.agent_span_id: str(row.label)
         for row in subagents.itertuples()
@@ -441,46 +446,40 @@ def _subagent_section(
         return "unclassified" if classification_ran else "sub-agents"
 
     by_label: dict[str, list] = {}
-    for span_id, lane, has_tokens in lanes:
-        by_label.setdefault(_label(span_id), []).append((span_id, lane, has_tokens))
+    for entry in lanes:
+        by_label.setdefault(_label(entry[0]), []).append(entry)
     colors = (
         _label_colors(sorted(by_label))
         if classification_ran
         else dict.fromkeys(by_label, _UNJUDGED_GREY)
     )
 
-    # one flag, four consumers on purpose (end markers, box-vs-tick,
-    # the how-to-read sentence, the packing mode)
-    has_end_markers = bool(subagents.span_end_recorded.any())
-    # uniform-mode marks share a fixed footprint, so extent-only packing
-    # would let nearby spans render overlapping; proportional mode packs
-    # by true extent and needs no floor
-    min_footprint = 0.0 if has_end_markers else charts.swimlane_min_footprint(n_turns)
+    has_end_markers = bool(subagents.end_recorded.any())
+    has_boxes = any(boxed for _sid, _x0, _x1, _name, boxed in lanes)
+    # tick marks share a fixed footprint, so extent-only packing would
+    # let nearby spans render overlapping; a boxed span packs by its
+    # true extent and needs no floor
+    all_boxed = all(boxed for _sid, _x0, _x1, _name, boxed in lanes)
+    min_footprint = 0.0 if all_boxed else charts.swimlane_min_footprint(n_turns)
     packed = pack_lanes(lanes, _label, min_footprint=min_footprint)
 
-    end_of: dict[str, float] = (
-        {
-            str(sid): float(end)
-            for sid, end, recorded in zip(
-                subagents.agent_span_id,
-                subagents.span_end_turn,
-                subagents.span_end_recorded,
-                strict=True,
-            )
-            if recorded and pd.notna(end)
-        }
-        if has_end_markers
-        else {}
-    )
+    end_of: dict[str, float] = {
+        str(sid): float(end)
+        for sid, end, recorded in zip(
+            subagents.agent_span_id,
+            subagents.end_pos,
+            subagents.end_recorded,
+            strict=True,
+        )
+        if recorded and pd.notna(end)
+    }
     end_markers = [
         (end_of[sid], row_y) for sid, row_y in packed.span_row if sid in end_of
     ]
 
     # pack_lanes appends rows and span_row in the same iteration, so
     # positional pairing is exact
-    span_title_of = sections.span_titles(
-        subagents, label_of, span_ends_recorded=has_end_markers
-    )
+    span_title_of = sections.span_titles(subagents, label_of)
     # one "member votes" tooltip row (voting regimes only), mirroring
     # the agreement strip: every member's own label + confidence (or
     # its reason for producing no vote)
@@ -556,16 +555,19 @@ def _subagent_section(
         if pd.notna(row.span_task)
     }
     spawn_prompts = {**stored, **spawn_prompts}
+    spawn_turn_of = dict(
+        zip(subagents.agent_span_id, subagents.spawn_turn, strict=True)
+    )
     spawn_rows = sorted(
         (
             {
-                "turn": int(lane.turn.min()),
+                "turn": int(spawn_turn_of[span_id]),
                 # case (1): no classifier -> no label segment on the row
                 "label": _label(span_id) if classification_ran else None,
                 "text": spawn_prompts[span_id].text,
                 "truncated": spawn_prompts[span_id].truncated,
             }
-            for span_id, lane, _has_tokens in lanes
+            for span_id, _x0, _x1, _name, _boxed in lanes
             if span_id in spawn_prompts
         ),
         key=lambda row: int(row["turn"] or 0),
@@ -581,6 +583,7 @@ def _subagent_section(
                 label_of,
                 subagents,
                 classification_ran,
+                has_boxes,
                 has_end_markers,
             ),
             sections.reliability_warnings(flags),
@@ -592,30 +595,22 @@ def _subagent_section(
     )
 
 
-def _span_lanes(
-    one: pd.DataFrame, tool_lanes: pd.DataFrame
-) -> tuple[list[tuple], bool]:
-    """This transcript's sub-agent lanes, and whether the Sub-agent
-    activity section renders at all.
-
-    One ``(span_id, lane_frame, has_tokens)`` triple per distinct span:
-    model turns first, then tool-only spans not already present as a
-    model lane. The gate: more than one lane once the orchestrator's
-    own lane (span-less model turns) is counted - inspect wraps even a
-    solo agent in a span, so a single-agent .eval shows no block.
+def _span_lanes(subagents: pd.DataFrame) -> list[tuple]:
+    """This transcript's sub-agent spans as swimlane inputs, one
+    ``(span_id, start_pos, end_pos, lane_name, boxed)`` per span off
+    the subagents frame; empty means the Sub-agent activity section
+    does not render (a solo-agent run has no spans).
     """
-    lanes = [
-        (sid, group, True)
-        for sid, group in one.sort_values("turn").groupby("agent_span_id", sort=False)
+    return [
+        (
+            row.agent_span_id,
+            float(str(row.start_pos)),
+            float(str(row.end_pos)),
+            str(row.agent_lane),
+            str(row.position_source) == "timestamp",
+        )
+        for row in subagents.itertuples()
     ]
-    model_ids = {sid for sid, _, _ in lanes}
-    lanes += [
-        (sid, group, False)
-        for sid, group in tool_lanes.groupby("agent_span_id", sort=False)
-        if sid not in model_ids
-    ]
-    main_lane = 1 if one.agent_span_id.isna().any() else 0
-    return lanes, len(lanes) + main_lane > 1
 
 
 def _transcript_title(one: pd.DataFrame, info: pd.DataFrame) -> str:

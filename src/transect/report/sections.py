@@ -634,20 +634,22 @@ def subagent_notes(
     label_of: dict,
     subagents: pd.DataFrame,
     classification_ran: bool,
+    has_boxes: bool,
     has_end_markers: bool,
 ) -> Markup:
     """The Sub-agent activity section's prose, rendered above its chart
     (the label legend renders below it - `subagent_legend`).
 
     ``lanes`` / ``label_of`` are the same span-grouping the orchestrator
-    built for the chart; ``has_end_markers`` is `charts.swimlanes`'
-    ``span_ends_recorded`` flag and gates the how-to-read line.
+    built for the chart; ``has_boxes`` says whether any span draws as a
+    wall-clock box (the how-to-read line), ``has_end_markers`` whether
+    any span's recorded end draws the completion glyph.
     """
     # three states, honestly distinguished: no classification at all
     # (grey note, and NO label vocabulary anywhere; classification joined
     # (labels, no note); and classification present but zero lanes joined
     # - a silent-failure smell (identity/span-id mismatch).
-    any_joined = any(span_id in label_of for span_id, _, _ in lanes)
+    any_joined = any(entry[0] in label_of for entry in lanes)
     if not classification_ran:
         state = "not_run"
     elif not any_joined:
@@ -685,7 +687,7 @@ def subagent_notes(
         }
 
     return _subagent_tpl.subagent_notes(
-        state, summary, has_end_markers, _END_MARKER_GLYPH
+        state, summary, has_boxes, has_end_markers, _END_MARKER_GLYPH
     )
 
 
@@ -708,26 +710,32 @@ def subagent_legend(
     return _notes.phase_chips(None, chips)
 
 
-def span_titles(
-    subagents: pd.DataFrame,
-    label_of: dict,
-    span_ends_recorded: bool,
-) -> dict:
+def span_titles(subagents: pd.DataFrame, label_of: dict) -> dict:
     """One hover-tooltip cell set per span for the swimlanes chart:
     ``{span_id: {field: cell}}`` keyed by `charts.SPAN_TIP_FIELDS`.
-    "no data" marks a value the source never recorded."""
+    "no data" marks a value the source never recorded. The ``turns``
+    cell says what the box means: the orchestrator turns active while
+    the span ran (wall-clock), or only its spawn turn when the source
+    recorded no usable timestamps; a span that outlived the last
+    orchestrator turn says so."""
 
     def fmt(value) -> str:
         return "no data" if value is None or pd.isna(value) else f"{int(value):,}"
 
     titles = {}
     for row in subagents.itertuples():
-        turns = f"{int(str(row.span_start_turn))}–{int(str(row.span_last_turn))}"
+        if str(row.position_source) == "timestamp":
+            turns = (
+                f"{int(str(row.anchor_turn))}–{int(str(row.end_turn))} "
+                "(orchestrator turns active while it ran)"
+            )
+            if bool(row.after_last):
+                turns += ", continued after the last orchestrator turn"
+        else:
+            turns = f"{int(str(row.spawn_turn))} (spawn turn; no timestamps)"
         titles[row.agent_span_id] = {
             "lane": truncate_lane_name(str(row.agent_lane)),
-            "turns": (
-                f"{turns} (observed activity extent)" if span_ends_recorded else turns
-            ),
+            "turns": turns,
             # "classification", not "label" - a tooltip channel named
             # `label` blanks the chart (charts.SPAN_TIP_FIELDS)
             "classification": _resolved_label(label_of, row.agent_span_id),

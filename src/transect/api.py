@@ -645,10 +645,12 @@ def _epoch_view(results: TransectResults, epoch: int) -> TransectResults:
 
 
 def _n_turns(token_timeline: pd.DataFrame) -> dict[str, int]:
-    """Per-transcript turn counts off the timeline's turn indices."""
-    if not len(token_timeline):
+    """Per-transcript orchestrator turn counts off the timeline's turn
+    indices (sub-agent rows carry no turn and do not count)."""
+    main = token_timeline.dropna(subset=["turn"])
+    if not len(main):
         return {}
-    counts = token_timeline.groupby("transcript_id").turn.max().add(1)
+    counts = main.groupby("transcript_id").turn.max().add(1)
     return {str(tid): int(n) for tid, n in counts.items()}
 
 

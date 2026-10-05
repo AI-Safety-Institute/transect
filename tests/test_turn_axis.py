@@ -251,3 +251,25 @@ def test_dense_turns_cover_orchestrator_turns_only():
     ).value
     assert [t["turn"] for t in value["turns"]] == [0, 1, 2]
     assert [t["basis"] for t in value["turns"]] == ["judged"] * 3
+
+
+# --- report excerpts ----------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+from inspect_ai.log import read_eval_log  # noqa: E402
+
+from transect.report.excerpts import _tool_call_counts, _turn_excerpts  # noqa: E402
+
+DEMO_LOG = Path(__file__).parents[1] / "examples" / "logs" / "house_price_demo.eval"
+
+
+def test_excerpts_cover_orchestrator_turns_only():
+    """Excerpt rows and tool counts exist for orchestrator turns 0..9 at
+    most and no row names a sub-agent lane."""
+    sample = read_eval_log(str(DEMO_LOG), resolve_attachments=True).samples[0]
+    transcript = StubTranscript(sample.events)
+    found = _turn_excerpts(transcript)
+    assert set(found) <= set(range(10))
+    assert {e.lane for e in found.values()} == {"orchestrator"}
+    assert set(_tool_call_counts(transcript)) <= set(range(10))

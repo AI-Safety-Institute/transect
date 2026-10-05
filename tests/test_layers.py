@@ -23,8 +23,8 @@ def test_scanner_plus_frame_fn_mounts_a_tidy_frame(layered_run):
     results, _ = layered_run
     frame = results.layer_frames["turn_chars"]
     assert set(frame.columns) >= {"transcript_id", "turn", "chars"}
-    assert len(frame) == 16  # one row per model turn of the demo log
-    assert sorted(frame.turn) == list(range(16))
+    assert len(frame) == 10  # one row per orchestrator turn of the demo log
+    assert sorted(frame.turn) == list(range(10))
     # user frames never claim the package frames contract
     assert all("schema_version" not in f.columns for f in results.layer_frames.values())
 

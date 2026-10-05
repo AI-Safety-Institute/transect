@@ -8,43 +8,39 @@ from pydantic import JsonValue
 
 import transect
 from transect.report import Markdown, TurnBand, TurnChart
+from transect.scanners.helpers import orchestrator_turns
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DEMO_LOG = Path(__file__).parents[1] / "examples" / "logs" / "house_price_demo.eval"
 SPEC = Path(__file__).parents[1] / "examples" / "spec.yaml"
 
 
-@scanner(messages="all")
+@scanner(messages="all", events=["model", "span_begin", "span_end", "tool"])
 def turn_counter() -> Scanner[Transcript]:
-    """$0 structural custom scanner: one per-turn value row per model
-    turn, with a taggable string column."""
+    """$0 structural custom scanner: one per-turn value row per
+    orchestrator turn (the turn axis), with a taggable string column."""
 
     async def execute(transcript: Transcript) -> Result:
         turns = [
             {
-                "turn": i,
-                "chars": len(m.text or ""),
-                "band": "early" if i < 8 else "late",
+                "turn": turn,
+                "chars": len(event.output.message.text or ""),
+                "band": "early" if turn < 5 else "late",
             }
-            for i, m in enumerate(
-                m for m in transcript.messages if m.role == "assistant"
-            )
+            for turn, event, _calls in orchestrator_turns(transcript)
         ]
         return Result(value=cast(JsonValue, {"turns": turns}))
 
     return execute
 
 
-@scanner(messages="all")
+@scanner(messages="all", events=["model", "span_begin", "span_end", "tool"])
 def message_counter() -> Scanner[Transcript]:
     """$0 structural custom scanner: one flat value per transcript."""
 
     async def execute(transcript: Transcript) -> Result:
         turns = [
-            {"turn": i}
-            for i, m in enumerate(
-                m for m in transcript.messages if m.role == "assistant"
-            )
+            {"turn": turn} for turn, _event, _calls in orchestrator_turns(transcript)
         ]
         return Result(
             value=cast(

@@ -1498,9 +1498,9 @@ def swimlanes(
     """Sub-agent activity swimlanes: one mark per placed span, packed
     into sub-lane rows by `lanes_layout.pack_lanes`.
 
-    ``rows`` (``(row_y, x_start, width, label, lane_name)`` per span) and
-    ``end_markers`` (``(end_turn, row_y)``, already filtered by the
-    caller to spans with a harness-recorded end) come straight off a
+    ``rows`` (``(row_y, x_start, width, label, lane_name, boxed)`` per
+    span) and ``end_markers`` (``(end_pos, row_y)``, already filtered by
+    the caller to spans with a harness-recorded end) come straight off a
     `PackedLanes`. ``titles`` is one dict per span in ``rows``' own
     order, keyed by ``tip_fields`` (the caller's subset of
     `SPAN_TIP_FIELDS`), one tooltip row per field -
@@ -1515,33 +1515,32 @@ def swimlanes(
     the plotted turn range. The Jinja legend line beside the chart
     carries the same label/swatch pairs.
 
-    **Box width, and what it is allowed to mean.**
-    ``span_ends_recorded`` is the caller's answer to "does this source
-    record where a sub-agent span ended" - the same signal
-    `render._subagent_section` computes as ``has_end_markers`` for the
-    completion markers, reused rather than re-derived so the chart cannot
-    draw a duration the same data was judged not to have.
+    **Box width, and what it is allowed to mean.** Each row's ``boxed``
+    flag is the frame's ``position_source`` (`frames.subagents`): a
+    span placed by wall-clock has a real extent on the axis and draws as
+    a box; a span the source gave no usable timestamps for sits at its
+    spawn turn as a point, and draws as a tick.
 
-    - ``True``: proportional boxes spanning the span's first-to-last
-      observed activity turn, floored at `_span_box_width` so a short
-      span is not sub-pixel on a long axis. What that width means is
-      stated in the section's how-to-read line and in the box's own
-      ``turns`` tooltip cell.
-    - ``False``: no box at all - a thin colored tick
-      (`_TICK_STROKE_WIDTH`, a `rule_x` bounded to the row's own
-      ``y1``/``y2``) marks only the turn where the span started, with an
-      invisible wider `rect` underneath carrying the hover target. A box
-      of any fixed width still reads visually as a span with some
-      extent, which overclaims for a source recording no duration at
-      all; a tick cannot imply duration. This is the honest branch for
-      an OpenClaw export, whose span ends are synthesized at last
-      activity rather than recorded.
+    - boxed: a proportional box from ``x_start`` over ``width`` (the
+      span's wall-clock activity mapped onto the orchestrator turns
+      active at the time), floored at `_span_box_width` so a short span
+      is not sub-pixel on a long axis. What that width means is stated
+      in the section's how-to-read line and in the box's own ``turns``
+      tooltip cell.
+    - tick: no box at all - a thin colored tick (`_TICK_STROKE_WIDTH`, a
+      `rule_x` bounded to the row's own ``y1``/``y2``) marks only the
+      spawn turn. A box of any fixed width would read as an extent the
+      data does not have; a tick cannot imply duration.
 
-    `_span_box_width` serves both branches, for different jobs: the
-    ``False`` branch's invisible hit-rect (deliberately wider than the
-    2px tick it sits under, for hover ergonomics) and the ``True``
-    branch's minimum-sliver floor. The two branches draw different
-    shapes, but hover ergonomics stay the same in both.
+    The two shapes share one plot, and the "one channel-key set per
+    plot" rule (module docstring) allows one tip-bearing mark, so
+    neither visible mark carries the tooltip: a single invisible `rect`
+    over every row (the box's own extent for a boxed row, a hit
+    footprint `_span_box_width` wide around a tick) answers hover for
+    both - the "one mark draws, another answers" idiom of
+    `_event_hit_rect`, generalized. Hit-rects may overlap between
+    adjacent rows (only the visible ticks must not) - opacity 0 either
+    way. ``span_ends_recorded`` now gates only the completion markers.
 
     Y axis carries no ticks (``y_axis=False``, not ``None`` - module
     docstring): row_y values are arbitrary sub-lane placements with no
@@ -1587,7 +1586,7 @@ def swimlanes(
     max_votes_chars = 0
     if rows:
         frame = pd.DataFrame(
-            rows, columns=["y", "x_start", "width", "label", "lane_name"]
+            rows, columns=["y", "x_start", "width", "label", "lane_name", "boxed"]
         )
         frame["y1"] = frame.y - _SWIMLANE_BOX_HALF_HEIGHT
         frame["y2"] = frame.y + _SWIMLANE_BOX_HALF_HEIGHT
@@ -1611,17 +1610,15 @@ def swimlanes(
         )
         channels = {field: f"tip_{index}" for index, field in enumerate(fields)}
 
-        if span_ends_recorded:
-            # proportional mode: a real box, floored at the
-            # minimum-sliver width so a short span isn't sub-pixel
-            frame["x1"] = frame.x_start
-            frame["x2"] = frame.x_start + frame.width.clip(lower=box_width)
-            bars = Data.from_dataframe(
-                frame[["x1", "x2", "y1", "y2", "color", *channels.values()]]
-            )
+        boxed = frame[frame.boxed].copy()
+        if len(boxed):
+            # a real box, floored at the minimum-sliver width so a short
+            # span isn't sub-pixel
+            boxed["x1"] = boxed.x_start
+            boxed["x2"] = boxed.x_start + boxed.width.clip(lower=box_width)
             marks.append(
                 rect(
-                    bars,
+                    Data.from_dataframe(boxed[["x1", "x2", "y1", "y2", "color"]]),
                     x1="x1",
                     x2="x2",
                     y1="y1",
@@ -1629,33 +1626,14 @@ def swimlanes(
                     fill="color",
                     stroke=_SWIMLANE_BOX_STROKE,
                     stroke_width=_SWIMLANE_BOX_STROKE_WIDTH,
-                    tip=True,  # 2-D pointer: spans stack in rows, so the
-                    # hovered row matters as much as the turn
-                    channels=channels,
                 )
             )
-        else:
-            # uniform mode: a thin colored tick at the span's start
-            # turn. The tick carries no tip (2px wide - a pointer would
-            # rarely land on it); an invisible wider `rect` underneath is
-            # the hover target, the same "one mark draws, another answers"
-            # idiom as `_event_hit_rect`, inlined here because that
-            # helper's half-turn placement is for a single-turn event
-            # marker, not a span whose hit-box width is sized for hover
-            # ergonomics. Hit-rects may overlap between adjacent rows
-            # (only the visible ticks must not) - opacity 0 either way.
-            frame["x"] = frame.x_start
-            frame["hx1"] = frame.x_start - box_width / 2
-            frame["hx2"] = frame.hx1 + box_width  # one addition from hx1,
-            # not independently from x_start: keeps every row's
-            # data-space ``hx2 - hx1`` exactly box_width whatever
-            # x_start's magnitude. Plot still maps each rect's x1/x2
-            # through its own scale independently, so rendered pixel
-            # widths can differ by float noise regardless.
-            ticks = Data.from_dataframe(frame[["x", "y1", "y2", "color"]])
+        ticks = frame[~frame.boxed].copy()
+        if len(ticks):
+            ticks["x"] = ticks.x_start
             marks.append(
                 rule_x(
-                    ticks,
+                    Data.from_dataframe(ticks[["x", "y1", "y2", "color"]]),
                     x="x",
                     y1="y1",
                     y2="y2",
@@ -1664,29 +1642,36 @@ def swimlanes(
                     stroke_width=_TICK_STROKE_WIDTH,
                 )
             )
-            hit = Data.from_dataframe(
-                frame[["hx1", "hx2", "y1", "y2", *channels.values()]]
+        # the one tip-bearing mark: the box's extent for a boxed row, a
+        # hover footprint around the tick otherwise. hx2 is one addition
+        # from hx1, keeping every tick row's data-space width exactly
+        # box_width whatever x_start's magnitude
+        frame["hx1"] = frame.x_start.where(frame.boxed, frame.x_start - box_width / 2)
+        frame["hx2"] = (frame.x_start + frame.width.clip(lower=box_width)).where(
+            frame.boxed, frame.hx1 + box_width
+        )
+        marks.append(
+            rect(
+                Data.from_dataframe(
+                    frame[["hx1", "hx2", "y1", "y2", *channels.values()]]
+                ),
+                x1="hx1",
+                x2="hx2",
+                y1="y1",
+                y2="y2",
+                opacity=0,  # hit-target only
+                tip=True,  # 2-D pointer: spans stack in rows, so the
+                # hovered row matters as much as the turn
+                channels=channels,
             )
-            marks.append(
-                rect(
-                    hit,
-                    x1="hx1",
-                    x2="hx2",
-                    y1="y1",
-                    y2="y2",
-                    opacity=0,  # hit-target only
-                    tip=True,  # 2-D pointer: spans stack in rows, so the
-                    # hovered row matters as much as the turn
-                    channels=channels,
-                )
-            )
+        )
     if end_markers:
-        marker_frame = pd.DataFrame(end_markers, columns=["end_turn", "row_y"])
+        marker_frame = pd.DataFrame(end_markers, columns=["end_pos", "row_y"])
         markers = Data.from_dataframe(marker_frame)
         marks.append(
             dot(
                 markers,
-                x="end_turn",
+                x="end_pos",
                 y="row_y",
                 symbol=_END_MARKER_SYMBOL,  # must be a real Plot symbol
                 # name - see that constant's own comment

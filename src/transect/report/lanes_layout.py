@@ -9,8 +9,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-import pandas as pd
-
 # The cap on a lane name surfaced in the swimlanes chart. Both this
 # module's own `rows` and `sections.span_titles`' richer "lane" tooltip
 # row read this one constant, so the two cannot drift onto different
@@ -39,8 +37,9 @@ def truncate_lane_name(name: str) -> str:
 class PackedLanes:
     """Row layout for one transcript's sub-agent swimlanes.
 
-    ``rows``: one ``(row_y, x_start, width, label, lane_name)`` tuple
-    per placed span - the bar geometry for `charts.swimlanes`.
+    ``rows``: one ``(row_y, x_start, width, label, lane_name, boxed)``
+    tuple per placed span - the bar geometry for `charts.swimlanes`
+    (``boxed``: draw the span's extent as a box; a tick otherwise).
     ``span_row``: one ``(span_id, row_y)`` tuple per placed span, for
     joining completion markers onto their row. ``yticks``/``ylabels``:
     one entry per label row-block - the block's midpoint y and a
@@ -54,22 +53,23 @@ class PackedLanes:
 
 
 def pack_lanes(
-    lanes: list[tuple[Any, pd.DataFrame, bool]],
+    lanes: list[tuple[Any, float, float, str, bool]],
     label_of: Callable[[Any], str],
     min_footprint: float = 0.0,
 ) -> PackedLanes:
     """Greedily pack ``lanes`` into swimlane rows, one row-block per label.
 
-    ``lanes`` is a list of ``(span_id, lane_frame, has_tokens)``
-    triples - ``lane_frame`` carries at least ``turn`` and
-    ``agent_lane`` columns for one sub-agent span. ``label_of`` maps a
-    span_id to its classification label (callers fall back to
+    ``lanes`` is a list of ``(span_id, x0, x1, lane_name, boxed)``
+    tuples: the span's axis extent (`frames.subagents` ``start_pos`` /
+    ``end_pos``), its lane name, and whether its extent is real
+    (timestamp-placed) or a point at its spawn turn. ``label_of`` maps
+    a span_id to its classification label (callers fall back to
     "unclassified" for spans with no judged label).
 
     Row-blocks are ordered by sorted label name; within a block, spans
-    are placed first-fit ordered by first-seen turn - a span opens a
-    new sub-lane only when every existing sub-lane in the block is still
-    busy past its start turn.
+    are placed first-fit ordered by start position - a span opens a new
+    sub-lane only when every existing sub-lane in the block is still
+    busy past its start.
 
     ``min_footprint`` is the minimum horizontal extent, in turn units, a
     span occupies for packing purposes only. ``0.0`` packs by each span's
@@ -88,20 +88,20 @@ def pack_lanes(
     overlap test (``x0 > end``) is unchanged.
     """
     by_label: dict[str, list] = {}
-    for span_id, lane, has_tokens in lanes:
-        by_label.setdefault(label_of(span_id), []).append((span_id, lane, has_tokens))
+    for entry in lanes:
+        by_label.setdefault(label_of(entry[0]), []).append(entry)
 
-    rows: list[tuple] = []  # (y, x_start, width, label, lane_name)
+    rows: list[tuple] = []  # (y, x_start, width, label, lane_name, boxed)
     span_row: list[tuple] = []  # (span_id, y) for completion markers
     y = 0
     yticks: list[float] = []
     ylabels: list[str] = []
     for label in sorted(by_label):
-        group = sorted(by_label[label], key=lambda kv: kv[1].turn.min())
+        group = sorted(by_label[label], key=lambda entry: (entry[1], str(entry[0])))
         lane_last_end: list[float] = []
         row_base = y
-        for span_id, lane, _ in group:
-            x0, x1 = float(lane.turn.min()), float(lane.turn.max())
+        for span_id, x0, x1, lane_name, boxed in group:
+            x0, x1 = float(x0), float(x1)
             footprint_end = max(x1, x0 + min_footprint)
             placed = next(
                 (li for li, end in enumerate(lane_last_end) if x0 > end), None
@@ -117,7 +117,8 @@ def pack_lanes(
                     x0,
                     x1 - x0,
                     label,
-                    truncate_lane_name(str(lane.agent_lane.iloc[0])),
+                    truncate_lane_name(str(lane_name)),
+                    bool(boxed),
                 )
             )
             span_row.append((span_id, row_base + placed))

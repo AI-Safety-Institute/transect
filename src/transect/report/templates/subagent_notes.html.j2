@@ -8,17 +8,17 @@
     honestly-distinguished classification states (see
     sections.subagent_notes).
 
-    `has_end_markers` gates the how-to-read line entirely (there is no
-    `{% raw %}{% else %}{% endraw %}` branch): everything that line
-    explains - proportional box width, the completion glyph - exists
-    only in that mode. Without recorded span ends the chart draws a thin
-    colored tick at each span's start turn and this section renders no
-    how-to-read line at all. The glyph is passed in as
-    `end_marker_glyph` rather than typed here, so this line cannot name
-    a character `charts._END_MARKER_SYMBOL` does not draw. -#}
+    `has_boxes` gates the how-to-read line: it explains the box, which
+    exists only for spans the source timestamped. Without any such span
+    the chart draws a thin colored tick at each span's spawn turn and
+    this section renders no how-to-read line at all. The completion
+    glyph clause renders only when a recorded span end draws it; the
+    glyph is passed in as `end_marker_glyph` rather than typed here, so
+    this line cannot name a character `charts._END_MARKER_SYMBOL` does
+    not draw. -#}
 
-{% macro subagent_notes(state, summary, has_end_markers, end_marker_glyph) -%}
-{% if state == "not_run" %}<p class="meta">No sub-agent classification in this scan; lanes are shown without classification labels, as one neutral sub-agents group.</p>{% elif state == "warn" %}<p class="warning">&#9888; sub-agent classification rows exist in this scan but none joined this transcript's lanes (identity or span-id mismatch); all lanes shown unclassified.</p>{% endif %}{% if summary %}<p class="meta">{{ summary.n_spans }} sub-agent span(s) · {{ summary.judge_label }}: {{ summary.judges }}{% if summary.cohort %} · cohort: {{ summary.cohort.regime }} · mean span agreement: {{ summary.cohort.mean }} over {{ summary.cohort.n_spans }} span(s) with ≥ 2 voters{% endif %}{% if summary.verifier %} · verifier: {{ summary.verifier }}{% endif %}</p>{% endif %}{% if has_end_markers %}<p class="meta explainer">Spans sharing a row are different sub-agents packed to save vertical space (row count = peak concurrency). Box width is the span's first–last observed activity; {{ end_marker_glyph }} marks a recorded span completion.</p>{% endif %}
+{% macro subagent_notes(state, summary, has_boxes, has_end_markers, end_marker_glyph) -%}
+{% if state == "not_run" %}<p class="meta">No sub-agent classification in this scan; lanes are shown without classification labels, as one neutral sub-agents group.</p>{% elif state == "warn" %}<p class="warning">&#9888; sub-agent classification rows exist in this scan but none joined this transcript's lanes (identity or span-id mismatch); all lanes shown unclassified.</p>{% endif %}{% if summary %}<p class="meta">{{ summary.n_spans }} sub-agent span(s) · {{ summary.judge_label }}: {{ summary.judges }}{% if summary.cohort %} · cohort: {{ summary.cohort.regime }} · mean span agreement: {{ summary.cohort.mean }} over {{ summary.cohort.n_spans }} span(s) with ≥ 2 voters{% endif %}{% if summary.verifier %} · verifier: {{ summary.verifier }}{% endif %}</p>{% endif %}{% if has_boxes %}<p class="meta explainer">Spans sharing a row are different sub-agents packed to save vertical space (row count = peak concurrency). A box is the span's wall-clock activity mapped onto the orchestrator turns active at the time, not a count of its own turns{% if has_end_markers %}; {{ end_marker_glyph }} marks a recorded span completion{% endif %}; a thin tick marks a span whose source recorded no timestamps.</p>{% endif %}
 {%- endmacro %}
 
 {#- Each sub-agent's own spawn prompt, turn-ordered, in the same
