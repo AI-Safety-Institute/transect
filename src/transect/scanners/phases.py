@@ -5,7 +5,6 @@ from bisect import bisect_right
 from collections.abc import Sequence
 from typing import Any, Literal, cast
 
-from inspect_ai.event import ModelEvent, TimelineEvent
 from inspect_ai.model import CachePolicy, Model, get_model
 from inspect_scout import AnswerStructured, Result, Scanner, Transcript, scanner
 from pydantic import BaseModel, Field, JsonValue, create_model
@@ -17,9 +16,10 @@ from transect.scanners.cohort import (
     roll_cache,
 )
 from transect.scanners.helpers import (
-    all_model_turns,
+    main_model_event_ids,
     main_span,
     message_reasoning,
+    orchestrator_turns,
     span_task_text,
     strip_subagent_scaffold,
     subagent_span_begins,
@@ -332,7 +332,7 @@ def decision_phases(
         member_keys = [member.key for member in members_spec]
         n_members = len(members_spec)
         digests = turn_digests(transcript, snippet_chars=snippet_chars)
-        n_turns = sum(1 for _ in all_model_turns(transcript))
+        n_turns = sum(1 for _ in orchestrator_turns(transcript))
         task_prompt = agent_task_prompt(transcript)
         system = system_prompt(spec, task_prompt=task_prompt)
         digest_judgements: list[ConsensusJudgement] = []
@@ -446,7 +446,7 @@ def decision_phases(
             )
         explanation = (
             f"{len(phases)} phases over {len(digest_judgements)} "
-            f"digest turns ({n_turns} model turns)"
+            f"digest turns ({n_turns} orchestrator turns)"
         )
         if n_members > 1:
             explanation += f" · cohort of {n_members} members"
@@ -480,14 +480,14 @@ def turn_digests(
     transcript: Any,
     snippet_chars: int = SNIPPET_CHARS,
 ) -> list[Digest]:
-    """Build one digest per reasoning-bearing main-lane turn.
+    """Build one digest per reasoning-bearing orchestrator turn.
 
-    Digests are a sparse selection over model turns: a turn is
-    eligible when it carries visible text, reasoning-block content
-    (when the source records it), or a delegation. The main lane
-    comes from the transcript's timeline. Sub-agent activity lives
-    in child spans and is represented only by delegation lines,
-    folded in at the last eligible turn preceding each span_begin.
+    Digests are a sparse selection over the orchestrator's turns
+    (`helpers.orchestrator_turns`, the turn axis): a turn is eligible
+    when it carries visible text, reasoning-block content (when the
+    source records it), or a delegation. Sub-agent activity lives in
+    child spans and is represented only by delegation lines, folded in
+    at the last eligible turn preceding each span_begin.
 
     Args:
         transcript: The transcript to digest (Scout ``Transcript`` or
@@ -499,11 +499,6 @@ def turn_digests(
         ``Digest`` records in turn order.
     """
     main = main_span(transcript)
-    main_models = {
-        id(item.event)
-        for item in main.content
-        if isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
-    }
     subagent_spans, first_models = subagent_span_begins(transcript, main)
 
     by_turn: dict[int, Digest] = {}
@@ -513,11 +508,9 @@ def turn_digests(
             by_turn[turn] = Digest(turn=turn)
         return by_turn[turn]
 
-    eligible_turns: list[int] = []  # main-lane, non-failed (anchor targets)
-    for turn, (ev, calls) in enumerate(all_model_turns(transcript)):
+    eligible_turns: list[int] = []  # orchestrator, non-failed: anchor targets
+    for turn, ev, calls in orchestrator_turns(transcript):
         event: Any = ev
-        if id(event) not in main_models:
-            continue  # sub-agent/init/scorer turn: not the main lane
         if _is_failed_turn(event):
             continue  # provider-failure placeholder: not reasoning
         eligible_turns.append(turn)
@@ -544,8 +537,9 @@ def turn_digests(
         digest.event_id = getattr(event, "uuid", None)
 
     # Sub-agent-span delegations, snapped to the nearest digest-eligible
-    # main-lane turn at or before the span_begin.
-    for span, raw_anchor in _span_anchors(transcript, subagent_spans):
+    # orchestrator turn at or before the span_begin.
+    main_events = main_model_event_ids(main)
+    for span, raw_anchor in _span_anchors(transcript, subagent_spans, main_events):
         if not eligible_turns:
             continue
         position = bisect_right(eligible_turns, raw_anchor) - 1
@@ -637,14 +631,14 @@ def chunk_user_prompt(chunk: Sequence[Digest], last_phase: str | None) -> str:
 
 
 def project_phase_turns(phase_starts: Sequence[int], n_turns: int) -> list[int | None]:
-    """Assign every model turn (tool-call-only included) to a phase.
+    """Assign every orchestrator turn (tool-call-only included) to a phase.
 
     A turn inside a phase belongs to it; a turn between phases inherits
     the previous one; turns before the first phase belong to the first.
 
     Args:
         phase_starts: Each phase's ``turn_start``, in phase order.
-        n_turns: Total number of model turns in the transcript.
+        n_turns: Number of orchestrator turns in the transcript.
 
     Returns:
         ``phase_index_of_turn`` of length ``n_turns`` (indices into the
@@ -815,7 +809,7 @@ def _dense_turns(
     Args:
         digest_judgements: Per-digest-turn (consensus) judgements.
         phases: The stitched phases (the projection targets).
-        n_turns: Total number of model turns in the transcript.
+        n_turns: Number of orchestrator turns in the transcript.
         n_members: Judge member count (decides the source labels).
 
     Returns:
@@ -856,22 +850,25 @@ def _dense_turns(
     return out
 
 
-def _span_anchors(transcript: Any, subagent_spans: list[Any]) -> list[tuple[Any, int]]:
+def _span_anchors(
+    transcript: Any, subagent_spans: list[Any], main_events: set[int]
+) -> list[tuple[Any, int]]:
     """Find the anchor turn for each sub-agent span.
 
     Args:
         transcript: The transcript whose event stream is walked.
         subagent_spans: The span_begin events to anchor.
+        main_events: ``id()`` of the orchestrator's model events.
 
     Returns:
         ``(span, anchor)`` pairs, where the raw anchor is the last
-        model turn of any lane preceding the span_begin event.
+        orchestrator turn preceding the span_begin event.
     """
     wanted = {id(sp) for sp in subagent_spans}
     anchors: list[tuple[Any, int]] = []
     n_model = 0
     for event in transcript.events:
-        if event.event == "model" and event.output:
+        if event.event == "model" and event.output and id(event) in main_events:
             n_model += 1
         elif event.event == "span_begin" and id(event) in wanted:
             anchors.append((event, n_model - 1))  # -1: nothing precedes

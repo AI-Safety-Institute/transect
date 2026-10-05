@@ -203,3 +203,51 @@ def test_activity_after_the_last_turn_clamps_and_is_flagged():
     assert got["end_pos"] == pytest.approx(1.5)
     assert got["end_turn"] == 1
     assert got["after_last"] is True
+
+
+# --- decision_phases on the orchestrator axis --------------------------------
+
+from helpers import PHASES_SPEC, run_scan, scripted_judge, seg, seg_answer  # noqa: E402
+
+from transect.scanners.phases import decision_phases, turn_digests  # noqa: E402
+
+
+def delegating_shape():
+    """Lead plans, delegates (a two-turn sub-agent), then wraps up."""
+    return [
+        *agent_span(
+            "R",
+            "react",
+            inner=[
+                model_turn("plan"),
+                model_turn("delegate"),
+                *agent_span(
+                    "A",
+                    "eda",
+                    inner=[model_turn("a0"), model_turn("a1")],
+                    metadata={"task": "survey data"},
+                    parent_id="R",
+                ),
+                model_turn("wrap"),
+            ],
+        )
+    ]
+
+
+def test_digests_number_orchestrator_turns_and_fold_delegations():
+    """Digest indices are contiguous orchestrator ordinals; a span's
+    delegation line folds into the eligible turn before its begin."""
+    digests = turn_digests(StubTranscript(delegating_shape()))
+    assert [d.turn for d in digests] == [0, 1, 2]
+    assert digests[1].delegations == ["survey data"]
+
+
+def test_dense_turns_cover_orchestrator_turns_only():
+    """The per-turn surface has one row per orchestrator turn."""
+    judge = scripted_judge(seg_answer(seg(0, 2, "setup", 0.9)))
+    value = run_scan(
+        decision_phases(PHASES_SPEC, judge, verify=False, narrate=False),
+        delegating_shape(),
+    ).value
+    assert [t["turn"] for t in value["turns"]] == [0, 1, 2]
+    assert [t["basis"] for t in value["turns"]] == ["judged"] * 3
