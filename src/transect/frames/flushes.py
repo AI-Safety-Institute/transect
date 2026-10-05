@@ -2,8 +2,8 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based orchestrator turn the flush precedes (the first
-  post-flush orchestrator turn).
+- turn: 0-based main-lane turn the flush precedes (the first
+  post-flush main-lane turn).
 - agent_span_id: the sub-agent lane the compaction happened in; None on
   the orchestrator. Charts, card tags and the inferences below read
   orchestrator rows only; a sub-agent's compaction is kept, not drawn.
@@ -14,7 +14,7 @@ Columns (identity prefix explained in common.py):
 - tokens_before / tokens_after: window size around the flush; None =
   not reported and not inferrable.
 - tokens_after_inferred: tokens_after came from the first non-gap
-  orchestrator turn after the flush, not the event itself.
+  main-lane turn after the flush, not the event itself.
 - role: the model role whose conversation was compacted, when recorded.
 - metadata: the complete recorded compaction event metadata (object), or
   None.
@@ -52,13 +52,12 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
     do not say what the window looked like: the per-turn ``context``
     series supplies (a) the ``tokens_after`` inference when the event
     omits it, and (b) the detection of unrecorded compactions - the
-    0.6x sustained-drop scan over the orchestrator's context series
+    0.6x sustained-drop scan over the main lane's context series
     synthesizes flush rows the source never emitted. Both read the
-    orchestrator's rows only (``turn`` non-null): a sub-agent lane is
-    its own conversation and never supplies an orchestrator reading.
+    main lane's rows only (``turn`` non-null).
 
     A flush never empties the window to zero: when the event omits
-    tokens_after, it is inferred from the first non-gap orchestrator
+    tokens_after, it is inferred from the first non-gap main-lane
     turn at/after the flush.
     """
     per_turn_of: dict[str, pd.DataFrame] = {}
@@ -132,7 +131,7 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
 
 
 def _synthesized_drops(orchestrator_turns: pd.DataFrame, nearby: set[int]):
-    """The 0.6x sustained-drop scan over the orchestrator's context series."""
+    """The 0.6x sustained-drop scan over the main lane's context series."""
     ctx = orchestrator_turns[["turn", "context"]].dropna()
     turns = ctx.turn.tolist()
     values = ctx.context.tolist()
