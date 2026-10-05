@@ -2,7 +2,6 @@
 
 import json
 from collections import Counter
-from collections.abc import Iterator
 from typing import Any, cast
 
 from inspect_ai.log import read_eval_log
@@ -10,13 +9,7 @@ from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
 from transect.scanners.compaction import compaction_texts
-from transect.scanners.helpers import (
-    all_model_turns,
-    main_model_event_ids,
-    main_span,
-    nearest_agent_span,
-    subagent_span_begins,
-)
+from transect.scanners.helpers import Lanes, all_model_turns
 
 # inspect-ai ModelUsage attribute names, used verbatim as dataframe columns
 _USAGE_FIELDS = (
@@ -60,35 +53,25 @@ def token_timeline() -> Scanner[Transcript]:
     """
 
     async def execute(transcript: Transcript) -> Result:
-        spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
-        main = main_span(transcript)
-        main_events = main_model_event_ids(main)
-        # the shared sub-agent definition: utility spans (timeline-
-        # classified single-turn helpers) are neither recorded nor
-        # counted, exactly as the classifier never sees them
-        begins, _first = subagent_span_begins(transcript, main)
-        sub_ids = {begin.id for begin in begins}
+        lanes = Lanes.of(transcript)
         timeline: list[dict[str, Any]] = []
         lane_counts: dict[str, int] = {}
         turn = 0
         for event, calls in all_model_turns(transcript):
-            agent_span = _sub_agent_span(
-                spans, getattr(event, "span_id", None), main.id
-            )
-            is_main = id(event) in main_events
-            lane_key = agent_span.id if agent_span else "__main__"
-            # an off-axis call (init/scorer: neither orchestrator nor
-            # sub-agent) belongs to no lane and counts in none
-            off_axis = agent_span is None and not is_main
-            lane_turn = None if off_axis else lane_counts.get(lane_key, 0)
-            if lane_turn is not None:
+            sub = lanes.sub_agent_of(event)
+            is_main = lanes.is_main(event)
+            # an off-axis call (init/scorer/utility: neither orchestrator
+            # nor sub-agent) belongs to no lane and counts in none
+            lane_key = sub.id if sub else "__main__" if is_main else None
+            lane_turn = None if lane_key is None else lane_counts.get(lane_key, 0)
+            if lane_key is not None and lane_turn is not None:
                 lane_counts[lane_key] = lane_turn + 1
             usage = event.output.usage
             entry: dict[str, Any] = {
                 "turn": turn if is_main else None,
                 "lane_turn": lane_turn,
-                "agent_lane": agent_span.name if agent_span else None,
-                "agent_span_id": agent_span.id if agent_span else None,
+                "agent_lane": sub.name if sub else None,
+                "agent_span_id": sub.id if sub else None,
                 "n_tool_calls": len(calls),
                 "timestamp": _iso(getattr(event, "timestamp", None)),
                 "completed": _iso(getattr(event, "completed", None)),
@@ -108,16 +91,8 @@ def token_timeline() -> Scanner[Transcript]:
         return Result(
             value={
                 "timeline": cast(JsonValue, timeline),
-                "spans": cast(
-                    JsonValue,
-                    _span_records(
-                        transcript, spans, main.id, main_events, sub_ids, ends_recorded
-                    ),
-                ),
-                "lane_activity": cast(
-                    JsonValue,
-                    _lane_activity(transcript, spans, main.id, main_events, sub_ids),
-                ),
+                "spans": cast(JsonValue, _span_records(lanes, ends_recorded)),
+                "lane_activity": cast(JsonValue, _lane_activity(lanes)),
             },
             explanation=(
                 f"{turn} orchestrator turns, {len(timeline) - turn} other turns"
@@ -214,19 +189,17 @@ def context_flush() -> Scanner[Transcript]:
     async def execute(transcript: Transcript) -> Result:
         flushes: list[dict[str, Any]] = []
         texts = iter(compaction_texts(transcript))
-        spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
-        main = main_span(transcript)
-        main_events = main_model_event_ids(main)
+        lanes = Lanes.of(transcript)
         lane_counts: dict[str, int] = {}
-        for turn, event in _orchestrator_count_before(transcript, main_events):
+        for turn, event in lanes.count_before():
             if event.event == "model" and event.output:
-                lane = _sub_agent_span(spans, getattr(event, "span_id", None), main.id)
-                if lane is not None:
-                    lane_counts[lane.id] = lane_counts.get(lane.id, 0) + 1
+                sub = lanes.sub_agent_of(event)
+                if sub is not None:
+                    lane_counts[sub.id] = lane_counts.get(sub.id, 0) + 1
                 continue
             if event.event != "compaction":
                 continue
-            lane = _sub_agent_span(spans, getattr(event, "span_id", None), main.id)
+            lane = lanes.sub_agent_of(event)
             flushes.append(
                 {
                     "turn": turn,
@@ -316,7 +289,7 @@ def human_intervention() -> Scanner[Transcript]:
         # input records (one planted into the history, a history without
         # its event stream) falls back to the history's footprints of
         # orchestrator turns.
-        main_events = main_model_event_ids(main_span(transcript))
+        lanes = Lanes.of(transcript)
         first_seen: dict[str, int] = {}
         turn_of_output: dict[str, int] = {}
         # a sub-agent's outputs: an Inspect handoff appends them to the
@@ -325,7 +298,7 @@ def human_intervention() -> Scanner[Transcript]:
         turn = 0
         for event, _calls in all_model_turns(transcript):
             output_id = event.output.message.id
-            if id(event) not in main_events:
+            if not lanes.is_main(event):
                 if output_id is not None:
                     sub_outputs.add(output_id)
                 continue
@@ -342,7 +315,7 @@ def human_intervention() -> Scanner[Transcript]:
         # them): the fallback footprint for a summary message no input saw
         summary_flushes = [
             turn
-            for turn, event in _orchestrator_count_before(transcript, main_events)
+            for turn, event in lanes.count_before()
             if event.event == "compaction" and event.type == "summary"
         ]
         next_turn = 0
@@ -386,7 +359,7 @@ def human_intervention() -> Scanner[Transcript]:
                 (message.text or "").strip(),
             )
 
-        for turn, event in _orchestrator_count_before(transcript, main_events):
+        for turn, event in lanes.count_before():
             if event.event == "input":
                 prompt = (getattr(event, "message", None) or "").strip() or None
                 entry(
@@ -449,29 +422,8 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 
 
-def _orchestrator_count_before(
-    transcript: Transcript, main_events: set[int]
-) -> Iterator[tuple[int, Any]]:
-    """Yield (orchestrator turns so far, event) for every event that is
-    not itself an orchestrator model turn."""
-    count = 0
-    for event in transcript.events:
-        if event.event == "model" and event.output and id(event) in main_events:
-            count += 1
-            continue
-        yield count, event
-
-
-def _span_records(
-    transcript: Transcript,
-    spans: dict[str, Any],
-    main_id: str,
-    main_events: set[int],
-    sub_ids: set[str],
-    ends_recorded: bool,
-) -> list[dict[str, Any]]:
-    """One record per sub-agent span (``sub_ids``, the
-    `helpers.subagent_span_begins` set): spawn and end anchors in
+def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
+    """One record per sub-agent span: spawn and end anchors in
     orchestrator turns, activity timestamps (see `token_timeline`).
 
     Activity is attributed via the nearest enclosing agent span, so a
@@ -479,8 +431,9 @@ def _span_records(
     them; the folded spawn call (``agent_span_id`` set) is the
     orchestrator's and counts for no span.
     """
+    sub_ids = lanes.sub_ids
     records: dict[str, dict[str, Any]] = {}
-    for before, event in _orchestrator_count_before(transcript, main_events):
+    for before, event in lanes.count_before():
         kind = event.event
         if kind == "span_begin":
             if event.id not in sub_ids:
@@ -507,10 +460,10 @@ def _span_records(
             continue
         if kind == "tool" and getattr(event, "agent_span_id", None) is not None:
             continue  # folded spawn call: the orchestrator's, not the lane's
-        agent_span = _sub_agent_span(spans, getattr(event, "span_id", None), main_id)
-        if agent_span is None or agent_span.id not in records:
+        sub = lanes.sub_agent_of(event)
+        if sub is None or sub.id not in records:
             continue
-        record = records[agent_span.id]
+        record = records[sub.id]
         started = _iso(getattr(event, "timestamp", None))
         finished = _iso(getattr(event, "completed", None)) or started
         if started is not None and (
@@ -524,34 +477,28 @@ def _span_records(
     return list(records.values())
 
 
-def _lane_activity(
-    transcript: Transcript,
-    spans: dict[str, Any],
-    main_id: str,
-    main_events: set[int],
-    sub_ids: set[str],
-) -> list[dict[str, Any]]:
-    """Tool activity per (orchestrator turn, agent span): calls, busy
+def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
+    """Tool activity per (orchestrator turn, sub-agent span): calls, busy
     time, start.
 
-    Counts tool events inside any sub-agent span (``sub_ids``; the main
-    lane's own span and utility spans excluded); sub-agents whose
-    activity is tool-events-only (no model turns of their own, e.g.
-    OpenClaw schema-B) show up only here. Turn anchor = the orchestrator
-    turn preceding the event.
+    Counts tool events inside any sub-agent span (the main lane's own
+    span and utility spans excluded); sub-agents whose activity is
+    tool-events-only (no model turns of their own, e.g. OpenClaw
+    schema-B) show up only here. Turn anchor = the orchestrator turn
+    preceding the event.
     """
     hits: Counter[tuple[int, str, str]] = Counter()
     busy_ms: Counter[tuple[int, str, str]] = Counter()
     started_at: dict[tuple[int, str, str], Any] = {}
-    for before, event in _orchestrator_count_before(transcript, main_events):
+    for before, event in lanes.count_before():
         if event.event != "tool":
             continue
         if getattr(event, "agent_span_id", None) is not None:
             continue  # folded spawn call: the orchestrator's, not the lane's
-        agent_span = _sub_agent_span(spans, getattr(event, "span_id", None), main_id)
-        if agent_span is None or agent_span.id not in sub_ids:
+        sub = lanes.sub_agent_of(event)
+        if sub is None:
             continue
-        key = (max(before - 1, 0), agent_span.name, agent_span.id)
+        key = (max(before - 1, 0), sub.name, sub.id)
         hits[key] += 1
         started = getattr(event, "timestamp", None)
         completed = getattr(event, "completed", None)
@@ -579,12 +526,6 @@ def _lane_activity(
             }
         )
     return rows
-
-
-def _sub_agent_span(spans: dict[str, Any], span_id, main_id):
-    """The nearest enclosing sub-agent span; None on/above the main lane."""
-    span = nearest_agent_span(spans, span_id)
-    return None if span is None or span.id == main_id else span
 
 
 def _eval_header(uri: str) -> dict[str, Any] | None:

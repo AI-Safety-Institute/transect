@@ -109,7 +109,7 @@ def test_a_span_begun_before_any_orchestrator_turn_anchors_at_zero():
 def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
     """A span outside the shared sub-agent definition (a timeline utility
     span) gets no span record and no lane activity."""
-    import transect.scanners.base as base
+    import transect.scanners.helpers as helpers
 
     events = [
         model_turn("lead"),
@@ -118,13 +118,13 @@ def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
         ),
         *agent_span("C", "eda", inner=[model_turn("s"), tool_event("y", span_id="C")]),
     ]
-    real = base.subagent_span_begins
+    real = helpers.subagent_span_begins
 
     def only_eda(transcript, main):
         begins, firsts = real(transcript, main)
         return [b for b in begins if b.id == "C"], firsts
 
-    monkeypatch.setattr(base, "subagent_span_begins", only_eda)
+    monkeypatch.setattr(helpers, "subagent_span_begins", only_eda)
     value = run_scan(token_timeline(), events).value
     assert [s["agent_span_id"] for s in value["spans"]] == ["C"]
     assert [r["agent_span_id"] for r in value["lane_activity"]] == ["C"]

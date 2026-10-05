@@ -50,22 +50,78 @@ def orchestrator_turns(transcript: Any) -> Iterator[tuple[int, Any, list[ToolCal
         transcript: A Scout ``Transcript`` or any object with
             compatible ``events`` and ``timelines``.
     """
-    main_ids = main_model_event_ids(main_span(transcript))
+    lanes = Lanes.of(transcript)
     turn = 0
     for event, calls in all_model_turns(transcript):
-        if id(event) not in main_ids:
+        if not lanes.is_main(event):
             continue
         yield turn, event, calls
         turn += 1
 
 
-def main_model_event_ids(main: TimelineSpan) -> set[int]:
-    """``id()`` of each model event that is the main span's own."""
-    return {
-        id(item.event)
-        for item in main.content
-        if isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
-    }
+@dataclass(frozen=True)
+class Lanes:
+    """One transcript's lanes, resolved once: the orchestrator's span and
+    model events, the sub-agent spans (`subagent_span_begins`' shared
+    definition), and the span tree that attributes any event to a lane.
+
+    ``main``: the orchestrator's span (`main_span`). ``main_events``:
+    ``id()`` of its own model events. ``begins`` / ``first_models``: the
+    sub-agent span_begin events and each span's first model event.
+    ``spans``: every span_begin by id, for the parent walk.
+    """
+
+    events: list[Any]
+    main: TimelineSpan
+    main_events: frozenset[int]
+    begins: list[Any]
+    first_models: dict[str, Any]
+    spans: dict[str, Any]
+
+    @classmethod
+    def of(cls, transcript: Any) -> "Lanes":
+        main = main_span(transcript)
+        begins, first_models = subagent_span_begins(transcript, main)
+        return cls(
+            events=list(transcript.events),
+            main=main,
+            main_events=frozenset(
+                id(item.event)
+                for item in main.content
+                if isinstance(item, TimelineEvent)
+                and isinstance(item.event, ModelEvent)
+            ),
+            begins=begins,
+            first_models=first_models,
+            spans={e.id: e for e in transcript.events if e.event == "span_begin"},
+        )
+
+    @property
+    def sub_ids(self) -> set[str]:
+        return {begin.id for begin in self.begins}
+
+    def is_main(self, event: Any) -> bool:
+        """Whether a model event is one of the orchestrator's own turns."""
+        return id(event) in self.main_events
+
+    def sub_agent_of(self, event: Any) -> Any | None:
+        """The sub-agent span_begin an event belongs to (its nearest
+        enclosing agent span, when that is a sub-agent), else None: the
+        event is the orchestrator's, a utility or wrapper span's, or off
+        the axis (an init or scorer call)."""
+        span = nearest_agent_span(self.spans, getattr(event, "span_id", None))
+        return span if span is not None and span.id in self.sub_ids else None
+
+    def count_before(self) -> Iterator[tuple[int, Any]]:
+        """Yield ``(orchestrator turns so far, event)`` for every event
+        that is not itself an orchestrator model turn: the axis position
+        a span begin, a tool call or a compaction happened at."""
+        count = 0
+        for event in self.events:
+            if event.event == "model" and event.output and self.is_main(event):
+                count += 1
+                continue
+            yield count, event
 
 
 def message_reasoning(message: Any) -> str:

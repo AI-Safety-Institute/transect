@@ -16,13 +16,11 @@ from transect.scanners.cohort import (
     roll_cache,
 )
 from transect.scanners.helpers import (
-    main_model_event_ids,
-    main_span,
+    Lanes,
     message_reasoning,
     orchestrator_turns,
     span_task_text,
     strip_subagent_scaffold,
-    subagent_span_begins,
 )
 from transect.scanners.phases_cohort import (
     Cohort,
@@ -498,8 +496,8 @@ def turn_digests(
     Returns:
         ``Digest`` records in turn order.
     """
-    main = main_span(transcript)
-    subagent_spans, first_models = subagent_span_begins(transcript, main)
+    lanes = Lanes.of(transcript)
+    subagent_spans, first_models = lanes.begins, lanes.first_models
 
     by_turn: dict[int, Digest] = {}
 
@@ -538,8 +536,7 @@ def turn_digests(
 
     # Sub-agent-span delegations, snapped to the nearest digest-eligible
     # orchestrator turn at or before the span_begin.
-    main_events = main_model_event_ids(main)
-    for span, raw_anchor in _span_anchors(transcript, subagent_spans, main_events):
+    for span, raw_anchor in _span_anchors(lanes):
         if not eligible_turns:
             continue
         position = bisect_right(eligible_turns, raw_anchor) - 1
@@ -850,29 +847,16 @@ def _dense_turns(
     return out
 
 
-def _span_anchors(
-    transcript: Any, subagent_spans: list[Any], main_events: set[int]
-) -> list[tuple[Any, int]]:
-    """Find the anchor turn for each sub-agent span.
-
-    Args:
-        transcript: The transcript whose event stream is walked.
-        subagent_spans: The span_begin events to anchor.
-        main_events: ``id()`` of the orchestrator's model events.
-
-    Returns:
-        ``(span, anchor)`` pairs, where the raw anchor is the last
-        orchestrator turn preceding the span_begin event.
+def _span_anchors(lanes: Lanes) -> list[tuple[Any, int]]:
+    """Each sub-agent span_begin with its raw anchor: the last
+    orchestrator turn preceding it in event order (-1 when none does).
     """
-    wanted = {id(sp) for sp in subagent_spans}
-    anchors: list[tuple[Any, int]] = []
-    n_model = 0
-    for event in transcript.events:
-        if event.event == "model" and event.output and id(event) in main_events:
-            n_model += 1
-        elif event.event == "span_begin" and id(event) in wanted:
-            anchors.append((event, n_model - 1))  # -1: nothing precedes
-    return anchors
+    wanted = {id(begin) for begin in lanes.begins}
+    return [
+        (event, before - 1)
+        for before, event in lanes.count_before()
+        if event.event == "span_begin" and id(event) in wanted
+    ]
 
 
 def _is_failed_turn(event: Any) -> bool:
