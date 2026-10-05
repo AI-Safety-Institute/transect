@@ -39,8 +39,9 @@ def token_timeline() -> Scanner[Transcript]:
     ``timeline``: one entry per model turn in any lane, in event order:
     ``turn`` (the orchestrator ordinal; None on a sub-agent turn and on
     an init/scorer call, which are off the axis), ``lane_turn`` (0-based
-    within the turn's own lane), ``agent_lane`` / ``agent_span_id`` (None
-    on the orchestrator), ``n_tool_calls``, ``timestamp`` / ``completed``
+    within the turn's own lane; None on an off-axis call, which is in no
+    lane), ``agent_lane`` / ``agent_span_id`` (None on the orchestrator),
+    ``n_tool_calls``, ``timestamp`` / ``completed``
     (ISO strings; None when unrecorded), and the ModelUsage fields
     (None = not reported, never 0).
 
@@ -74,10 +75,14 @@ def token_timeline() -> Scanner[Transcript]:
             agent_span = _sub_agent_span(
                 spans, getattr(event, "span_id", None), main.id
             )
-            lane_key = agent_span.id if agent_span else "__main__"
-            lane_turn = lane_counts.get(lane_key, 0)
-            lane_counts[lane_key] = lane_turn + 1
             is_main = id(event) in main_events
+            lane_key = agent_span.id if agent_span else "__main__"
+            # an off-axis call (init/scorer: neither orchestrator nor
+            # sub-agent) belongs to no lane and counts in none
+            off_axis = agent_span is None and not is_main
+            lane_turn = None if off_axis else lane_counts.get(lane_key, 0)
+            if lane_turn is not None:
+                lane_counts[lane_key] = lane_turn + 1
             usage = event.output.usage
             entry: dict[str, Any] = {
                 "turn": turn if is_main else None,

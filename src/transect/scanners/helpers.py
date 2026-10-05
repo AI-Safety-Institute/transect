@@ -287,10 +287,12 @@ def subagent_span_begins(
 ) -> tuple[list[Any], dict[str, Any]]:
     """Sub-agent span_begin events + each span's first model event.
 
-    The shared definition of "sub-agent" (decision_phases and the
-    agent_spans loader must agree): an agent-type span_begin that is
-    neither the main lane's own span nor a timeline utility span
-    (auto-classified helper calls). Discovery stays span_begin-based -
+    The shared definition of "sub-agent" (decision_phases, the
+    token_timeline span record and the agent_spans loader must agree):
+    an agent-type span_begin that is neither the main lane's own span,
+    nor an ancestor of it (a wrapper the timeline treats as a
+    container), nor a timeline utility span (auto-classified helper
+    calls). Discovery stays span_begin-based -
     metadata-only spawn spans are pruned from the timeline tree, so the
     tree cannot own it; the tree supplies the utility exclusion and the
     first model event per surviving span (``span_task_text``'s handoff
@@ -304,12 +306,19 @@ def subagent_span_begins(
         ``(span_begins, first_models)`` in event order.
     """
     first_models, utility_ids = _span_details(main)
+    by_id = {e.id: e for e in transcript.events if e.event == "span_begin"}
+    ancestors: set[str] = set()
+    parent = getattr(by_id.get(main.id), "parent_id", None)
+    while parent is not None and parent not in ancestors:
+        ancestors.add(parent)
+        parent = getattr(by_id.get(parent), "parent_id", None)
     begins = [
         e
         for e in transcript.events
         if e.event == "span_begin"
         and getattr(e, "type", None) == "agent"
         and e.id != main.id
+        and e.id not in ancestors
         and e.id not in utility_ids
     ]
     return begins, first_models

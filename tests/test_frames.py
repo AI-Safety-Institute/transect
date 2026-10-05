@@ -659,3 +659,61 @@ def test_a_skewed_orchestrator_clock_falls_back_to_event_order():
     frame = subagents_df(pd.DataFrame(), timeline_results=raw)
     assert frame.position_source.tolist() == ["event_order"]
     assert frame.anchor_turn.tolist() == [1]
+
+
+def test_an_off_axis_call_never_seeds_the_orchestrator_context():
+    """An init-phase model call is its own conversation: the first
+    orchestrator turn's new-work cap starts from an empty window."""
+    value = {
+        "timeline": [
+            {
+                "turn": None,
+                "lane_turn": None,
+                "agent_lane": None,
+                "agent_span_id": None,
+                "n_tool_calls": 0,
+                "timestamp": None,
+                "completed": None,
+                "input_tokens": 5000,
+                "output_tokens": 10,
+                "total_tokens": 5010,
+                "input_tokens_cache_read": 0,
+                "input_tokens_cache_write": 0,
+                "reasoning_tokens": 0,
+            },
+            {
+                "turn": 0,
+                "lane_turn": 0,
+                "agent_lane": None,
+                "agent_span_id": None,
+                "n_tool_calls": 0,
+                "timestamp": None,
+                "completed": None,
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "total_tokens": 170,
+                "input_tokens_cache_read": 0,
+                "input_tokens_cache_write": 50,
+                "reasoning_tokens": 0,
+            },
+        ],
+        "spans": [],
+        "lane_activity": [],
+    }
+    row = raw_row(
+        SimpleNamespace(value=value, label=None, answer=None, explanation=None)
+    )
+    frame = token_timeline_df(pd.DataFrame([row]))
+    main = frame[frame.turn.notna()]
+    # input + output + the full cache write (window grew from nothing)
+    assert main.new_work.tolist() == [170]
+
+
+def test_an_empty_subagents_frame_means_zero_spawns_not_unknown(raw_phases):
+    """A complete structural scan with no spans is a known zero count;
+    only a missing input is NA."""
+    phases = phases_df(raw_phases, subagents=subagents_df(pd.DataFrame()))
+    assert phases.n_subagents.tolist() == [0]
+    assert pd.isna(phases.delegated_new_work_tokens.iloc[0])
+    absent = phases_df(raw_phases, subagents=None)
+    assert pd.isna(absent.n_subagents.iloc[0])

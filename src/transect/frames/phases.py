@@ -65,7 +65,8 @@ Columns (identity prefix explained in common.py):
 - delegated_new_work_tokens: new-work of the sub-agent spans spawned
   inside the phase (``subagents.spawn_turn`` in the phase's range); NA
   when no such span carries usage (tool-only lanes), never 0.
-- n_subagents: sub-agent spans spawned inside the phase.
+- n_subagents: sub-agent spans spawned inside the phase (0 when the
+  scan found none; NA only when the subagents frame was not supplied).
 - schema_version: the frames contract version.
 """
 
@@ -246,12 +247,18 @@ def _delegated_rollup(
 ) -> tuple[pd.Series, pd.Series]:
     """Per-phase delegated spend and spawn count: the sub-agent spans
     whose ``spawn_turn`` lies in the phase's range. Spend is NA when no
-    member span carries usage (tool-only lanes), never 0; both are NA
-    without the input."""
-    if subagents is None or not len(subagents):
+    member span carries usage (tool-only lanes), never 0. Both are NA
+    only without the input; an empty frame from a complete structural
+    scan is a known count of zero."""
+    if subagents is None:
         return (
             pd.Series(pd.NA, index=phases.index, dtype="Float64"),
             pd.Series(pd.NA, index=phases.index, dtype="Int64"),
+        )
+    if not len(subagents):
+        return (
+            pd.Series(pd.NA, index=phases.index, dtype="Float64"),
+            pd.Series(0, index=phases.index, dtype="Int64"),
         )
     spend: list[Any] = []
     counts: list[int] = []

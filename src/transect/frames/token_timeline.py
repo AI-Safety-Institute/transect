@@ -4,7 +4,8 @@ Columns (identity prefix explained in common.py):
 
 - turn: 0-based orchestrator turn; NA on a sub-agent's own turns (they
   are off the axis) and on init/scorer calls.
-- lane_turn: 0-based ordinal within the turn's own lane.
+- lane_turn: 0-based ordinal within the turn's own lane; NA on an
+  off-axis call, which is in no lane.
 - n_tool_calls: tool calls requested by this turn's assistant message.
 - agent_lane / agent_span_id: the turn's sub-agent span (name / id);
   None for orchestrator turns.

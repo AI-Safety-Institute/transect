@@ -76,6 +76,33 @@ def test_events_without_a_model_turn_are_refused():
         main_span(StubTranscript(events))
 
 
+from transect.scanners.helpers import subagent_span_begins  # noqa: E402
+
+
+def test_a_wrapper_span_around_the_orchestrator_is_not_a_sub_agent():
+    """An agent span that only contains the orchestrator is a container:
+    not a sub-agent to record, place or classify."""
+    events = [
+        *agent_span(
+            "outer",
+            "wrapper",
+            inner=[
+                *agent_span(
+                    "inner",
+                    "lead",
+                    inner=[model_turn("lead 0"), model_turn("lead 1")],
+                    parent_id="outer",
+                )
+            ],
+        )
+    ]
+    transcript = StubTranscript(events)
+    assert main_span(transcript).id == "inner"
+    begins, _ = subagent_span_begins(transcript, main_span(transcript))
+    assert begins == []
+    assert [t for t, _, _ in orchestrator_turns(transcript)] == [0, 1]
+
+
 # --- frames.spine: timestamps onto turn cells ---------------------------------
 
 from datetime import datetime, timedelta  # noqa: E402

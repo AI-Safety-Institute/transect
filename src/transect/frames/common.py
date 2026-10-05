@@ -94,11 +94,20 @@ def input_id(row) -> str | None:
 
 
 def lane_series(per_turn: pd.DataFrame) -> pd.Series:
-    """Lane key per row: agent_span_id, with span-less turns as the main
-    lane. The shared lane-identity definition."""
-    if "agent_span_id" in per_turn.columns:
-        return per_turn.agent_span_id.fillna("__main__")
-    return pd.Series("__main__", index=per_turn.index)
+    """Lane key per row: agent_span_id; a span-less orchestrator turn is
+    the main lane; a span-less off-axis call (turn NA: an init or scorer
+    call) is its own one-row lane, so its window never seeds another
+    conversation's derivations. The shared lane-identity definition."""
+    if "agent_span_id" not in per_turn.columns:
+        return pd.Series("__main__", index=per_turn.index)
+    key = per_turn.agent_span_id.astype(object).copy()
+    spanless = key.isna()
+    if "turn" in per_turn.columns:
+        off_axis = spanless & per_turn.turn.isna()
+        key[off_axis] = [f"__offaxis_{index}" for index in per_turn.index[off_axis]]
+        spanless = spanless & ~off_axis
+    key[spanless] = "__main__"
+    return key
 
 
 def judge_identity(value: dict) -> dict:

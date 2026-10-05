@@ -3,7 +3,13 @@ human_intervention - judged by what they extract from event streams."""
 
 import pytest
 from helpers import agent_span, model_turn, run_scan, tool_event
-from inspect_ai.event import ApprovalEvent, CompactionEvent, InputEvent
+from inspect_ai.event import (
+    ApprovalEvent,
+    CompactionEvent,
+    InputEvent,
+    SpanBeginEvent,
+    SpanEndEvent,
+)
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, ModelUsage
 from inspect_ai.tool import ToolCall
 
@@ -44,6 +50,24 @@ def test_token_timeline_numbers_orchestrator_turns_and_lane_turns():
     assert value["timeline"][1]["input_tokens"] is None
     assert value["timeline"][3]["output_tokens"] == 30
     assert all(isinstance(e["timestamp"], str) for e in value["timeline"])
+
+
+def test_an_init_phase_model_call_is_off_the_axis_and_out_of_every_lane():
+    """A model call outside the orchestrator and every sub-agent (an
+    Inspect init or scorer call) gets no turn and no lane turn."""
+    init_call = model_turn("init call")
+    events = [
+        SpanBeginEvent(id="init", parent_id=None, type="init", name="init"),
+        init_call,
+        SpanEndEvent(id="init"),
+        SpanBeginEvent(id="solvers", parent_id=None, type="solvers", name="solvers"),
+        *agent_span("R", "react", inner=[model_turn("lead")], parent_id="solvers"),
+        SpanEndEvent(id="solvers"),
+    ]
+    init_call.span_id = "init"
+    value = run_scan(token_timeline(), events).value
+    rows = [(e["turn"], e["lane_turn"], e["agent_lane"]) for e in value["timeline"]]
+    assert rows == [(None, None, None), (0, 0, None)]
 
 
 def test_span_record_anchors_spawn_and_end_by_orchestrator_turn():

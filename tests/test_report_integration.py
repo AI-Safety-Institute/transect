@@ -594,3 +594,35 @@ def test_intervention_list_labels_each_shape_by_its_initiator(row, needles):
     for needle in needles:
         assert needle in html, needle
     assert "message (human)" not in html or row["initiator"] == "human"
+
+
+def test_span_tooltip_says_when_a_span_began_before_the_first_turn():
+    """A span clamped at the axis's left edge does not claim turn 0 was
+    active while it ran."""
+    span = pd.DataFrame(
+        {
+            "agent_span_id": ["A"],
+            "agent_lane": ["early"],
+            "position_source": ["timestamp"],
+            "anchor_turn": [0],
+            "end_turn": [0],
+            "start_pos": [-0.5],
+            "end_pos": [-0.5],
+            "after_last": [False],
+            "label": [None],
+            "label_source": [None],
+            "confidence": [None],
+            "judge_agreement": [None],
+            "n_voting": [None],
+            "n_members": [None],
+            "verifier_selected": [False],
+            "overturned": [False],
+            "verifier_label": [None],
+            "verifier_confidence": [None],
+            "verifier_status": [None],
+            "tool_calls": [1],
+            "busy_seconds": [None],
+        }
+    )
+    titles = sections.span_titles(span, {})
+    assert "began before the first orchestrator turn" in titles["A"]["turns"]

@@ -716,8 +716,8 @@ def span_titles(subagents: pd.DataFrame, label_of: dict) -> dict:
     "no data" marks a value the source never recorded. The ``turns``
     cell says what the box means: the orchestrator turns active while
     the span ran (wall-clock), or only its spawn turn when the source
-    recorded no usable timestamps; a span that outlived the last
-    orchestrator turn says so."""
+    recorded no usable timestamps; a span that began before the first
+    orchestrator turn or outlived the last one says so."""
 
     def fmt(value) -> str:
         return "no data" if value is None or pd.isna(value) else f"{int(value):,}"
@@ -729,6 +729,8 @@ def span_titles(subagents: pd.DataFrame, label_of: dict) -> dict:
                 f"{int(str(row.anchor_turn))}–{int(str(row.end_turn))} "
                 "(orchestrator turns active while it ran)"
             )
+            if float(str(row.start_pos)) <= -0.5:
+                turns += ", began before the first orchestrator turn"
             if bool(row.after_last):
                 turns += ", continued after the last orchestrator turn"
         else:

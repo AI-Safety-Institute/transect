@@ -76,8 +76,7 @@ definition in `helpers.subagent_span_begins`), replacing `span_ends`:
 
 - `agent_span_id`, `agent_lane`;
 - `spawn_turn`: the orchestrator turn preceding the span's `span_begin`
-  in event order (`-1` when none precedes it, clamped to 0 by the
-  frame). On Inspect handoffs and linked OpenClaw spawns this is the
+  in event order (0 when none precedes it; the scanner clamps). On Inspect handoffs and linked OpenClaw spawns this is the
   turn that issued the spawn; on unlinked OpenClaw sessions it is the
   importer's file-order anchor. One rule, no linkage logic;
 - `first_at`, `last_at`: timestamps of the span's first and last model
