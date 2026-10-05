@@ -2,7 +2,7 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based main-lane model turn the activity is anchored to.
+- turn: 0-based orchestrator turn preceding the tool event.
 - agent_lane / agent_span_id: the sub-agent span (name / id).
 - tool_calls: tool events in that span at that turn.
 - busy_seconds: summed tool wall-time; None = not reported.
@@ -24,7 +24,10 @@ def lane_activity_df(results: pd.DataFrame) -> pd.DataFrame:
     for _, r in results.iterrows():
         identity_cols = identity(r)
         value = result_value(r["value"])
-        end_of = {e["agent_span_id"]: e["turn"] for e in value.get("span_ends") or []}
+        end_of = {
+            s["agent_span_id"]: s["event_order_end_turn"]
+            for s in value.get("spans") or []
+        }
         for entry in value.get("lane_activity") or []:
             rows.append(
                 {

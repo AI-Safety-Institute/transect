@@ -146,20 +146,23 @@ def test_judged_frames_are_empty_but_typed_on_a_mechanical_run(demo_results, nam
     assert set(IDENTITY) <= set(frame.columns)
 
 
-def test_token_timeline_reconstructs_context_and_new_work(demo_results):
-    """The timeline carries one row per turn; spot rows and the run
-    total pin the derived token views against the committed log."""
-    timeline = demo_results.token_timeline.sort_values("turn")
-    assert sorted(timeline.turn) == list(range(17))
+def test_token_timeline_numbers_orchestrator_turns_only(demo_results):
+    """Ten orchestrator turns take 0..9; the seven sub-agent turns carry
+    no turn but keep their lane and token views; totals are unchanged."""
+    timeline = demo_results.token_timeline
+    main = timeline[timeline.turn.notna()].sort_values("turn")
+    assert main.turn.tolist() == list(range(10))
+    assert int(timeline.turn.isna().sum()) == 7
     assert set(timeline.agent_lane.dropna()) == {"eda", "alt_model", "reviewer"}
-    spots = timeline.set_index("turn")
+    spots = main.set_index("turn")
     assert (spots.loc[0, "new_work"], spots.loc[0, "context"]) == (1020, 926)
-    assert spots.loc[9, "agent_lane"] == "alt_model"
-    # turn 10 is the summarization call; turn 11 runs on the compacted window
-    assert (spots.loc[10, "new_work"], spots.loc[10, "context"]) == (3588, 2667)
-    assert (spots.loc[11, "new_work"], spots.loc[11, "context"]) == (1491, 1228)
-    assert (spots.loc[16, "new_work"], spots.loc[16, "context"]) == (2005, 1761)
+    # turn 6 is the summarization call; turn 7 runs on the compacted window
+    assert (spots.loc[6, "new_work"], spots.loc[6, "context"]) == (3588, 2667)
+    assert (spots.loc[7, "new_work"], spots.loc[7, "context"]) == (1491, 1228)
+    assert (spots.loc[9, "new_work"], spots.loc[9, "context"]) == (2005, 1761)
     assert timeline.new_work.sum() == 27221
+    assert timeline[timeline.agent_lane == "eda"].lane_turn.tolist() == [0, 1]
+    assert timeline.timestamp.str.startswith("20").all()
 
 
 def test_subagent_spans_are_listed_even_unjudged(demo_results):
@@ -255,19 +258,13 @@ def test_flush_and_intervention_scanners_share_one_turn_axis(demo_results):
     assert flush_turn == first_seen == note_turn == 11
 
 
-def test_lane_activity_frame_tracks_each_sub_agent_span(demo_results):
-    """The per-(turn, span) activity rows match the demo exactly; the
-    main lane never appears."""
+def test_lane_activity_frame_anchors_tool_activity_to_orchestrator_turns(
+    demo_results,
+):
+    """Each sub-agent's tool events collapse onto the orchestrator turn
+    that spawned it (the handoff turn); the main lane never appears."""
     expected = pd.DataFrame(
-        [
-            (4, "eda", 1, 5),
-            (5, "eda", 1, 5),
-            (8, "alt_model", 1, 9),
-            (9, "alt_model", 1, 9),
-            (13, "reviewer", 1, 15),
-            (14, "reviewer", 1, 15),
-            (15, "reviewer", 1, 15),
-        ],
+        [(3, "eda", 2, 3), (5, "alt_model", 2, 5), (8, "reviewer", 3, 8)],
         columns=["turn", "agent_lane", "tool_calls", "span_end_turn"],
     )
     got = demo_results.lane_activity.sort_values("turn")

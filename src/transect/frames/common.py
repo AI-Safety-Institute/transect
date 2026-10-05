@@ -24,7 +24,7 @@ import pandas as pd
 from transect.scanners.cohort import CallStatus, LabelSource, VerifierReview
 from transect.scanners.phases_common import TurnBasis
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
 
 IDENTITY_COLS = {
     "sample_id": "transcript_task_id",

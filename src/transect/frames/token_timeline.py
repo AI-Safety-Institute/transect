@@ -2,10 +2,13 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based model-turn index.
+- turn: 0-based orchestrator turn; NA on a sub-agent's own turns (they
+  are off the axis) and on init/scorer calls.
+- lane_turn: 0-based ordinal within the turn's own lane.
 - n_tool_calls: tool calls requested by this turn's assistant message.
 - agent_lane / agent_span_id: the turn's sub-agent span (name / id);
-  None for main-lane turns.
+  None for orchestrator turns.
+- timestamp: the model call's start, ISO 8601; None when unrecorded.
 - output_tokens / input_tokens / total_tokens /
   input_tokens_cache_read / input_tokens_cache_write /
   reasoning_tokens: inspect-ai ModelUsage fields verbatim; None =
@@ -52,22 +55,33 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
             row = {
                 **identity_cols,
                 "turn": entry["turn"],
+                "lane_turn": entry["lane_turn"],
                 "n_tool_calls": entry.get("n_tool_calls"),
                 "agent_lane": entry.get("agent_lane"),
                 "agent_span_id": entry.get("agent_span_id"),
+                "timestamp": entry.get("timestamp"),
             }
             row.update({field: entry.get(field) for field in _TOKEN_FIELDS})
             rows.append(row)
     columns = [
         *IDENTITY_COLS,
         "turn",
+        "lane_turn",
         "n_tool_calls",
         "agent_lane",
         "agent_span_id",
+        "timestamp",
         *_TOKEN_FIELDS,
     ]
     df = pd.DataFrame(rows, columns=columns)
-    df["n_tool_calls"] = df.n_tool_calls.astype("Int64")
+    df = df.astype(
+        {
+            "turn": "Int64",
+            "lane_turn": "Int64",
+            "n_tool_calls": "Int64",
+            "timestamp": "string",
+        }
+    )
     if len(df):
         df = _derive_token_views(df)
     else:
@@ -98,15 +112,15 @@ def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
     breakdowns are treated as zero in these derived views.
     """
     derived_rows = []
-    for transcript_id, group in timeline.groupby("transcript_id", sort=False):
-        all_turns = group.sort_values("turn")
+    # rows keep the store's event order; a sub-agent row's turn is NA, so
+    # the join back is positional (the frame's own index), never by turn
+    for _transcript_id, group in timeline.groupby("transcript_id", sort=False):
         # Each agent span is its own conversation with its own context window
-        for _, turns in all_turns.groupby(lane_series(all_turns), sort=False):
+        for _, turns in group.groupby(lane_series(group), sort=False):
             prev_ctx = 0
-            for _, t in turns.iterrows():
+            for index, t in turns.iterrows():
                 row = {
-                    "transcript_id": transcript_id,
-                    "turn": t["turn"],
+                    "_row": index,
                     "context": None,
                     "new_work": None,
                     "billable": None,
@@ -128,9 +142,8 @@ def _derive_token_views(timeline: pd.DataFrame) -> pd.DataFrame:
                     )
                     prev_ctx = ctx
                 derived_rows.append(row)
-    derived = pd.DataFrame(derived_rows)
-    derived = derived[["transcript_id", "turn", *_DERIVED_FIELDS]]
-    return timeline.merge(derived, on=["transcript_id", "turn"], how="left")
+    derived = pd.DataFrame(derived_rows).set_index("_row")[list(_DERIVED_FIELDS)]
+    return timeline.join(derived)
 
 
 def _is_gap(turn_row) -> bool:
