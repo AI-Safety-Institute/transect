@@ -108,6 +108,15 @@ scanner change take effect; run a new scan and retain both results for compariso
   setup only; never resolve them using the installed model database or
   infer a threshold from `tokens_before`. Unrecorded thresholds render
   no row, line, or toggle.
+- **Orchestrator turn axis.** `turn` is the 0-based ordinal of the
+  orchestrator's (main lane's) model turns, from
+  `scanners.helpers.orchestrator_turns`, in every scanner value, frame,
+  judge digest and chart. Sub-agent turns are off the axis: they carry
+  `agent_span_id` and `lane_turn`, and the subagents frame places each
+  span on the axis by wall-clock (`frames/spine.py`), never by numbering
+  it. A custom scanner numbers turns with the same helper. The main lane
+  is the span Scout would scan at depth 1; a transcript with model turns
+  but no single orchestrator agent raises rather than guessing.
 - **Review units.** Phase `verifier_reviews` retains the original
   selected review units through display merging;
   `transect.reliability.review_units` is the review-population read.
