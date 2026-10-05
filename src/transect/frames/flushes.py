@@ -5,8 +5,7 @@ Columns (identity prefix explained in common.py):
 - turn: 0-based main-lane turn the flush precedes (the first
   post-flush main-lane turn), for a flush in any lane.
 - agent_span_id: the sub-agent lane the compaction happened in; None on
-  the orchestrator. The token charts and card tags draw orchestrator
-  rows; a sub-agent's compaction belongs on its swimlane bar.
+  the orchestrator.
 - lane_turn: the first post-flush turn of the compacted lane itself
   (token_timeline's lane_turn): equal to turn on the orchestrator, the
   sub-agent's own ordinal otherwise.
@@ -48,7 +47,21 @@ from transect.frames.common import (
 
 _METADATA_COLUMNS = ("strategy", "messages_before", "messages_after", "trigger")
 _RECORDED_COLUMNS = ("role", "metadata", "compaction_prompt", "compaction_nudge")
-_TEXT_COLUMNS = ("role", "strategy", "trigger", "compaction_prompt", "compaction_nudge")
+_INT_COLUMNS = (
+    "lane_turn",
+    "tokens_before",
+    "tokens_after",
+    "messages_before",
+    "messages_after",
+)
+_TEXT_COLUMNS = (
+    "agent_span_id",
+    "role",
+    "strategy",
+    "trigger",
+    "compaction_prompt",
+    "compaction_nudge",
+)
 
 
 def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFrame:
@@ -128,13 +141,8 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
     # inferred as float NaN
     df = df.astype(
         {
-            **dict.fromkeys(
-                ("tokens_before", "tokens_after", "messages_before", "messages_after"),
-                "Int64",
-            ),
+            **dict.fromkeys(_INT_COLUMNS, "Int64"),
             **dict.fromkeys(_TEXT_COLUMNS, "string"),
-            "agent_span_id": "string",
-            "lane_turn": "Int64",
         }
     )
     return with_schema(df)
