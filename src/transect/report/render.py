@@ -456,11 +456,15 @@ def _subagent_section(
 
     has_end_markers = bool(subagents.end_recorded.any())
     has_boxes = any(boxed for _sid, _x0, _x1, _name, boxed in lanes)
-    # tick marks share a fixed footprint, so extent-only packing would
-    # let nearby spans render overlapping; a boxed span packs by its
-    # true extent and needs no floor
+    # the packing footprint matches what is drawn: a tick's fixed
+    # footprint when any span is a tick, else the box floor, so two
+    # sliver-floored boxes never render overlapping
     all_boxed = all(boxed for _sid, _x0, _x1, _name, boxed in lanes)
-    min_footprint = 0.0 if all_boxed else charts.swimlane_min_footprint(n_turns)
+    min_footprint = (
+        charts.span_min_box_width(n_turns)
+        if all_boxed
+        else charts.swimlane_min_footprint(n_turns)
+    )
     packed = pack_lanes(lanes, _label, min_footprint=min_footprint)
 
     end_of: dict[str, float] = {

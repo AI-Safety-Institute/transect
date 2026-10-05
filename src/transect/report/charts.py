@@ -853,8 +853,7 @@ _STRIP_BASIS_WHY = {
     "judged": "judged: reasoning turn scored by the judge(s)",
     "filled": "not judged: inherits the previous label",
     "attributed": (
-        "not judged: content-free tool-only/failed/sub-agent turn; "
-        "takes the surrounding label"
+        "not judged: content-free tool-only or failed turn; takes the surrounding label"
     ),
     "refusal": "not judged: the judge refused",
     "no_answer": "not judged: no valid judge answer",
@@ -1523,7 +1522,7 @@ def swimlanes(
 
     - boxed: a proportional box from ``x_start`` over ``width`` (the
       span's wall-clock activity mapped onto the orchestrator turns
-      active at the time), floored at `_span_box_width` so a short span
+      active at the time), floored at `span_min_box_width` so a short span
       is not sub-pixel on a long axis. What that width means is stated
       in the section's how-to-read line and in the box's own ``turns``
       tooltip cell.
@@ -1536,7 +1535,7 @@ def swimlanes(
     plot" rule (module docstring) allows one tip-bearing mark, so
     neither visible mark carries the tooltip: a single invisible `rect`
     over every row (the box's own extent for a boxed row, a hit
-    footprint `_span_box_width` wide around a tick) answers hover for
+    footprint `span_min_box_width` wide around a tick) answers hover for
     both - the "one mark draws, another answers" idiom of
     `_event_hit_rect`, generalized. Hit-rects may overlap between
     adjacent rows (only the visible ticks must not) - opacity 0 either
@@ -1579,7 +1578,6 @@ def swimlanes(
       2px tick rather than a box. Pinned by `pack_lanes`' unit tests and
       by a browser test reading real rendered geometry.
     """
-    box_width = _span_box_width(n_turns)
     n_rows = int(max(row[0] for row in rows)) + 1 if rows else 1
     marks: list[Mark] = []
     max_lane_chars = 0
@@ -1610,12 +1608,9 @@ def swimlanes(
         )
         channels = {field: f"tip_{index}" for index, field in enumerate(fields)}
 
-        boxed = frame[frame.boxed].copy()
+        frame = span_geometry(frame, n_turns)
+        boxed = frame[frame.boxed]
         if len(boxed):
-            # a real box, floored at the minimum-sliver width so a short
-            # span isn't sub-pixel
-            boxed["x1"] = boxed.x_start
-            boxed["x2"] = boxed.x_start + boxed.width.clip(lower=box_width)
             marks.append(
                 rect(
                     Data.from_dataframe(boxed[["x1", "x2", "y1", "y2", "color"]]),
@@ -1628,9 +1623,8 @@ def swimlanes(
                     stroke_width=_SWIMLANE_BOX_STROKE_WIDTH,
                 )
             )
-        ticks = frame[~frame.boxed].copy()
+        ticks = frame[~frame.boxed]
         if len(ticks):
-            ticks["x"] = ticks.x_start
             marks.append(
                 rule_x(
                     Data.from_dataframe(ticks[["x", "y1", "y2", "color"]]),
@@ -1643,13 +1637,7 @@ def swimlanes(
                 )
             )
         # the one tip-bearing mark: the box's extent for a boxed row, a
-        # hover footprint around the tick otherwise. hx2 is one addition
-        # from hx1, keeping every tick row's data-space width exactly
-        # box_width whatever x_start's magnitude
-        frame["hx1"] = frame.x_start.where(frame.boxed, frame.x_start - box_width / 2)
-        frame["hx2"] = (frame.x_start + frame.width.clip(lower=box_width)).where(
-            frame.boxed, frame.hx1 + box_width
-        )
+        # hover footprint around the tick otherwise (`span_geometry`)
         marks.append(
             rect(
                 Data.from_dataframe(
@@ -1852,14 +1840,48 @@ def _swimlane_tip_fit_height(
     return _tip_floor(tip_rows, lane_px, second_tall_row_px=votes_px)
 
 
-# The minimum drawn width of a proportional swimlane bar, and the width
-# of the invisible hit-rect the uniform (tick) branch puts under its
-# ticks. A minimum-sliver rule in turn units, not pixels: a fixed pixel
-# width would need the inner plot rectangle, which this module has no
-# honest handle on at build time. Against `chart_width`'s 1.6px/turn it
-# is ~8px on a long transcript and wider on a short one.
-def _span_box_width(n_turns: int) -> float:
-    return max(1.0, n_turns / 250.0)
+# The minimum drawn width of a swimlane box, in pixels, converted to turn
+# units through `chart_width`'s pixel-per-turn rate (the same
+# approximation `swimlane_min_footprint` uses: the plotted body is a
+# little narrower than `chart_width`, so the sliver only ever errs wide).
+# A floor in turn units would overstate a short span's wall-clock extent
+# on a short axis, where one turn is a hundred pixels; a pixel floor
+# keeps a box honest and merely visible.
+_MIN_BOX_PX = 6.0
+
+
+def span_min_box_width(n_turns: int) -> float:
+    """The minimum box width in turn units: `_MIN_BOX_PX` at this axis's
+    pixel-per-turn rate. Also the hover footprint under a tick, and the
+    packing footprint `render._subagent_section` reserves for boxed
+    spans, so two sliver-floored boxes never render overlapping."""
+    return _MIN_BOX_PX * n_turns / chart_width(n_turns)
+
+
+def span_geometry(frame: pd.DataFrame, n_turns: int) -> pd.DataFrame:
+    """Rendered geometry for swimlane rows (``x_start``, ``width``,
+    ``boxed``): ``x1``/``x2`` for a box (its extent floored at
+    `span_min_box_width`), ``x`` for a tick, and ``hx1``/``hx2`` for the
+    tip-bearing hit rect over either. A box that would overrun the
+    axis's right edge (activity clamped at the last orchestrator turn)
+    is shifted left to end at the edge, never drawn off-canvas.
+
+    ``hx2`` is one addition from ``hx1``, keeping every tick row's
+    data-space hit width exactly the floor whatever ``x_start``'s
+    magnitude.
+    """
+    out = frame.copy()
+    floor = span_min_box_width(n_turns)
+    right = turn_xlim(n_turns)[1]
+    x1 = out.x_start
+    x2 = out.x_start + out.width.clip(lower=floor)
+    over = (x2 - right).clip(lower=0.0)
+    out["x1"] = x1 - over
+    out["x2"] = x2 - over
+    out["x"] = out.x_start
+    out["hx1"] = out.x1.where(out.boxed, out.x_start - floor / 2)
+    out["hx2"] = out.x2.where(out.boxed, out.hx1 + floor)
+    return out
 
 
 # The seam both the packing decision (`swimlane_min_footprint`) and the

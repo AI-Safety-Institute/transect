@@ -625,3 +625,37 @@ def test_phase_delegated_spend_is_absent_not_zero_without_usage(raw_phases):
     (phase,) = phases.itertuples()
     assert pd.isna(phase.delegated_new_work_tokens)
     assert phase.n_subagents == 1
+
+
+def test_a_skewed_orchestrator_clock_falls_back_to_event_order():
+    """Timestamps that run backwards between turns are unusable: spans
+    sit at their spawn turn rather than at a wrong wall-clock position."""
+    value = {
+        "timeline": [
+            {"turn": 0, "timestamp": "2026-01-01T10:00:00", "completed": None},
+            {"turn": 1, "timestamp": "2026-01-01T09:00:00", "completed": None},
+        ],
+        "spans": [
+            {
+                "agent_span_id": "A",
+                "agent_lane": "a",
+                "spawn_turn": 1,
+                "first_at": "2026-01-01T10:00:10",
+                "last_at": "2026-01-01T10:00:20",
+                "end_at": None,
+                "end_recorded": False,
+                "event_order_end_turn": 1,
+            }
+        ],
+        "lane_activity": [],
+    }
+    raw = pd.DataFrame(
+        [
+            raw_row(
+                SimpleNamespace(value=value, label=None, answer=None, explanation=None)
+            )
+        ]
+    )
+    frame = subagents_df(pd.DataFrame(), timeline_results=raw)
+    assert frame.position_source.tolist() == ["event_order"]
+    assert frame.anchor_turn.tolist() == [1]

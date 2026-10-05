@@ -7,8 +7,8 @@ Columns (identity prefix explained in common.py):
 - phase: the label.
 - turn_start / turn_end: inclusive turn range (0-based).
 - n_turns: reasoning-bearing turns inside the phase - the turns
-  the judge actually saw (content-free tool-call-only, failed, and
-  sub-agent turns in range are not counted).
+  the judge actually saw (content-free tool-call-only and failed
+  turns in range are not counted; sub-agent turns are not on the axis).
 - confidence: mean of the phase's per-turn confidences (filled
   turns included, at 0.3).
 - min_confidence: minimum per-turn confidence in the phase.

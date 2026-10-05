@@ -82,6 +82,30 @@ def test_a_span_begun_before_any_orchestrator_turn_anchors_at_zero():
     assert span["spawn_turn"] == 0
 
 
+def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
+    """A span outside the shared sub-agent definition (a timeline utility
+    span) gets no span record and no lane activity."""
+    import transect.scanners.base as base
+
+    events = [
+        model_turn("lead"),
+        *agent_span(
+            "U", "titler", inner=[model_turn("t"), tool_event("x", span_id="U")]
+        ),
+        *agent_span("C", "eda", inner=[model_turn("s"), tool_event("y", span_id="C")]),
+    ]
+    real = base.subagent_span_begins
+
+    def only_eda(transcript, main):
+        begins, firsts = real(transcript, main)
+        return [b for b in begins if b.id == "C"], firsts
+
+    monkeypatch.setattr(base, "subagent_span_begins", only_eda)
+    value = run_scan(token_timeline(), events).value
+    assert [s["agent_span_id"] for s in value["spans"]] == ["C"]
+    assert [r["agent_span_id"] for r in value["lane_activity"]] == ["C"]
+
+
 def test_lane_activity_counts_tool_events_per_orchestrator_turn():
     """Tool-only sub-agents surface in lane_activity, anchored to the
     orchestrator turn that preceded the tool event."""

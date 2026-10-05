@@ -137,9 +137,10 @@ The last cell's right edge is the last call's `completed` time when
 recorded, else its `timestamp` plus the median cell width. A time
 before the first call clamps to `-0.5`; a time after the last cell
 clamps to the axis's right edge, and the span's tooltip says activity
-continued after the last orchestrator turn. A zero-width interval
-places at the cell's left edge. Wall-clock `timestamp` is used, never
-Inspect's working time.
+continued after the last orchestrator turn. A zero-width cell (two
+calls at one instant) is skipped: a time at that instant belongs to the
+next non-empty cell. Wall-clock `timestamp` is used, never Inspect's
+working time.
 
 A span's derived coordinates, computed in `subagents_df` from the
 `spans` record and the orchestrator rows' timestamps:

@@ -374,8 +374,8 @@ erDiagram
         string phase FK
         int turn_start
         int turn_end
-        int new_work_tokens "orchestrator new-work"
-        int delegated_new_work_tokens "spans spawned in the phase"
+        float new_work_tokens "orchestrator new-work"
+        float delegated_new_work_tokens "spans spawned in the phase"
         int n_subagents
         string headline
         string narration_group_status

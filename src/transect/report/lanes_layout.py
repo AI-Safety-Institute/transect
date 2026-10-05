@@ -83,9 +83,8 @@ def pack_lanes(
 
     Only the running sub-lane occupancy (``lane_last_end``) is inflated,
     never the ``width`` stored in ``rows`` - that stays each span's true
-    ``x1 - x0``, since `charts.swimlanes` computes its own rendered
-    geometry off it and its own ``span_ends_recorded`` branch. The
-    overlap test (``x0 > end``) is unchanged.
+    ``x1 - x0``, since `charts.span_geometry` applies the drawn floor
+    itself. The overlap test (``x0 > end``) is unchanged.
     """
     by_label: dict[str, list] = {}
     for entry in lanes:

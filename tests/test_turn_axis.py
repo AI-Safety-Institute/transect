@@ -63,11 +63,17 @@ def test_main_span_refuses_two_top_level_agents():
         main_span(StubTranscript(events))
 
 
-def test_a_transcript_without_model_events_is_an_empty_lane():
-    """Nothing to number: zero orchestrator turns, no error."""
-    events = [*agent_span("A", "one", inner=[])]
-    assert list(orchestrator_turns(StubTranscript(events))) == []
+def test_a_transcript_without_events_is_an_empty_lane():
+    """A message history with no event stream has zero turns, no error."""
     assert list(orchestrator_turns(StubTranscript([]))) == []
+
+
+def test_events_without_a_model_turn_are_refused():
+    """A sample that errored before its first call is a scan error, not
+    a silently vanished transcript."""
+    events = [*agent_span("A", "one", inner=[])]
+    with pytest.raises(ValueError, match=r"no model turns"):
+        main_span(StubTranscript(events))
 
 
 # --- frames.spine: timestamps onto turn cells ---------------------------------
@@ -127,8 +133,8 @@ def test_position_interpolates_within_a_cell_and_clamps_outside(t, expected):
     assert spine.position(t, cells) == pytest.approx(expected)
 
 
-def test_zero_width_cells_place_at_their_left_edge():
-    """Two calls at the same instant: the empty cell swallows nothing."""
+def test_a_zero_width_cell_is_skipped():
+    """Two calls at one instant: a time there belongs to the next real cell."""
     cells = spine.cells([at(0), at(0), at(100)], last_completed=at(120))
     assert spine.position(at(0), cells) == pytest.approx(0.5)
     assert spine.position(at(50), cells) == pytest.approx(1.0)
@@ -328,3 +334,36 @@ def test_overlapping_spans_pack_into_two_rows(parallel_results):
     packed = pack_lanes(lanes, lambda _sid: "sub-agents")
     assert sorted(row[0] for row in packed.rows) == [0, 1]
     assert packed.ylabels == ["sub-agents (2)"]
+
+
+# --- swimlane geometry ----------------------------------------------------------
+
+import pandas as pd  # noqa: E402
+
+from transect.report import charts  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("n_turns", "expected"),
+    [(10, 0.06), (1000, 3.75)],
+    ids=["short-axis", "long-axis"],
+)
+def test_the_box_floor_is_a_pixel_sliver(n_turns, expected):
+    """The minimum box is six pixels at the axis's pixel-per-turn rate,
+    never a whole turn."""
+    assert charts.span_min_box_width(n_turns) == pytest.approx(expected)
+
+
+def test_a_box_at_the_axis_edge_is_shifted_left_not_drawn_off_canvas():
+    """A span clamped at the last turn ends exactly at the axis edge."""
+    rows = pd.DataFrame(
+        {"x_start": [9.49, 2.0], "width": [0.0, 0.5], "boxed": [True, False]}
+    )
+    geo = charts.span_geometry(rows, n_turns=10)
+    assert geo.x2.iloc[0] == pytest.approx(9.5)
+    assert geo.x1.iloc[0] == pytest.approx(9.5 - charts.span_min_box_width(10))
+    # a tick keeps its position and gets a hover footprint around it
+    assert geo.x.iloc[1] == 2.0
+    assert geo.hx2.iloc[1] - geo.hx1.iloc[1] == pytest.approx(
+        charts.span_min_box_width(10)
+    )

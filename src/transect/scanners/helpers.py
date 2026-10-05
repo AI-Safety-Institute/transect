@@ -224,17 +224,18 @@ def main_span(transcript: Any) -> TimelineSpan:
     Returns:
         The ``TimelineSpan`` whose direct content is the main lane.
 
-    A transcript with no model events at all resolves to its root: an
-    empty orchestrator lane with zero turns, which is the honest reading
-    of a run that never called a model (a message history without its
-    event stream included).
+    A transcript with no events at all (a message history without its
+    event stream) resolves to its root: an empty orchestrator lane with
+    zero turns, the honest reading of a source that recorded no calls.
 
     Raises:
-        ValueError: When the transcript holds model turns but none under
-            a single agent span (two or more top-level agents, or model
-            calls only inside utility spans) - there is then no single
-            orchestrator lane to number, and guessing one would put the
-            whole report on the wrong axis.
+        ValueError: When the transcript has events but no model turn
+            under a single agent span - a sample that errored before its
+            first call, two or more top-level agents, or model calls only
+            inside utility spans. There is then no orchestrator lane to
+            number, and guessing one (or silently dropping the
+            transcript) would misreport the run; the error is recorded
+            per transcript and the scan status section shows it.
     """
     timelines = getattr(transcript, "timelines", None)
     timeline = timelines[0] if timelines else timeline_build(transcript.events)
@@ -257,8 +258,8 @@ def main_span(transcript: Any) -> TimelineSpan:
             span = children[0]
             continue
         if not children:
-            if not _holds_model_events(timeline.root):
-                return span  # nothing to number anywhere: an empty lane
+            if not transcript.events:
+                return span  # no events at all: an empty lane
             raise ValueError(
                 f"transcript has no model turns under its main span {span.name!r}; "
                 "there is no orchestrator lane to number"

@@ -15,6 +15,7 @@ from transect.scanners.helpers import (
     main_model_event_ids,
     main_span,
     nearest_agent_span,
+    subagent_span_begins,
 )
 
 # inspect-ai ModelUsage attribute names, used verbatim as dataframe columns
@@ -61,6 +62,11 @@ def token_timeline() -> Scanner[Transcript]:
         spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
         main = main_span(transcript)
         main_events = main_model_event_ids(main)
+        # the shared sub-agent definition: utility spans (timeline-
+        # classified single-turn helpers) are neither recorded nor
+        # counted, exactly as the classifier never sees them
+        begins, _first = subagent_span_begins(transcript, main)
+        sub_ids = {begin.id for begin in begins}
         timeline: list[dict[str, Any]] = []
         lane_counts: dict[str, int] = {}
         turn = 0
@@ -100,11 +106,12 @@ def token_timeline() -> Scanner[Transcript]:
                 "spans": cast(
                     JsonValue,
                     _span_records(
-                        transcript, spans, main.id, main_events, ends_recorded
+                        transcript, spans, main.id, main_events, sub_ids, ends_recorded
                     ),
                 ),
                 "lane_activity": cast(
-                    JsonValue, _lane_activity(transcript, spans, main.id, main_events)
+                    JsonValue,
+                    _lane_activity(transcript, spans, main.id, main_events, sub_ids),
                 ),
             },
             explanation=(
@@ -446,9 +453,11 @@ def _span_records(
     spans: dict[str, Any],
     main_id: str,
     main_events: set[int],
+    sub_ids: set[str],
     ends_recorded: bool,
 ) -> list[dict[str, Any]]:
-    """One record per sub-agent span: spawn and end anchors in
+    """One record per sub-agent span (``sub_ids``, the
+    `helpers.subagent_span_begins` set): spawn and end anchors in
     orchestrator turns, activity timestamps (see `token_timeline`).
 
     Activity is attributed via the nearest enclosing agent span, so a
@@ -460,7 +469,7 @@ def _span_records(
     for before, event in _orchestrator_count_before(transcript, main_events):
         kind = event.event
         if kind == "span_begin":
-            if getattr(event, "type", None) != "agent" or event.id == main_id:
+            if event.id not in sub_ids:
                 continue
             records[event.id] = {
                 "agent_span_id": event.id,
@@ -506,14 +515,16 @@ def _lane_activity(
     spans: dict[str, Any],
     main_id: str,
     main_events: set[int],
+    sub_ids: set[str],
 ) -> list[dict[str, Any]]:
     """Tool activity per (orchestrator turn, agent span): calls, busy
     time, start.
 
-    Counts tool events inside any sub-agent span (the main lane's own
-    span excluded); sub-agents whose activity is tool-events-only (no
-    model turns of their own, e.g. OpenClaw schema-B) show up only
-    here. Turn anchor = the orchestrator turn preceding the event.
+    Counts tool events inside any sub-agent span (``sub_ids``; the main
+    lane's own span and utility spans excluded); sub-agents whose
+    activity is tool-events-only (no model turns of their own, e.g.
+    OpenClaw schema-B) show up only here. Turn anchor = the orchestrator
+    turn preceding the event.
     """
     hits: Counter[tuple[int, str, str]] = Counter()
     busy_ms: Counter[tuple[int, str, str]] = Counter()
@@ -524,7 +535,7 @@ def _lane_activity(
         if getattr(event, "agent_span_id", None) is not None:
             continue  # folded spawn call: the orchestrator's, not the lane's
         agent_span = _sub_agent_span(spans, getattr(event, "span_id", None), main_id)
-        if agent_span is None:
+        if agent_span is None or agent_span.id not in sub_ids:
             continue
         key = (max(before - 1, 0), agent_span.name, agent_span.id)
         hits[key] += 1

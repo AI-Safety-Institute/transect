@@ -63,7 +63,8 @@ Columns (identity prefix explained in common.py):
 """
 
 from datetime import datetime
-from typing import Any, Literal, cast
+from itertools import pairwise
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -286,12 +287,15 @@ def _span_coordinates(timeline_results: pd.DataFrame | None) -> pd.DataFrame | N
             key=lambda e: e["turn"],
         )
         stamps = [spine_parse(e.get("timestamp")) for e in orchestrator]
+        # a usable clock is complete and non-decreasing in turn order; a
+        # skewed clock would place spans at the wrong turns, so it falls
+        # back to event order like a missing one
+        complete = [t for t in stamps if t is not None]
+        usable = bool(stamps) and len(complete) == len(stamps)
+        usable = usable and all(a <= b for a, b in pairwise(complete))
         cells = (
-            spine.cells(
-                cast("list[datetime]", stamps),
-                spine_parse(orchestrator[-1].get("completed")),
-            )
-            if stamps and all(t is not None for t in stamps)
+            spine.cells(complete, spine_parse(orchestrator[-1].get("completed")))
+            if usable
             else []
         )
         for record in value.get("spans") or []:

@@ -15,7 +15,7 @@
 - No backward compatibility with existing scan stores; committed fixture stores are regenerated (spec, preamble).
 - `turn` is the 0-based ordinal of the orchestrator's model events with output, in event order; nothing else is called a turn and no all-lane index exists anywhere (spec §1).
 - Main lane = the span Scout's `timeline_messages(..., depth=1)` would scan; an ambiguous or empty tree raises `ValueError` naming the candidate spans; no fallback (spec §1).
-- `pos(t) = m - 0.5 + (t - t_m) / (t_(m+1) - t_m)`; last cell's right edge = last call's `completed`, else `timestamp` + median cell width; clamp to `-0.5` and the axis right edge; zero-width interval places at the cell's left edge; wall-clock `timestamp`, never working time (spec §3).
+- `pos(t) = m - 0.5 + (t - t_m) / (t_(m+1) - t_m)`; last cell's right edge = last call's `completed`, else `timestamp` + median cell width; clamp to `-0.5` and the axis right edge; a zero-width cell is skipped (a time at its instant belongs to the next non-empty cell); wall-clock `timestamp`, never working time (spec §3).
 - Phase membership for sub-agent counts and delegated spend uses `spawn_turn`, never the timestamp anchor (spec §3).
 - `SCHEMA_VERSION` bumps; `pyproject.toml` bumps minor (`0.1.16` -> `0.2.0`) because `src/transect` changes and the frame contract changes (spec §4, §8; CI's version-bump job).
 - Repo style: comments state constraints only, no em dashes, no `--`, no all-caps emphasis; mypy and pyright both pass; `make check` is the gate and its exit status must never be masked behind a pipe (AGENTS.md; memory `transect-ci-workflow-lessons`).
@@ -28,7 +28,7 @@
 2. **Sub-agent activity after the orchestrator's last turn** (a background agent still running at submit). Expected: the span clamps to the axis's right edge and its tooltip says activity continued after the last orchestrator turn, no crash, no off-canvas bar. Pinned in Task 4 (`position` clamps) and Task 5 (`after_last` flag on the frame).
 3. **Events without timestamps** (a hand-built transcript, a store written by an importer that drops them). Expected: `position_source == "event_order"`, spans draw as ticks at `spawn_turn`, nothing divides by a missing value. Pinned in Task 4 and Task 5.
 4. **An Inspect handoff transcript's message thread carrying sub-agent assistant messages** (every `.eval` with handoffs). Expected: interventions still land on the orchestrator turn whose input saw them, not shifted by the sub-agent's messages. Pinned in Task 7.
-5. **Two orchestrator model calls with identical timestamps** (cached generates, replayed outputs). Expected: a zero-width cell places at its left edge and the next cell is unaffected. Pinned in Task 4.
+5. **Two orchestrator model calls with identical timestamps** (cached generates, replayed outputs). Expected: the zero-width cell is skipped, a time at that instant lands at the next cell's left edge, and later cells are unaffected. Pinned in Task 4.
 
 ---
 
