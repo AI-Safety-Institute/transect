@@ -273,11 +273,15 @@ otherwise.
 A layer needs no judge. Two zero-LLM-call shapes:
 
 - **Mechanical scanner**: any `@scanner` that extracts structure - a
-  regex/grep over turns, a per-turn metric, event counts. Pack
-  per-turn entries as a ``value["turns"]`` list (one result per
-  transcript) and `transect.turns_frame` explodes them into one row per
-  turn - `token_timeline`'s own convention - ready for tags and
-  turn-anchored blocks; any other value shape mounts via
+  regex/grep over turns, a per-turn metric, event counts. Number turns
+  with `transect.scanners.helpers.orchestrator_turns(transcript)`
+  (declare `events=["model", "span_begin", "span_end", "tool"]` so it
+  can resolve the main lane): `turn` means orchestrator turn everywhere,
+  and enumerating every lane's model events would misalign your rows
+  with the axis. Pack per-turn entries as a ``value["turns"]`` list
+  (one result per transcript) and `transect.turns_frame` explodes them
+  into one row per turn - `token_timeline`'s own convention - ready for
+  tags and turn-anchored blocks; any other value shape mounts via
   `generic_flatten` or your own frame fn.
 - **No scanner at all**: pass a ready per-turn DataFrame - e.g.
   `Layer(name="review", frame=my_df, tags=True)`. `tags=True`

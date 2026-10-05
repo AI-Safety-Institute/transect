@@ -61,7 +61,7 @@ class Excerpt:
     """One model turn's excerpt, as a card renders it.
 
     Attributes:
-        turn: The turn number, on the report's shared turn axis.
+        turn: The orchestrator turn number (the report's turn axis).
         lane: The turn's agent lane - the sub-agent span's name, or
             ``"orchestrator"`` for a span-less turn (the token
             timeline records the same lane as ``None`` there; a

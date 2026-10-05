@@ -18,7 +18,7 @@ _CHART_KINDS = ("bar", "line", "step", "area")
 
 @dataclass(frozen=True)
 class TurnChart:
-    """A numeric per-turn series on the shared turn axis."""
+    """A numeric per-turn series on the orchestrator turn axis."""
 
     y: str
     kind: str = "bar"

@@ -7,8 +7,8 @@ Columns (identity prefix explained in common.py):
 - tool_calls: tool events in that span at that turn.
 - busy_seconds: summed tool wall-time; None = not reported.
 - started_at: the span's first activity timestamp.
-- span_end_turn: recorded span completion turn; None when the span
-  never closed.
+- span_end_turn: the orchestrator turn preceding the span's end event;
+  None when the span never closed.
 - schema_version: the frames contract version.
 """
 

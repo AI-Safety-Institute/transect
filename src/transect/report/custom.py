@@ -161,7 +161,7 @@ def _tip_name(column: str) -> str:
 
 
 def _turn_chart(block: b.TurnChart, frame: pd.DataFrame, ctx: SectionContext):
-    """bar/line/step/area on the shared turn axis, with a per-turn
+    """bar/line/step/area on the orchestrator turn axis, with a per-turn
     tooltip column."""
     rows = frame.dropna(subset=[block.y]).sort_values("turn")
     values = pd.DataFrame(

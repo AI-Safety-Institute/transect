@@ -250,8 +250,12 @@ too, but nothing here requires it.)
   filled only when judged.
 - Two column gotchas: `phases.n_turns` counts the reasoning turns the
   judge saw, judged and filled (fewer than the `turn_start..turn_end`
-  width - content-free tool-only and sub-agent turns in range are not
-  counted); `new_work` sums are new-content tokens, not billable cost.
+  width - content-free tool-only turns in range are not counted; the
+  axis itself holds orchestrator turns only, so a sub-agent's turns are
+  never in a range); `new_work` sums are new-content tokens, not
+  billable cost, and `phases.new_work_tokens` is orchestrator spend
+  while `delegated_new_work_tokens` is the spend of sub-agents spawned
+  in the phase.
 - `flushes` preserves compaction `role`, full `metadata`, `strategy`,
   `messages_before`, `messages_after`, and `trigger`. For Inspect `.eval`
   logs it also carries `compaction_prompt` (the summarization prompt as

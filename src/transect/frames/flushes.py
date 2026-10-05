@@ -14,7 +14,7 @@ Columns (identity prefix explained in common.py):
 - tokens_before / tokens_after: window size around the flush; None =
   not reported and not inferrable.
 - tokens_after_inferred: tokens_after came from the first non-gap
-  main-lane turn after the flush, not the event itself.
+  orchestrator turn after the flush, not the event itself.
 - role: the model role whose conversation was compacted, when recorded.
 - metadata: the complete recorded compaction event metadata (object), or
   None.
