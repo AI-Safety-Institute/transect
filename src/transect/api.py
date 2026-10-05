@@ -287,7 +287,10 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
         turn_groups=turn_groups_df(raw_phases),
         phase_turn_votes=phase_turn_votes_df(raw_phases),
         subagents=subagents_df(
-            raw_subagents, lane_activity=lane_activity, token_timeline=token_timeline
+            raw_subagents,
+            timeline_results=raw,
+            lane_activity=lane_activity,
+            token_timeline=token_timeline,
         ),
         subagent_votes=subagent_votes_df(raw_subagents),
         label_definitions=label_definitions_df(

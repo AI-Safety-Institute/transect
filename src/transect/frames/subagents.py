@@ -1,18 +1,30 @@
 """subagents_df: one row per agent span - structural facts always,
 judge columns when the classification scanner ran.
 
-The structural half is built from `lane_activity_df` + `token_timeline_df`
-(span identity, extent, activity rollups), so the frame exists even on
+The structural half is built from the token_timeline scanner's span
+record (identity, axis coordinates) plus `lane_activity_df` and
+`token_timeline_df` (activity rollups), so the frame exists even on
 scans with no judge; the classification half left-joins onto it and is
 NaN otherwise.
 
 Columns (identity prefix explained in common.py):
 
 - agent_span_id / agent_lane: the sub-agent span (id / name).
-- span_start_turn / span_last_turn: first/last observed activity turn.
-- span_end_turn: when the span closed (the join-back point).
-- span_end_recorded: whether span_end_turn is a recorded fact.
-- started_at: the span's first activity timestamp.
+- spawn_turn: the orchestrator turn preceding the span's begin event
+  (the turn that issued the spawn when the source links them, the
+  importer's file-order anchor otherwise). Phase membership for the
+  sub-agent count and the delegated spend uses this.
+- anchor_turn / end_turn: the orchestrator turns whose cells hold the
+  span's first activity and its end (frames/spine.py).
+- start_pos / end_pos: the same as axis positions (cell m is
+  [m - 0.5, m + 0.5]); the swimlane box.
+- position_source: "timestamp" (positions follow wall clock) or
+  "event_order" (no usable timestamps: the span sits at spawn_turn).
+- end_recorded: the source recorded the span's end (False on OpenClaw,
+  whose ends are synthesised at last activity).
+- after_last: activity continued after the last orchestrator turn; the
+  box is clamped to the axis edge.
+- started_at / ended_at: ISO timestamps of first activity and end.
 - tool_calls / busy_seconds: summed tool activity (lane_activity).
 - output_tokens / new_work / billable: summed model-turn token
   rollups (token_timeline agent rows; NaN for tool-events-only spans).
@@ -50,10 +62,12 @@ Columns (identity prefix explained in common.py):
 - schema_version: the frames contract version.
 """
 
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal, cast
 
 import pandas as pd
 
+from transect.frames import spine
 from transect.frames.common import (
     CALL_STATUSES,
     IDENTITY_COLS,
@@ -74,18 +88,23 @@ from transect.frames.common import (
 
 def subagents_df(
     results: pd.DataFrame,
+    timeline_results: pd.DataFrame | None = None,
     lane_activity: pd.DataFrame | None = None,
     token_timeline: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """One row per agent span: structural spine from ``lane_activity`` +
-    ``token_timeline``, classification columns left-joined from the
+    """One row per agent span: structural spine from the token_timeline
+    scanner's raw results (``timeline_results``: the span record and the
+    orchestrator clock) plus ``lane_activity`` and ``token_timeline``
+    rollups; classification columns left-joined from the
     subagent_classification results (NaN when the scanner never ran)."""
     judge = _judge_rows(results)
-    spine = _structural_spine(lane_activity, token_timeline)
+    spine = _structural_spine(timeline_results, lane_activity, token_timeline)
     if spine is None:
         merged = judge
-        merged["span_end_recorded"] = False
-        merged["started_at"] = None
+        for col in _SPINE_FLAGS:
+            merged[col] = False
+        for col in _SPINE_TEXT:
+            merged[col] = pd.Series(pd.NA, index=merged.index, dtype="string")
         for col, dtype in _SPINE_DTYPES:
             merged[col] = None
             merged[col] = merged[col].astype(dtype)
@@ -106,11 +125,16 @@ def subagents_df(
         *IDENTITY_COLS,
         "agent_span_id",
         "agent_lane",
-        "span_start_turn",
-        "span_last_turn",
-        "span_end_turn",
-        "span_end_recorded",
+        "spawn_turn",
+        "anchor_turn",
+        "end_turn",
+        "start_pos",
+        "end_pos",
+        "position_source",
+        "end_recorded",
+        "after_last",
         "started_at",
+        "ended_at",
         "tool_calls",
         "busy_seconds",
         "output_tokens",
@@ -138,7 +162,7 @@ def subagents_df(
     merged["overturned"] = merged.overturned.fillna(False).astype(bool)
     return with_schema(
         merged.sort_values(
-            ["transcript_id", "span_start_turn"], na_position="last"
+            ["transcript_id", "start_pos", "agent_span_id"], na_position="last"
         ).reset_index(drop=True)
     )
 
@@ -156,23 +180,33 @@ def _vocabulary(results: pd.DataFrame) -> list[str]:
 
 
 # the structural columns
-_SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
-    ("span_start_turn", "Int64"),
-    ("span_last_turn", "Int64"),
-    ("span_end_turn", "Int64"),
+_SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64", "float64"]], ...] = (
+    ("spawn_turn", "Int64"),
+    ("anchor_turn", "Int64"),
+    ("end_turn", "Int64"),
+    ("start_pos", "float64"),
+    ("end_pos", "float64"),
     ("tool_calls", "Int64"),
     ("busy_seconds", "Float64"),
     ("output_tokens", "Float64"),
     ("new_work", "Float64"),
     ("billable", "Float64"),
 )
+_SPINE_FLAGS = ("end_recorded", "after_last")
+_SPINE_TEXT = ("position_source", "started_at", "ended_at")
 
 
 def _structural_spine(
-    lane_activity: pd.DataFrame | None, token_timeline: pd.DataFrame | None
+    timeline_results: pd.DataFrame | None,
+    lane_activity: pd.DataFrame | None,
+    token_timeline: pd.DataFrame | None,
 ) -> pd.DataFrame | None:
-    """Per-span structural facts from the two activity sources."""
+    """Per-span structural facts: coordinates from the span record,
+    rollups from the two activity frames."""
     parts = []
+    records = _span_coordinates(timeline_results)
+    if records is not None:
+        parts.append(records.set_index(["transcript_id", "agent_span_id"]))
     if lane_activity is not None and len(lane_activity):
         tools = lane_activity.groupby(
             ["transcript_id", "agent_span_id"], sort=False
@@ -182,10 +216,7 @@ def _structural_spine(
             epoch=("epoch", "first"),
             agent=("agent", "first"),
             agent_lane=("agent_lane", "first"),
-            tool_start=("turn", "min"),
-            tool_last=("turn", "max"),
-            span_end_turn=("span_end_turn", "first"),
-            started_at=("started_at", "first"),
+            tool_turn=("turn", "min"),
             tool_calls=("tool_calls", "sum"),
             busy_seconds=("busy_seconds", lambda s: s.sum(min_count=1)),
         )
@@ -201,8 +232,6 @@ def _structural_spine(
                 epoch=("epoch", "first"),
                 agent=("agent", "first"),
                 agent_lane=("agent_lane", "first"),
-                model_start=("turn", "min"),
-                model_last=("turn", "max"),
                 output_tokens=("output_tokens", lambda s: s.sum(min_count=1)),
                 new_work=("new_work", lambda s: s.sum(min_count=1)),
                 billable=("billable", lambda s: s.sum(min_count=1)),
@@ -213,26 +242,79 @@ def _structural_spine(
     spine = parts[0]
     for part in parts[1:]:
         spine = spine.join(part, how="outer", rsuffix="_m")
-    # coalesce the shared identity/lane columns from either source
-    for col in ("sample_id", "task_set", "epoch", "agent", "agent_lane"):
-        twin = f"{col}_m"
-        if twin in spine.columns:
-            spine[col] = spine[col].combine_first(spine[twin])
-            spine = spine.drop(columns=[twin])
-    starts = [c for c in ("tool_start", "model_start") if c in spine.columns]
-    lasts = [c for c in ("tool_last", "model_last") if c in spine.columns]
-    spine["span_start_turn"] = spine[starts].min(axis=1)
-    spine["span_last_turn"] = spine[lasts].max(axis=1)
-    spine = spine.drop(columns=[*starts, *lasts])
-    for col, dtype in _SPINE_DTYPES:
+        # coalesce the shared identity/lane columns from either source
+        for col in ("sample_id", "task_set", "epoch", "agent", "agent_lane"):
+            twin = f"{col}_m"
+            if twin in spine.columns:
+                spine[col] = spine[col].combine_first(spine[twin])
+                spine = spine.drop(columns=[twin])
+    for col in (*_SPINE_FLAGS, *_SPINE_TEXT, *(c for c, _ in _SPINE_DTYPES)):
         if col not in spine.columns:
             spine[col] = None
+    # a span the record never saw (a store from a partial scan) sits at
+    # its first tool activity, by event order
+    missing = spine.position_source.isna()
+    if missing.any() and "tool_turn" in spine.columns:
+        anchor = spine.loc[missing, "tool_turn"].astype("float64")
+        spine.loc[missing, "spawn_turn"] = anchor
+        spine.loc[missing, "anchor_turn"] = anchor
+        spine.loc[missing, "end_turn"] = anchor
+        spine.loc[missing, "start_pos"] = anchor
+        spine.loc[missing, "end_pos"] = anchor
+        spine.loc[missing, "position_source"] = "event_order"
+    spine = spine.drop(columns=[c for c in ("tool_turn",) if c in spine.columns])
+    for col in _SPINE_FLAGS:
+        spine[col] = spine[col].fillna(False).astype(bool)
+    for col in _SPINE_TEXT:
+        spine[col] = spine[col].astype("string")
+    for col, dtype in _SPINE_DTYPES:
         spine[col] = spine[col].astype(dtype)
-    # OpenClaw exports carry no span end
-    spine["span_end_recorded"] = spine.span_end_turn.notna() & (
-        spine.agent != "openclaw"
-    )
     return spine.reset_index()
+
+
+def _span_coordinates(timeline_results: pd.DataFrame | None) -> pd.DataFrame | None:
+    """The span record projected onto the axis: one row per sub-agent
+    span with its `frames.spine.coordinates`."""
+    if timeline_results is None or not len(timeline_results):
+        return None
+    rows = []
+    for _, r in timeline_results.iterrows():
+        identity_cols = identity(r)
+        value = result_value(r["value"])
+        orchestrator = sorted(
+            (e for e in value.get("timeline") or [] if e.get("turn") is not None),
+            key=lambda e: e["turn"],
+        )
+        stamps = [spine_parse(e.get("timestamp")) for e in orchestrator]
+        cells = (
+            spine.cells(
+                cast("list[datetime]", stamps),
+                spine_parse(orchestrator[-1].get("completed")),
+            )
+            if stamps and all(t is not None for t in stamps)
+            else []
+        )
+        for record in value.get("spans") or []:
+            rows.append(
+                {
+                    **identity_cols,
+                    "agent_span_id": record["agent_span_id"],
+                    "agent_lane": record["agent_lane"],
+                    "spawn_turn": record["spawn_turn"],
+                    **spine.coordinates(record, cells),
+                    "end_recorded": bool(record.get("end_recorded")),
+                    "started_at": record.get("first_at"),
+                    "ended_at": record.get("end_at"),
+                }
+            )
+    if not rows:
+        return None
+    return pd.DataFrame(rows)
+
+
+def spine_parse(value: Any) -> datetime | None:
+    """ISO text to datetime; None for anything else."""
+    return datetime.fromisoformat(value) if isinstance(value, str) and value else None
 
 
 def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:

@@ -165,23 +165,24 @@ def test_token_timeline_numbers_orchestrator_turns_only(demo_results):
     assert timeline.timestamp.str.startswith("20").all()
 
 
-def test_subagent_spans_are_listed_even_unjudged(demo_results):
-    """On a mechanical-only run the subagents frame still lists every
-    span's structural facts, with honestly absent labels - and its
-    per-span spend agrees with the token timeline's lane sums."""
+def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
+    """Each handoff span anchors in its transfer turn's cell by wall
+    clock, spawns at that turn, and keeps its per-span spend."""
     subagents = demo_results.frames()["subagents"]
     assert subagents.label.isna().all()
     expected = pd.DataFrame(
         [
-            ("eda", 4, 5, 5, 2, 1750.0),
-            ("alt_model", 8, 9, 9, 2, 2701.0),
-            ("reviewer", 13, 15, 15, 3, 6242.0),
+            ("eda", 3, 3, 3, "timestamp", True, 2, 1750.0),
+            ("alt_model", 5, 5, 5, "timestamp", True, 2, 2701.0),
+            ("reviewer", 8, 8, 8, "timestamp", True, 3, 6242.0),
         ],
         columns=[
             "agent_lane",
-            "span_start_turn",
-            "span_last_turn",
-            "span_end_turn",
+            "spawn_turn",
+            "anchor_turn",
+            "end_turn",
+            "position_source",
+            "end_recorded",
             "tool_calls",
             "new_work",
         ],
@@ -191,6 +192,13 @@ def test_subagent_spans_are_listed_even_unjudged(demo_results):
         expected,
         check_dtype=False,
     )
+    # the box sits inside its cell: after the transfer turn's start and
+    # before the next orchestrator turn's
+    for row in subagents.itertuples():
+        assert row.anchor_turn - 0.5 <= row.start_pos < row.end_pos
+        assert row.end_pos <= row.end_turn + 0.5
+    assert subagents.after_last.tolist() == [False, False, False]
+    assert subagents.started_at.str.startswith("20").all()
     timeline = demo_results.token_timeline
     lane_sums = timeline.groupby("agent_lane").new_work.sum()
     assert dict(zip(subagents.agent_lane, subagents.new_work, strict=True)) == dict(
