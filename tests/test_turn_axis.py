@@ -344,7 +344,7 @@ def test_overlapping_spans_draw_as_overlapping_boxes_in_two_rows(parallel_result
     assert max(a.x0, b.x0) < min(a.x1, b.x1)
     assert not (a.before_first or a.after_last or b.before_first or b.after_last)
     packed = pack_lanes(lanes, lambda _sid: "sub-agents")
-    assert sorted(row[0] for row in packed.rows) == [0, 1]
+    assert sorted(row[1] for row in packed.rows) == [0, 1]
     assert packed.ylabels == ["sub-agents (2)"]
 
 

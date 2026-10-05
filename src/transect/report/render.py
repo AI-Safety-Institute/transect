@@ -469,13 +469,11 @@ def _subagent_section(
     geometry_of = {span.span_id: span for span in lanes}
     recorded_ends = set(subagents.agent_span_id[subagents.end_recorded])
     end_markers = [
-        (geometry_of[sid].x1, row_y)
-        for sid, row_y in packed.span_row
-        if sid in recorded_ends and geometry_of[sid].boxed
+        (x_start + width, row_y)
+        for sid, row_y, x_start, width, _label, _lane, boxed in packed.rows
+        if boxed and sid in recorded_ends
     ]
 
-    # pack_lanes appends rows and span_row in the same iteration, so
-    # positional pairing is exact
     span_title_of = sections.span_titles(subagents, label_of, geometry_of)
     # one "member votes" tooltip row (voting regimes only), mirroring
     # the agreement strip: every member's own label + confidence (or
@@ -525,7 +523,7 @@ def _subagent_section(
     tip_fields = tuple(
         base_fields[:insert_at] + member_fields + base_fields[insert_at:]
     )
-    row_titles = [span_title_of[span_id] for span_id, _row_y in packed.span_row]
+    row_titles = [span_title_of[row[0]] for row in packed.rows]
 
     component, chart_height = charts.swimlanes(
         packed.rows,

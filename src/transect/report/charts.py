@@ -1496,16 +1496,14 @@ def swimlanes(
     """Sub-agent activity swimlanes: one mark per placed span, packed
     into sub-lane rows by `lanes_layout.pack_lanes`.
 
-    ``rows`` (``(row_y, x_start, width, label, lane_name, boxed)`` per
-    span) and ``end_markers`` (``(end_pos, row_y)``, already filtered by
-    the caller to spans with a harness-recorded end) come straight off a
-    `PackedLanes`. ``titles`` is one dict per span in ``rows``' own
-    order, keyed by ``tip_fields`` (the caller's subset of
+    ``rows`` (``(span_id, row_y, x_start, width, label, lane_name,
+    boxed)`` per span) come straight off a `PackedLanes`;
+    ``end_markers`` (``(end_pos, row_y)``) are the caller's selection of
+    rows with a harness-recorded end. ``titles`` is one dict per span in
+    ``rows``' own order, keyed by ``tip_fields`` (the caller's subset of
     `SPAN_TIP_FIELDS`), one tooltip row per field -
     `render._subagent_section` builds it via `sections.span_titles` and
-    joins it onto `PackedLanes.span_row`, which `pack_lanes` appends in
-    the same per-span iteration as ``rows``, so the two line up
-    positionally.
+    looks each row's up by its ``span_id``.
 
     ``yticks``/``ylabels`` are drawn here as one right-anchored `text`
     mark per label-block, positioned at the turn axis's domain start and
@@ -1578,13 +1576,14 @@ def swimlanes(
       2px tick rather than a box. Pinned by `pack_lanes`' unit tests and
       by a browser test reading real rendered geometry.
     """
-    n_rows = int(max(row[0] for row in rows)) + 1 if rows else 1
+    n_rows = int(max(row[1] for row in rows)) + 1 if rows else 1
     marks: list[Mark] = []
     max_lane_chars = 0
     max_votes_chars = 0
     if rows:
         frame = pd.DataFrame(
-            rows, columns=["y", "x_start", "width", "label", "lane_name", "boxed"]
+            rows,
+            columns=["span_id", "y", "x_start", "width", "label", "lane_name", "boxed"],
         )
         frame["y1"] = frame.y - _SWIMLANE_BOX_HALF_HEIGHT
         frame["y2"] = frame.y + _SWIMLANE_BOX_HALF_HEIGHT

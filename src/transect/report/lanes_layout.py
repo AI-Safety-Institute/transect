@@ -56,17 +56,15 @@ class SpanGeometry:
 class PackedLanes:
     """Row layout for one transcript's sub-agent swimlanes.
 
-    ``rows``: one ``(row_y, x_start, width, label, lane_name, boxed)``
-    tuple per placed span - the bar geometry for `charts.swimlanes`
-    (``boxed``: draw the span's extent as a box; a tick otherwise).
-    ``span_row``: one ``(span_id, row_y)`` tuple per placed span, for
-    joining completion markers onto their row. ``yticks``/``ylabels``:
-    one entry per label row-block - the block's midpoint y and a
-    "label (n)" text.
+    ``rows``: one ``(span_id, row_y, x_start, width, label, lane_name,
+    boxed)`` tuple per placed span - the bar geometry for
+    `charts.swimlanes` (``boxed``: draw the span's extent as a box; a
+    tick otherwise), keyed by the span so callers can join tooltips and
+    completion markers onto the row. ``yticks``/``ylabels``: one entry
+    per label row-block - the block's midpoint y and a "label (n)" text.
     """
 
     rows: list[tuple]
-    span_row: list[tuple]
     yticks: list[float]
     ylabels: list[str]
 
@@ -105,8 +103,7 @@ def pack_lanes(
     for span in lanes:
         by_label.setdefault(label_of(span.span_id), []).append(span)
 
-    rows: list[tuple] = []  # (y, x_start, width, label, lane_name, boxed)
-    span_row: list[tuple] = []  # (span_id, y) for completion markers
+    rows: list[tuple] = []  # (span_id, y, x_start, width, label, lane_name, boxed)
     y = 0
     yticks: list[float] = []
     ylabels: list[str] = []
@@ -115,10 +112,9 @@ def pack_lanes(
         lane_last_end: list[float] = []
         row_base = y
         for span in group:
-            x0, x1 = span.x0, span.x1
-            footprint_end = max(x1, x0 + min_footprint)
+            footprint_end = max(span.x1, span.x0 + min_footprint)
             placed = next(
-                (li for li, end in enumerate(lane_last_end) if x0 > end), None
+                (li for li, end in enumerate(lane_last_end) if span.x0 > end), None
             )
             if placed is None:
                 placed = len(lane_last_end)
@@ -127,18 +123,18 @@ def pack_lanes(
                 lane_last_end[placed] = footprint_end
             rows.append(
                 (
+                    span.span_id,
                     row_base + placed,
-                    x0,
-                    x1 - x0,
+                    span.x0,
+                    span.x1 - span.x0,
                     label,
                     truncate_lane_name(span.lane_name),
                     span.boxed,
                 )
             )
-            span_row.append((span.span_id, row_base + placed))
-        n_sublanes = max(1, len(lane_last_end))
+        n_sublanes = len(lane_last_end)
         yticks.append(row_base + (n_sublanes - 1) / 2)
         ylabels.append(f"{label} ({len(group)})")
         y = row_base + n_sublanes
 
-    return PackedLanes(rows=rows, span_row=span_row, yticks=yticks, ylabels=ylabels)
+    return PackedLanes(rows=rows, yticks=yticks, ylabels=ylabels)
