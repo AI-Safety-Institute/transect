@@ -250,15 +250,12 @@ def _delegated_rollup(
     member span carries usage (tool-only lanes), never 0. Both are NA
     only without the input; an empty frame from a complete structural
     scan is a known count of zero."""
-    if subagents is None:
+    if subagents is None or not len(subagents):
         return (
             pd.Series(pd.NA, index=phases.index, dtype="Float64"),
-            pd.Series(pd.NA, index=phases.index, dtype="Int64"),
-        )
-    if not len(subagents):
-        return (
-            pd.Series(pd.NA, index=phases.index, dtype="Float64"),
-            pd.Series(0, index=phases.index, dtype="Int64"),
+            pd.Series(
+                pd.NA if subagents is None else 0, index=phases.index, dtype="Int64"
+            ),
         )
     spend: list[Any] = []
     counts: list[int] = []
