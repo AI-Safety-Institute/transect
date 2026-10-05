@@ -176,14 +176,20 @@ def eval_setup() -> Scanner[Transcript]:
     return execute
 
 
-@scanner(messages=["user", "assistant"], events=["model", "compaction"])
+@scanner(
+    messages=["user", "assistant"],
+    # span events: the orchestrator lane is resolved from the timeline
+    events=["model", "compaction", "span_begin", "span_end"],
+)
 def context_flush() -> Scanner[Transcript]:
     """Context-window compactions (flushes), from explicit compaction events.
 
     value = {"flushes": [entry, ...]} with one entry per compaction:
-    turn (count of model turns preceding the flush), type, source,
-    tokens_before, tokens_after, role, metadata - recorded as the event
-    reports them (optional facts remain None). Inspect eval logs also
+    turn (count of orchestrator turns preceding the flush, i.e. the
+    first post-flush orchestrator turn), agent_span_id (the sub-agent
+    lane the compaction happened in; None on the orchestrator), type,
+    source, tokens_before, tokens_after, role, metadata - recorded as
+    the event reports them (optional facts remain None). Inspect eval logs also
     carry compaction_prompt (the summarization call's formatted prompt)
     and compaction_nudge (the pre-compaction memory warning), both as
     the model saw them; see scanners/compaction.py for how they are
@@ -194,12 +200,17 @@ def context_flush() -> Scanner[Transcript]:
     async def execute(transcript: Transcript) -> Result:
         flushes: list[dict[str, Any]] = []
         texts = iter(compaction_texts(transcript))
-        for turn, event in _non_model_events(transcript):
+        spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
+        main = main_span(transcript)
+        main_events = main_model_event_ids(main)
+        for turn, event in _orchestrator_count_before(transcript, main_events):
             if event.event != "compaction":
                 continue
+            lane = _sub_agent_span(spans, getattr(event, "span_id", None), main.id)
             flushes.append(
                 {
                     "turn": turn,
+                    "agent_span_id": lane.id if lane is not None else None,
                     "type": event.type,
                     "source": event.source,
                     "tokens_before": event.tokens_before,
@@ -221,7 +232,11 @@ def context_flush() -> Scanner[Transcript]:
 
 @scanner(
     messages="all",
-    events=cast("list[Any]", ["model", "input", "approval", "compaction"]),
+    # span events: the orchestrator lane is resolved from the timeline
+    events=cast(
+        "list[Any]",
+        ["model", "input", "approval", "compaction", "span_begin", "span_end"],
+    ),
 )
 def human_intervention() -> Scanner[Transcript]:
     """Mid-run human interactions. Detection is structural, via inspect's

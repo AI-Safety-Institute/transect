@@ -212,7 +212,8 @@ def test_flushes_frame_carries_the_demo_compaction(demo_results):
     expected = pd.DataFrame(
         [
             {
-                "turn": 11,
+                "turn": 7,
+                "agent_span_id": pd.NA,
                 "type": "summary",
                 "source": "inspect",
                 "tokens_before": 1906,
@@ -516,6 +517,23 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
     assert (synthesized.tokens_before, synthesized.tokens_after) == (950, 300)
     # turn 5 dipped to 400 but recovered to 950: transient, no row;
     # turn 8's drop is the recorded flush itself: suppressed
+
+
+def test_sub_agent_lanes_never_synthesize_flushes():
+    """A context reset inside a sub-agent lane is that lane's own
+    business; the orchestrator axis synthesises nothing from it."""
+    timeline = pd.DataFrame(
+        {
+            "transcript_id": ["tr1"] * 5,
+            "turn": [0, 1, None, None, 2],
+            "context": [1000, 1100, 900, 100, 1200],
+            "agent_span_id": [None, None, "A", "A", None],
+            "agent_lane": [None, None, "a", "a", None],
+        }
+    ).astype({"turn": "Int64"})
+    frame = flushes_df(pd.DataFrame(), timeline)
+    assert len(frame) == 0
+    assert "agent_span_id" in frame.columns
 
 
 def test_a_recorded_flush_without_tokens_after_infers_it():
