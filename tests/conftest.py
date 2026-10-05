@@ -120,6 +120,14 @@ def demo_log() -> Path:
 
 
 @pytest.fixture
+def parallel_logs() -> Path:
+    """The committed parallel sub-agents eval: a deep agent running two
+    background sub-agents that overlap each other and several of its
+    own turns."""
+    return _log_dir("parallel_logs", "tests/fixtures/generate_parallel_eval.py")
+
+
+@pytest.fixture
 def openclaw_log() -> Path:
     path = FIXTURES / "openclaw" / "mini_telemetry.jsonl"
     if not path.exists():

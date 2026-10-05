@@ -33,6 +33,11 @@ SCENARIOS = {
         {"sample": "fixture-sample-1"},
         ["Eval setup", "Token telemetry"],
     ),
+    "parallel-subagents": (
+        "tests/fixtures/parallel_logs",
+        {},
+        ["Eval setup", "Token telemetry", "Sub-agent activity"],
+    ),
     "openclaw-import": (
         "tests/fixtures/openclaw/mini_telemetry.jsonl",
         {},
@@ -61,13 +66,15 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     html = Path(results.report_paths[0]).read_text()
     for section in sections:
         assert section in html
-    if name == "openclaw-import":
-        assert "Compaction nudge" not in html
-    else:
+    # an OpenClaw import records no compaction configuration at all; the
+    # parallel fixture is an Inspect log run with compaction disabled
+    recorded = name not in ("openclaw-import", "parallel-subagents")
+    if recorded:
         assert "Compaction nudge (before compaction)" in html
+    else:
+        assert "Compaction nudge" not in html
     assert "Traceback" not in html
-    # the Inspect logs record a compaction threshold (row + chart toggle)
-    recorded = name != "openclaw-import"
+    # the other Inspect logs record a compaction threshold (row + toggle)
     assert ("compaction threshold</span>" in html) == recorded
     assert ("Compaction threshold:" in html) == recorded
     assert len(html) > 20_000

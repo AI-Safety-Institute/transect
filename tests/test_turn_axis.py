@@ -273,3 +273,58 @@ def test_excerpts_cover_orchestrator_turns_only():
     assert set(found) <= set(range(10))
     assert {e.lane for e in found.values()} == {"orchestrator"}
     assert set(_tool_call_counts(transcript)) <= set(range(10))
+
+
+# --- the parallel sub-agents fixture -----------------------------------------
+
+from transect.api import _run  # noqa: E402
+from transect.report.lanes_layout import pack_lanes  # noqa: E402
+from transect.spec import Spec  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def parallel_results(tmp_path_factory):
+    """One $0 run over the committed parallel sub-agents log."""
+    logs = Path(__file__).parent / "fixtures" / "parallel_logs"
+    if not any(logs.glob("*.eval")):
+        pytest.skip(
+            "fixture missing - run: "
+            "uv run python tests/fixtures/generate_parallel_eval.py"
+        )
+    return _run(
+        logs=str(logs), spec=Spec(), scans_dir=str(tmp_path_factory.mktemp("scans"))
+    )
+
+
+def test_parallel_fixture_numbers_five_orchestrator_turns(parallel_results):
+    """Four interleaved sub-agent turns take no turn numbers."""
+    timeline = parallel_results.token_timeline
+    assert timeline[timeline.turn.notna()].turn.tolist() == [0, 1, 2, 3, 4]
+    assert int(timeline.turn.isna().sum()) == 4
+    assert timeline[timeline.agent_lane == "scout_a"].lane_turn.tolist() == [0, 1]
+
+
+def test_parallel_fixture_spans_overlap_on_the_orchestrator_axis(parallel_results):
+    """Two background sub-agents spawned at turn 0 run across turns 0 to 3
+    by wall clock and overlap each other."""
+    spans = parallel_results.subagents.sort_values("agent_lane")
+    assert spans.agent_lane.tolist() == ["scout_a", "scout_b"]
+    assert spans.spawn_turn.tolist() == [0, 0]
+    assert spans.anchor_turn.tolist() == [0, 0]
+    assert spans.end_turn.tolist() == [3, 3]
+    assert spans.position_source.tolist() == ["timestamp", "timestamp"]
+    assert spans.end_recorded.tolist() == [True, True]
+    a, b = spans.itertuples()
+    assert max(a.start_pos, b.start_pos) < min(a.end_pos, b.end_pos)
+
+
+def test_overlapping_spans_pack_into_two_rows(parallel_results):
+    """The greedy packer gives concurrent spans separate sub-lanes."""
+    spans = parallel_results.subagents
+    lanes = [
+        (r.agent_span_id, float(r.start_pos), float(r.end_pos), str(r.agent_lane), True)
+        for r in spans.itertuples()
+    ]
+    packed = pack_lanes(lanes, lambda _sid: "sub-agents")
+    assert sorted(row[0] for row in packed.rows) == [0, 1]
+    assert packed.ylabels == ["sub-agents (2)"]
