@@ -9,6 +9,7 @@ turns were active while it ran, not a turn count of its own.
 """
 
 from datetime import datetime
+from itertools import pairwise
 from statistics import median
 from typing import Any
 
@@ -27,10 +28,10 @@ def cells(starts: list[datetime], last_completed: datetime | None) -> Cells:
         starts: Each orchestrator model call's start, in turn order.
         last_completed: The last call's completion time, if recorded.
     """
+    if not starts:
+        return []
     s = [t.timestamp() for t in starts]
-    out: Cells = [(s[i], s[i + 1]) for i in range(len(s) - 1)]
-    if not s:
-        return out
+    out: Cells = list(pairwise(s))
     if last_completed is not None and last_completed.timestamp() > s[-1]:
         right = last_completed.timestamp()
     else:
