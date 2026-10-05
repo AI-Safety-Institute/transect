@@ -335,6 +335,7 @@ erDiagram
         int lane_turn "ordinal within the turn's own lane"
         string agent_span_id FK "sub-agent lane; NA on the orchestrator"
         string timestamp "model call start, ISO"
+        string completed "model call completion, ISO"
         int output_tokens
         int new_work
         int context
@@ -414,9 +415,11 @@ erDiagram
         string agent_span_id PK
         string agent_lane
         int spawn_turn "orchestrator turn that spawned it"
-        float start_pos "axis extent by wall-clock"
-        float end_pos
-        string position_source "timestamp or event_order"
+        int anchor_turn "orchestrator turn active at its first activity"
+        int end_turn "orchestrator turn active at its end"
+        string turn_source "timestamp or event_order"
+        string started_at
+        string ended_at
         string label FK
         float confidence
         string label_source

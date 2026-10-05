@@ -33,6 +33,25 @@ def truncate_lane_name(name: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class SpanGeometry:
+    """One sub-agent span on the orchestrator axis, as the swimlane
+    draws it: ``x0``..``x1`` is its wall-clock extent mapped through
+    `frames.spine.position` when ``boxed``, else both are the spawn
+    turn (a tick). ``before_first`` / ``after_last`` say the span's
+    activity ran past the axis's left or right edge, where the box is
+    clamped and the tooltip says so.
+    """
+
+    span_id: Any
+    lane_name: str
+    x0: float
+    x1: float
+    boxed: bool
+    before_first: bool = False
+    after_last: bool = False
+
+
 @dataclass
 class PackedLanes:
     """Row layout for one transcript's sub-agent swimlanes.
@@ -53,18 +72,14 @@ class PackedLanes:
 
 
 def pack_lanes(
-    lanes: list[tuple[Any, float, float, str, bool]],
+    lanes: list[SpanGeometry],
     label_of: Callable[[Any], str],
     min_footprint: float = 0.0,
 ) -> PackedLanes:
     """Greedily pack ``lanes`` into swimlane rows, one row-block per label.
 
-    ``lanes`` is a list of ``(span_id, x0, x1, lane_name, boxed)``
-    tuples: the span's axis extent (`frames.subagents` ``start_pos`` /
-    ``end_pos``), its lane name, and whether its extent is real
-    (timestamp-placed) or a point at its spawn turn. ``label_of`` maps
-    a span_id to its classification label (callers fall back to
-    "unclassified" for spans with no judged label).
+    ``label_of`` maps a span_id to its classification label (callers
+    fall back to "unclassified" for spans with no judged label).
 
     Row-blocks are ordered by sorted label name; within a block, spans
     are placed first-fit ordered by start position - a span opens a new
@@ -86,9 +101,9 @@ def pack_lanes(
     ``x1 - x0``, since `charts.span_geometry` applies the drawn floor
     itself. The overlap test (``x0 > end``) is unchanged.
     """
-    by_label: dict[str, list] = {}
-    for entry in lanes:
-        by_label.setdefault(label_of(entry[0]), []).append(entry)
+    by_label: dict[str, list[SpanGeometry]] = {}
+    for span in lanes:
+        by_label.setdefault(label_of(span.span_id), []).append(span)
 
     rows: list[tuple] = []  # (y, x_start, width, label, lane_name, boxed)
     span_row: list[tuple] = []  # (span_id, y) for completion markers
@@ -96,11 +111,11 @@ def pack_lanes(
     yticks: list[float] = []
     ylabels: list[str] = []
     for label in sorted(by_label):
-        group = sorted(by_label[label], key=lambda entry: (entry[1], str(entry[0])))
+        group = sorted(by_label[label], key=lambda span: (span.x0, str(span.span_id)))
         lane_last_end: list[float] = []
         row_base = y
-        for span_id, x0, x1, lane_name, boxed in group:
-            x0, x1 = float(x0), float(x1)
+        for span in group:
+            x0, x1 = span.x0, span.x1
             footprint_end = max(x1, x0 + min_footprint)
             placed = next(
                 (li for li, end in enumerate(lane_last_end) if x0 > end), None
@@ -116,11 +131,11 @@ def pack_lanes(
                     x0,
                     x1 - x0,
                     label,
-                    truncate_lane_name(str(lane_name)),
-                    bool(boxed),
+                    truncate_lane_name(span.lane_name),
+                    span.boxed,
                 )
             )
-            span_row.append((span_id, row_base + placed))
+            span_row.append((span.span_id, row_base + placed))
         n_sublanes = max(1, len(lane_last_end))
         yticks.append(row_base + (n_sublanes - 1) / 2)
         ylabels.append(f"{label} ({len(group)})")

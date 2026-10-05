@@ -9,7 +9,8 @@ Columns (identity prefix explained in common.py):
 - n_tool_calls: tool calls requested by this turn's assistant message.
 - agent_lane / agent_span_id: the turn's sub-agent span (name / id);
   None for orchestrator turns.
-- timestamp: the model call's start, ISO 8601; None when unrecorded.
+- timestamp / completed: the model call's start and completion, ISO
+  8601; None when unrecorded.
 - output_tokens / input_tokens / total_tokens /
   input_tokens_cache_read / input_tokens_cache_write /
   reasoning_tokens: inspect-ai ModelUsage fields verbatim; None =
@@ -61,6 +62,7 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
                 "agent_lane": entry.get("agent_lane"),
                 "agent_span_id": entry.get("agent_span_id"),
                 "timestamp": entry.get("timestamp"),
+                "completed": entry.get("completed"),
             }
             row.update({field: entry.get(field) for field in _TOKEN_FIELDS})
             rows.append(row)
@@ -72,6 +74,7 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
         "agent_lane",
         "agent_span_id",
         "timestamp",
+        "completed",
         *_TOKEN_FIELDS,
     ]
     df = pd.DataFrame(rows, columns=columns)
@@ -81,6 +84,7 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
             "lane_turn": "Int64",
             "n_tool_calls": "Int64",
             "timestamp": "string",
+            "completed": "string",
         }
     )
     if len(df):

@@ -112,9 +112,12 @@ scanner change take effect; run a new scan and retain both results for compariso
   orchestrator's (main lane's) model turns, from
   `scanners.helpers.orchestrator_turns`, in every scanner value, frame,
   judge digest and chart. Sub-agent turns are off the axis: they carry
-  `agent_span_id` and `lane_turn`, and the subagents frame places each
-  span on the axis by wall-clock (`frames/spine.py`), never by numbering
-  it. A custom scanner numbers turns with the same helper. The main lane
+  `agent_span_id` and `lane_turn`, never a turn number. The subagents
+  frame records the orchestrator turns active at each span's start and
+  end by wall-clock (`frames/spine.py`), and the swimlane chart maps the
+  same timestamps to fractional positions when it draws; frames hold
+  timestamps and integer turns only. A custom scanner numbers turns with
+  the same helper. The main lane
   is the span Scout would scan at depth 1; a transcript with model turns
   but no single orchestrator agent raises rather than guessing.
 - **Review units.** Phase `verifier_reviews` retains the original

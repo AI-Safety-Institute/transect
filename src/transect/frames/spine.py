@@ -1,11 +1,13 @@
 """The orchestrator turn axis as a time scale.
 
-Orchestrator turn ``m`` occupies the cell ``[m - 0.5, m + 0.5]``, which
-stands for the wall-clock interval from the start of model call ``m``
-to the start of call ``m + 1`` (the call plus whatever tool execution
-followed it). Sub-agent activity is placed on the axis by mapping its
-timestamps into those cells, so a span's bar shows which orchestrator
-turns were active while it ran, not a turn count of its own.
+Orchestrator turn ``m`` occupies the wall-clock interval from the start
+of model call ``m`` to the start of call ``m + 1`` (the call plus
+whatever tool execution followed it): its cell. A sub-agent's activity
+is related to the axis by asking which cells its timestamps fall in,
+so a span's extent reads as "the orchestrator turns active while it
+ran", never as a turn count of its own. The frames keep the integer
+answers (`span_turns`); the report maps the same timestamps to
+fractional positions (`position`) when it draws.
 """
 
 from datetime import datetime
@@ -17,16 +19,32 @@ Cells = list[tuple[float, float]]
 """Per orchestrator turn, ``(start, right edge)`` in POSIX seconds."""
 
 
+def clock(starts: list[Any], last_completed: Any) -> Cells:
+    """The turn cells from the orchestrator's recorded call times, or no
+    cells at all when the clock is unusable.
+
+    ``starts`` are each call's start in turn order and
+    ``last_completed`` the last call's completion, as ISO strings (or
+    None where unrecorded). A usable clock is complete and
+    non-decreasing; a missing stamp or a skew backwards would place
+    spans at the wrong turns, so it yields ``[]`` and callers fall back
+    to event order.
+    """
+    stamps = [parse(value) for value in starts]
+    if not stamps or any(t is None for t in stamps):
+        return []
+    times = [t for t in stamps if t is not None]
+    if any(a > b for a, b in pairwise(times)):
+        return []
+    return cells(times, parse(last_completed))
+
+
 def cells(starts: list[datetime], last_completed: datetime | None) -> Cells:
     """Build the turn cells from the orchestrator's call start times.
 
     The last cell's right edge is the last call's completion when it is
     recorded and later than the start, else the start plus the median
     cell width (the start itself with one turn and no completion).
-
-    Args:
-        starts: Each orchestrator model call's start, in turn order.
-        last_completed: The last call's completion time, if recorded.
     """
     if not starts:
         return []
@@ -45,9 +63,10 @@ def position(t: datetime, cells: Cells) -> float:
     """Map a timestamp onto the axis.
 
     Inside cell ``m`` the position is ``m - 0.5`` plus the fraction of
-    the cell elapsed; a zero-width cell is skipped. Times before the
-    first call clamp to ``-0.5``, times at or after the last cell's
-    right edge to the axis's right edge.
+    the cell elapsed (turn ``m`` is drawn over ``[m - 0.5, m + 0.5]``);
+    a zero-width cell is skipped. Times before the first call clamp to
+    ``-0.5``, times at or after the last cell's right edge to the
+    axis's right edge.
     """
     if not cells:
         return -0.5
@@ -62,45 +81,40 @@ def position(t: datetime, cells: Cells) -> float:
     return len(cells) - 0.5
 
 
-def coordinates(record: dict[str, Any], cells: Cells) -> dict[str, Any]:
-    """A span record's axis coordinates (the columns `frames.subagents`
-    documents under ``start_pos`` .. ``after_last``).
+def turn_of(t: datetime, cells: Cells) -> int:
+    """The orchestrator turn whose cell holds a timestamp, clamped to
+    the axis."""
+    return min(max(int(position(t, cells) + 0.5), 0), len(cells) - 1)
 
-    With usable timestamps the box runs from the span's first activity
-    to its recorded end (its last activity when no end was recorded).
-    Without them, or without any cells, the span sits at its spawn turn
-    as a point and ``position_source`` says so.
+
+def span_turns(record: dict[str, Any], cells: Cells) -> dict[str, Any]:
+    """A span record's ``anchor_turn`` / ``end_turn`` / ``turn_source``
+    (the `frames.subagents` columns).
+
+    With a usable clock and both activity timestamps, the turns are the
+    cells holding the span's first activity and its end (``ended_at``:
+    the recorded end, else the last activity). Otherwise the span sits
+    at its spawn turn, ending at the event-order end when one was
+    recorded, and ``turn_source`` says so.
     """
     spawn = int(record["spawn_turn"])
-    first_at = _parse(record.get("first_at"))
-    end_at = _parse(record.get("end_at") if record.get("end_recorded") else None)
-    end_at = end_at or _parse(record.get("last_at"))
-    if cells and first_at is not None and end_at is not None:
-        start_pos = position(first_at, cells)
-        end_pos = max(position(end_at, cells), start_pos)
+    first_at = parse(record.get("started_at"))
+    ended_at = parse(record.get("ended_at"))
+    if cells and first_at is not None and ended_at is not None:
+        anchor = turn_of(first_at, cells)
         return {
-            "start_pos": start_pos,
-            "end_pos": end_pos,
-            "anchor_turn": _cell_of(start_pos, cells),
-            "end_turn": _cell_of(end_pos, cells),
-            "position_source": "timestamp",
-            "after_last": end_at.timestamp() > cells[-1][1],
+            "anchor_turn": anchor,
+            "end_turn": max(turn_of(ended_at, cells), anchor),
+            "turn_source": "timestamp",
         }
     end_turn = record.get("event_order_end_turn")
     return {
-        "start_pos": float(spawn),
-        "end_pos": float(spawn),
         "anchor_turn": spawn,
         "end_turn": int(end_turn) if end_turn is not None else spawn,
-        "position_source": "event_order",
-        "after_last": False,
+        "turn_source": "event_order",
     }
 
 
-def _cell_of(pos: float, cells: Cells) -> int:
-    """The turn whose cell holds an axis position."""
-    return min(max(int(pos + 0.5), 0), len(cells) - 1)
-
-
-def _parse(value: Any) -> datetime | None:
+def parse(value: Any) -> datetime | None:
+    """ISO text to datetime; None for anything else."""
     return datetime.fromisoformat(value) if isinstance(value, str) and value else None

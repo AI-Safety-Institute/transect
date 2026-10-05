@@ -168,8 +168,9 @@ def test_token_timeline_numbers_orchestrator_turns_only(demo_results):
 
 
 def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
-    """Each handoff span anchors in its transfer turn's cell by wall
-    clock, spawns at that turn, and keeps its per-span spend."""
+    """Each handoff span's anchor and end turns are its transfer turn
+    (the orchestrator waits), it spawns at that turn, and it keeps its
+    per-span spend."""
     subagents = demo_results.frames()["subagents"]
     assert subagents.label.isna().all()
     expected = pd.DataFrame(
@@ -183,7 +184,7 @@ def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
             "spawn_turn",
             "anchor_turn",
             "end_turn",
-            "position_source",
+            "turn_source",
             "end_recorded",
             "tool_calls",
             "new_work",
@@ -194,12 +195,8 @@ def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
         expected,
         check_dtype=False,
     )
-    # the box sits inside its cell: after the transfer turn's start and
-    # before the next orchestrator turn's
-    for row in subagents.itertuples():
-        assert row.anchor_turn - 0.5 <= row.start_pos < row.end_pos
-        assert row.end_pos <= row.end_turn + 0.5
-    assert subagents.after_last.tolist() == [False, False, False]
+    # each span ran inside the wall-clock interval of its transfer turn
+    assert (subagents.started_at < subagents.ended_at).all()
     assert subagents.started_at.str.startswith("20").all()
     timeline = demo_results.token_timeline
     lane_sums = timeline.groupby("agent_lane").new_work.sum()
@@ -712,7 +709,7 @@ def test_a_skewed_orchestrator_clock_falls_back_to_event_order():
         ]
     )
     frame = subagents_df(pd.DataFrame(), timeline_results=raw)
-    assert frame.position_source.tolist() == ["event_order"]
+    assert frame.turn_source.tolist() == ["event_order"]
     assert frame.anchor_turn.tolist() == [1]
 
 

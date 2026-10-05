@@ -1515,10 +1515,11 @@ def swimlanes(
     carries the same label/swatch pairs.
 
     **Box width, and what it is allowed to mean.** Each row's ``boxed``
-    flag is the frame's ``position_source`` (`frames.subagents`): a
-    span placed by wall-clock has a real extent on the axis and draws as
-    a box; a span the source gave no usable timestamps for sits at its
-    spawn turn as a point, and draws as a tick.
+    flag comes from `render._span_lanes` (the frame's ``turn_source``
+    plus a usable orchestrator clock): a span placed by wall-clock has a
+    real extent on the axis and draws as a box; a span the source gave
+    no usable timestamps for sits at its spawn turn as a point, and
+    draws as a tick.
 
     - boxed: a proportional box from ``x_start`` over ``width`` (the
       span's wall-clock activity mapped onto the orchestrator turns

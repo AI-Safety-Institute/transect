@@ -15,7 +15,7 @@ from urllib.parse import quote
 import pandas as pd
 from markupsafe import Markup
 
-from transect.frames import TransectResults
+from transect.frames import TransectResults, spine
 from transect.report import charts, custom, sections
 from transect.report._jinja import jinja_env
 from transect.report.colors import _UNJUDGED_GREY, _label_colors, _phase_colors
@@ -26,7 +26,7 @@ from transect.report.excerpts import (
     mark_compaction_turns,
     read_transcript_extras,
 )
-from transect.report.lanes_layout import pack_lanes
+from transect.report.lanes_layout import SpanGeometry, pack_lanes
 from transect.report.style import _STYLE, _WIDGET_STYLE_CSS
 from transect.tags import select_tags
 
@@ -267,7 +267,7 @@ def render_report(
         # 4. sub-agent activity (the votes slice is shared with the
         # audit section below)
         my_subagent_votes = _mine(results.subagent_votes, transcript_id)
-        lanes = _span_lanes(my_subagents)
+        lanes = _span_lanes(my_subagents, main)
         if lanes:
             subagent_section = _subagent_section(
                 int(main.turn.max()) + 1 if len(main) else 0,
@@ -410,7 +410,7 @@ def validate_section_order(
 
 def _subagent_section(
     n_turns: int,
-    lanes: list[tuple],
+    lanes: list[SpanGeometry],
     subagents: pd.DataFrame,
     subagent_votes: pd.DataFrame,
     spawn_prompts: dict[str, SpawnPrompt],
@@ -425,7 +425,7 @@ def _subagent_section(
     pack into sub-lanes (`lanes_layout.pack_lanes`). A box marks a
     span's wall-clock extent on the orchestrator axis where the source
     recorded timestamps, a tick only its spawn turn where it did not
-    (`frames.subagents` ``position_source``). ``lanes`` comes from
+    (`frames.subagents` ``turn_source``). ``lanes`` comes from
     `_span_lanes`; ``n_turns`` is the orchestrator turn count.
     """
     label_of = {
@@ -445,9 +445,9 @@ def _subagent_section(
             return label
         return "unclassified" if classification_ran else "sub-agents"
 
-    by_label: dict[str, list] = {}
-    for entry in lanes:
-        by_label.setdefault(_label(entry[0]), []).append(entry)
+    by_label: dict[str, list[SpanGeometry]] = {}
+    for span in lanes:
+        by_label.setdefault(_label(span.span_id), []).append(span)
     colors = (
         _label_colors(sorted(by_label))
         if classification_ran
@@ -455,35 +455,28 @@ def _subagent_section(
     )
 
     has_end_markers = bool(subagents.end_recorded.any())
-    has_boxes = any(boxed for _sid, _x0, _x1, _name, boxed in lanes)
+    has_boxes = any(span.boxed for span in lanes)
     # the packing footprint matches what is drawn: a tick's fixed
     # footprint when any span is a tick, else the box floor, so two
     # sliver-floored boxes never render overlapping
-    all_boxed = all(boxed for _sid, _x0, _x1, _name, boxed in lanes)
     min_footprint = (
         charts.span_min_box_width(n_turns)
-        if all_boxed
+        if all(span.boxed for span in lanes)
         else charts.swimlane_min_footprint(n_turns)
     )
     packed = pack_lanes(lanes, _label, min_footprint=min_footprint)
 
-    end_of: dict[str, float] = {
-        str(sid): float(end)
-        for sid, end, recorded in zip(
-            subagents.agent_span_id,
-            subagents.end_pos,
-            subagents.end_recorded,
-            strict=True,
-        )
-        if recorded and pd.notna(end)
-    }
+    geometry_of = {span.span_id: span for span in lanes}
+    recorded_ends = set(subagents.agent_span_id[subagents.end_recorded])
     end_markers = [
-        (end_of[sid], row_y) for sid, row_y in packed.span_row if sid in end_of
+        (geometry_of[sid].x1, row_y)
+        for sid, row_y in packed.span_row
+        if sid in recorded_ends and geometry_of[sid].boxed
     ]
 
     # pack_lanes appends rows and span_row in the same iteration, so
     # positional pairing is exact
-    span_title_of = sections.span_titles(subagents, label_of)
+    span_title_of = sections.span_titles(subagents, label_of, geometry_of)
     # one "member votes" tooltip row (voting regimes only), mirroring
     # the agreement strip: every member's own label + confidence (or
     # its reason for producing no vote)
@@ -571,7 +564,7 @@ def _subagent_section(
                 "text": spawn_prompts[span_id].text,
                 "truncated": spawn_prompts[span_id].truncated,
             }
-            for span_id, _x0, _x1, _name, _boxed in lanes
+            for span_id in (span.span_id for span in lanes)
             if span_id in spawn_prompts
         ),
         key=lambda row: int(row["turn"] or 0),
@@ -599,22 +592,48 @@ def _subagent_section(
     )
 
 
-def _span_lanes(subagents: pd.DataFrame) -> list[tuple]:
-    """This transcript's sub-agent spans as swimlane inputs, one
-    ``(span_id, start_pos, end_pos, lane_name, boxed)`` per span off
-    the subagents frame; empty means the Sub-agent activity section
-    does not render (a solo-agent run has no spans).
+def _span_lanes(subagents: pd.DataFrame, main: pd.DataFrame) -> list[SpanGeometry]:
+    """This transcript's sub-agent spans as swimlane geometry, one per
+    row of the subagents frame; empty means the Sub-agent activity
+    section does not render (a solo-agent run has no spans).
+
+    The orchestrator's turn cells (`frames.spine.clock`, off ``main``'s
+    recorded call times) map a timestamp-placed span's ``started_at`` /
+    ``ended_at`` to its box; a span without a usable clock is a tick at
+    its spawn turn.
     """
-    return [
-        (
-            row.agent_span_id,
-            float(str(row.start_pos)),
-            float(str(row.end_pos)),
-            str(row.agent_lane),
-            str(row.position_source) == "timestamp",
-        )
-        for row in subagents.itertuples()
-    ]
+    ordered = main.sort_values("turn")
+    cells = spine.clock(
+        ordered.timestamp.tolist(),
+        ordered.completed.iloc[-1] if len(ordered) else None,
+    )
+    spans = []
+    for row in subagents.itertuples():
+        started = spine.parse(row.started_at)
+        ended = spine.parse(row.ended_at)
+        spawn = float(str(row.spawn_turn))
+        boxed = str(row.turn_source) == "timestamp" and bool(cells)
+        if boxed and started is not None and ended is not None:
+            x0 = spine.position(started, cells)
+            x1 = max(spine.position(ended, cells), x0)
+            spans.append(
+                SpanGeometry(
+                    row.agent_span_id,
+                    str(row.agent_lane),
+                    x0,
+                    x1,
+                    boxed=True,
+                    before_first=started.timestamp() < cells[0][0],
+                    after_last=ended.timestamp() > cells[-1][1],
+                )
+            )
+        else:
+            spans.append(
+                SpanGeometry(
+                    row.agent_span_id, str(row.agent_lane), spawn, spawn, False
+                )
+            )
+    return spans
 
 
 def _transcript_title(one: pd.DataFrame, info: pd.DataFrame) -> str:

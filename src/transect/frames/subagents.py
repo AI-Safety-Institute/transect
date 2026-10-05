@@ -14,17 +14,17 @@ Columns (identity prefix explained in common.py):
   (the turn that issued the spawn when the source links them, the
   importer's file-order anchor otherwise). Phase membership for the
   sub-agent count and the delegated spend uses this.
-- anchor_turn / end_turn: the orchestrator turns whose cells hold the
-  span's first activity and its end (frames/spine.py).
-- start_pos / end_pos: the same as axis positions (cell m is
-  [m - 0.5, m + 0.5]); the swimlane box.
-- position_source: "timestamp" (positions follow wall clock) or
-  "event_order" (no usable timestamps: the span sits at spawn_turn).
+- anchor_turn / end_turn: the orchestrator turns active at the span's
+  first activity and at its end (frames/spine.py: the turn whose
+  wall-clock cell holds each timestamp).
+- turn_source: "timestamp" (the two turns above follow wall clock) or
+  "event_order" (no usable clock: anchor_turn is spawn_turn and
+  end_turn the orchestrator turn preceding the span's end event).
+- started_at / ended_at: ISO timestamps of the span's first activity
+  and of its end - the recorded end, else its last observed activity,
+  end_recorded telling which. None where the source recorded nothing.
 - end_recorded: the source recorded the span's end (False on OpenClaw,
   whose ends are synthesised at last activity).
-- after_last: activity continued after the last orchestrator turn; the
-  box is clamped to the axis edge.
-- started_at / ended_at: ISO timestamps of first activity and end.
 - tool_calls / busy_seconds: summed tool activity (lane_activity).
 - output_tokens / new_work / billable: summed model-turn token
   rollups (token_timeline agent rows; NaN for tool-events-only spans).
@@ -62,9 +62,7 @@ Columns (identity prefix explained in common.py):
 - schema_version: the frames contract version.
 """
 
-from datetime import datetime
-from itertools import pairwise
-from typing import Any, Literal
+from typing import Literal
 
 import pandas as pd
 
@@ -129,13 +127,10 @@ def subagents_df(
         "spawn_turn",
         "anchor_turn",
         "end_turn",
-        "start_pos",
-        "end_pos",
-        "position_source",
-        "end_recorded",
-        "after_last",
+        "turn_source",
         "started_at",
         "ended_at",
+        "end_recorded",
         "tool_calls",
         "busy_seconds",
         "output_tokens",
@@ -163,7 +158,8 @@ def subagents_df(
     merged["overturned"] = merged.overturned.fillna(False).astype(bool)
     return with_schema(
         merged.sort_values(
-            ["transcript_id", "start_pos", "agent_span_id"], na_position="last"
+            ["transcript_id", "anchor_turn", "started_at", "agent_span_id"],
+            na_position="last",
         ).reset_index(drop=True)
     )
 
@@ -181,20 +177,18 @@ def _vocabulary(results: pd.DataFrame) -> list[str]:
 
 
 # the structural columns
-_SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64", "float64"]], ...] = (
+_SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
     ("spawn_turn", "Int64"),
     ("anchor_turn", "Int64"),
     ("end_turn", "Int64"),
-    ("start_pos", "float64"),
-    ("end_pos", "float64"),
     ("tool_calls", "Int64"),
     ("busy_seconds", "Float64"),
     ("output_tokens", "Float64"),
     ("new_work", "Float64"),
     ("billable", "Float64"),
 )
-_SPINE_FLAGS = ("end_recorded", "after_last")
-_SPINE_TEXT = ("position_source", "started_at", "ended_at")
+_SPINE_FLAGS = ("end_recorded",)
+_SPINE_TEXT = ("turn_source", "started_at", "ended_at")
 
 
 def _structural_spine(
@@ -202,10 +196,10 @@ def _structural_spine(
     lane_activity: pd.DataFrame | None,
     token_timeline: pd.DataFrame | None,
 ) -> pd.DataFrame | None:
-    """Per-span structural facts: coordinates from the span record,
-    rollups from the two activity frames."""
+    """Per-span structural facts: turns and timestamps from the span
+    record, rollups from the two activity frames."""
     parts = []
-    records = _span_coordinates(timeline_results)
+    records = _span_turns(timeline_results)
     if records is not None:
         parts.append(records.set_index(["transcript_id", "agent_span_id"]))
     if lane_activity is not None and len(lane_activity):
@@ -217,7 +211,6 @@ def _structural_spine(
             epoch=("epoch", "first"),
             agent=("agent", "first"),
             agent_lane=("agent_lane", "first"),
-            tool_turn=("turn", "min"),
             tool_calls=("tool_calls", "sum"),
             busy_seconds=("busy_seconds", lambda s: s.sum(min_count=1)),
         )
@@ -252,18 +245,6 @@ def _structural_spine(
     for col in (*_SPINE_FLAGS, *_SPINE_TEXT, *(c for c, _ in _SPINE_DTYPES)):
         if col not in spine.columns:
             spine[col] = None
-    # a span the record never saw (a store from a partial scan) sits at
-    # its first tool activity, by event order
-    missing = spine.position_source.isna()
-    if missing.any() and "tool_turn" in spine.columns:
-        anchor = spine.loc[missing, "tool_turn"].astype("float64")
-        spine.loc[missing, "spawn_turn"] = anchor
-        spine.loc[missing, "anchor_turn"] = anchor
-        spine.loc[missing, "end_turn"] = anchor
-        spine.loc[missing, "start_pos"] = anchor
-        spine.loc[missing, "end_pos"] = anchor
-        spine.loc[missing, "position_source"] = "event_order"
-    spine = spine.drop(columns=[c for c in ("tool_turn",) if c in spine.columns])
     for col in _SPINE_FLAGS:
         spine[col] = spine[col].fillna(False).astype(bool)
     for col in _SPINE_TEXT:
@@ -273,9 +254,9 @@ def _structural_spine(
     return spine.reset_index()
 
 
-def _span_coordinates(timeline_results: pd.DataFrame | None) -> pd.DataFrame | None:
-    """The span record projected onto the axis: one row per sub-agent
-    span with its `frames.spine.coordinates`."""
+def _span_turns(timeline_results: pd.DataFrame | None) -> pd.DataFrame | None:
+    """The span record with its orchestrator turns: one row per
+    sub-agent span (`frames.spine.span_turns`)."""
     if timeline_results is None or not len(timeline_results):
         return None
     rows = []
@@ -286,39 +267,34 @@ def _span_coordinates(timeline_results: pd.DataFrame | None) -> pd.DataFrame | N
             (e for e in value.get("timeline") or [] if e.get("turn") is not None),
             key=lambda e: e["turn"],
         )
-        stamps = [spine_parse(e.get("timestamp")) for e in orchestrator]
-        # a usable clock is complete and non-decreasing in turn order; a
-        # skewed clock would place spans at the wrong turns, so it falls
-        # back to event order like a missing one
-        complete = [t for t in stamps if t is not None]
-        usable = bool(stamps) and len(complete) == len(stamps)
-        usable = usable and all(a <= b for a, b in pairwise(complete))
-        cells = (
-            spine.cells(complete, spine_parse(orchestrator[-1].get("completed")))
-            if usable
-            else []
+        cells = spine.clock(
+            [e.get("timestamp") for e in orchestrator],
+            orchestrator[-1].get("completed") if orchestrator else None,
         )
         for record in value.get("spans") or []:
+            end_recorded = bool(record.get("end_recorded"))
+            span = {
+                "spawn_turn": record["spawn_turn"],
+                "started_at": record.get("first_at"),
+                "ended_at": record.get("end_at")
+                if end_recorded
+                else record.get("last_at"),
+                "end_recorded": end_recorded,
+                "event_order_end_turn": record.get("event_order_end_turn"),
+            }
             rows.append(
                 {
                     **identity_cols,
                     "agent_span_id": record["agent_span_id"],
                     "agent_lane": record["agent_lane"],
-                    "spawn_turn": record["spawn_turn"],
-                    **spine.coordinates(record, cells),
-                    "end_recorded": bool(record.get("end_recorded")),
-                    "started_at": record.get("first_at"),
-                    "ended_at": record.get("end_at"),
+                    "spawn_turn": span["spawn_turn"],
+                    **spine.span_turns(span, cells),
+                    "started_at": span["started_at"],
+                    "ended_at": span["ended_at"],
+                    "end_recorded": end_recorded,
                 }
             )
-    if not rows:
-        return None
-    return pd.DataFrame(rows)
-
-
-def spine_parse(value: Any) -> datetime | None:
-    """ISO text to datetime; None for anything else."""
-    return datetime.fromisoformat(value) if isinstance(value, str) and value else None
+    return pd.DataFrame(rows) if rows else None
 
 
 def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:

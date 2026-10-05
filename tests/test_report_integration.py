@@ -20,6 +20,7 @@ from transect.report.embed import (
     _tip_floor,
     wrap_row_px,
 )
+from transect.report.lanes_layout import SpanGeometry
 from transect.spec import Spec
 
 SCENARIOS = {
@@ -603,12 +604,10 @@ def test_span_tooltip_says_when_a_span_began_before_the_first_turn():
         {
             "agent_span_id": ["A"],
             "agent_lane": ["early"],
-            "position_source": ["timestamp"],
+            "turn_source": ["timestamp"],
+            "spawn_turn": [0],
             "anchor_turn": [0],
             "end_turn": [0],
-            "start_pos": [-0.5],
-            "end_pos": [-0.5],
-            "after_last": [False],
             "label": [None],
             "label_source": [None],
             "confidence": [None],
@@ -624,5 +623,6 @@ def test_span_tooltip_says_when_a_span_began_before_the_first_turn():
             "busy_seconds": [None],
         }
     )
-    titles = sections.span_titles(span, {})
+    geometry = {"A": SpanGeometry("A", "early", -0.5, -0.5, True, before_first=True)}
+    titles = sections.span_titles(span, {}, geometry)
     assert "began before the first orchestrator turn" in titles["A"]["turns"]

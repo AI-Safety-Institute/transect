@@ -41,7 +41,7 @@ from transect.report.display import (
     roster,
 )
 from transect.report.excerpts import Excerpt, card_excerpts
-from transect.report.lanes_layout import truncate_lane_name
+from transect.report.lanes_layout import SpanGeometry, truncate_lane_name
 from transect.scan_status import ModelTokenUsage
 from transect.scanners.phases_common import humanise_phase
 
@@ -630,7 +630,7 @@ def subagent_explanation() -> Markup:
 
 
 def subagent_notes(
-    lanes: list[tuple],
+    lanes: list[SpanGeometry],
     label_of: dict,
     subagents: pd.DataFrame,
     classification_ran: bool,
@@ -649,7 +649,7 @@ def subagent_notes(
     # (grey note, and NO label vocabulary anywhere; classification joined
     # (labels, no note); and classification present but zero lanes joined
     # - a silent-failure smell (identity/span-id mismatch).
-    any_joined = any(entry[0] in label_of for entry in lanes)
+    any_joined = any(span.span_id in label_of for span in lanes)
     if not classification_ran:
         state = "not_run"
     elif not any_joined:
@@ -710,28 +710,30 @@ def subagent_legend(
     return _notes.phase_chips(None, chips)
 
 
-def span_titles(subagents: pd.DataFrame, label_of: dict) -> dict:
+def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> dict:
     """One hover-tooltip cell set per span for the swimlanes chart:
     ``{span_id: {field: cell}}`` keyed by `charts.SPAN_TIP_FIELDS`.
     "no data" marks a value the source never recorded. The ``turns``
     cell says what the box means: the orchestrator turns active while
     the span ran (wall-clock), or only its spawn turn when the source
-    recorded no usable timestamps; a span that began before the first
-    orchestrator turn or outlived the last one says so."""
+    recorded no usable timestamps; ``geometry_of`` (span id ->
+    `lanes_layout.SpanGeometry`) says whether the span ran past the
+    axis's edges, which the cell states."""
 
     def fmt(value) -> str:
         return "no data" if value is None or pd.isna(value) else f"{int(value):,}"
 
     titles = {}
     for row in subagents.itertuples():
-        if str(row.position_source) == "timestamp":
+        geometry = geometry_of.get(row.agent_span_id)
+        if geometry is not None and geometry.boxed:
             turns = (
                 f"{int(str(row.anchor_turn))}–{int(str(row.end_turn))} "
                 "(orchestrator turns active while it ran)"
             )
-            if float(str(row.start_pos)) <= -0.5:
+            if geometry.before_first:
                 turns += ", began before the first orchestrator turn"
-            if bool(row.after_last):
+            if geometry.after_last:
                 turns += ", continued after the last orchestrator turn"
         else:
             turns = f"{int(str(row.spawn_turn))} (spawn turn; no timestamps)"
