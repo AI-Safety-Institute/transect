@@ -71,3 +71,138 @@ def test_main_span_refuses_an_ambiguous_or_empty_tree(events, match):
     """No single orchestrator means a loud error, never an empty axis."""
     with pytest.raises(ValueError, match=match):
         main_span(StubTranscript(events))
+
+
+# --- frames.spine: timestamps onto turn cells ---------------------------------
+
+from datetime import datetime, timedelta  # noqa: E402
+
+from transect.frames import spine  # noqa: E402
+
+T0 = datetime(2026, 1, 1, 10, 0, 0)
+
+
+def at(seconds: float) -> datetime:
+    return T0 + timedelta(seconds=seconds)
+
+
+def test_cells_cover_each_turn_until_the_next_call_starts():
+    """Cell m runs from call m's start to call m+1's start; the last cell
+    ends at the last call's completion."""
+    got = spine.cells([at(0), at(100), at(150)], last_completed=at(170))
+    assert got == [
+        (at(0).timestamp(), at(100).timestamp()),
+        (at(100).timestamp(), at(150).timestamp()),
+        (at(150).timestamp(), at(170).timestamp()),
+    ]
+
+
+def test_last_cell_without_completion_uses_the_median_width():
+    """No completion recorded: the last cell is median-width wide."""
+    got = spine.cells([at(0), at(100), at(150)], last_completed=None)
+    assert got[-1] == (at(150).timestamp(), at(225).timestamp())
+
+
+@pytest.mark.parametrize(
+    ("t", "expected"),
+    [
+        (at(-5), -0.5),
+        (at(0), -0.5),
+        (at(50), 0.0),
+        (at(100), 0.5),
+        (at(125), 1.0),
+        (at(160), 2.0),
+        (at(999), 2.5),
+    ],
+    ids=[
+        "before-first",
+        "first-start",
+        "mid-first",
+        "second-start",
+        "mid-second",
+        "mid-last",
+        "after-last",
+    ],
+)
+def test_position_interpolates_within_a_cell_and_clamps_outside(t, expected):
+    """A timestamp maps to m - 0.5 plus its fraction of cell m."""
+    cells = spine.cells([at(0), at(100), at(150)], last_completed=at(170))
+    assert spine.position(t, cells) == pytest.approx(expected)
+
+
+def test_zero_width_cells_place_at_their_left_edge():
+    """Two calls at the same instant: the empty cell swallows nothing."""
+    cells = spine.cells([at(0), at(0), at(100)], last_completed=at(120))
+    assert spine.position(at(0), cells) == pytest.approx(0.5)
+    assert spine.position(at(50), cells) == pytest.approx(1.0)
+
+
+def test_coordinates_follow_timestamps_when_present():
+    """A span's box runs from its first activity to its recorded end."""
+    cells = spine.cells([at(0), at(100), at(150)], last_completed=at(170))
+    record = {
+        "spawn_turn": 0,
+        "first_at": at(20).isoformat(),
+        "last_at": at(90).isoformat(),
+        "end_at": at(110).isoformat(),
+        "end_recorded": True,
+        "event_order_end_turn": 1,
+    }
+    got = spine.coordinates(record, cells)
+    assert got["position_source"] == "timestamp"
+    assert (got["anchor_turn"], got["end_turn"]) == (0, 1)
+    assert got["start_pos"] == pytest.approx(-0.3)
+    assert got["end_pos"] == pytest.approx(0.7)
+    assert got["after_last"] is False
+
+
+def test_an_unrecorded_end_falls_back_to_last_activity():
+    """Without a recorded end the box closes at the last observed event."""
+    cells = spine.cells([at(0), at(100)], last_completed=at(120))
+    record = {
+        "spawn_turn": 0,
+        "first_at": at(10).isoformat(),
+        "last_at": at(50).isoformat(),
+        "end_at": at(90).isoformat(),
+        "end_recorded": False,
+        "event_order_end_turn": 0,
+    }
+    assert spine.coordinates(record, cells)["end_pos"] == pytest.approx(0.0)
+
+
+def test_coordinates_fall_back_to_event_order_without_timestamps():
+    """Missing timestamps collapse the span onto its spawn turn."""
+    cells = spine.cells([at(0), at(100)], last_completed=None)
+    record = {
+        "spawn_turn": 1,
+        "first_at": None,
+        "last_at": None,
+        "end_at": None,
+        "end_recorded": False,
+        "event_order_end_turn": None,
+    }
+    assert spine.coordinates(record, cells) == {
+        "start_pos": 1.0,
+        "end_pos": 1.0,
+        "anchor_turn": 1,
+        "end_turn": 1,
+        "position_source": "event_order",
+        "after_last": False,
+    }
+
+
+def test_activity_after_the_last_turn_clamps_and_is_flagged():
+    """A background agent outliving the orchestrator clamps to the edge."""
+    cells = spine.cells([at(0), at(100)], last_completed=at(120))
+    record = {
+        "spawn_turn": 1,
+        "first_at": at(105).isoformat(),
+        "last_at": at(500).isoformat(),
+        "end_at": None,
+        "end_recorded": False,
+        "event_order_end_turn": None,
+    }
+    got = spine.coordinates(record, cells)
+    assert got["end_pos"] == pytest.approx(1.5)
+    assert got["end_turn"] == 1
+    assert got["after_last"] is True
