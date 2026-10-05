@@ -79,6 +79,7 @@ def render_report(
         one = _mine(timeline, transcript_id)
         # the orchestrator's rows: the turn axis every chart draws on
         main = one[one.turn.notna()]
+        n_turns = int(main.turn.max()) + 1 if len(main) else 0
         my_info = _mine(results.transcript_info, transcript_id)
         all_flushes = _mine(results.flushes, transcript_id).sort_values("turn")
         # charts, tags and the compaction excerpt marks read the
@@ -223,7 +224,7 @@ def render_report(
         # (only when the transcript has any)
         if len(my_interventions):
             intervention_component, intervention_height = charts.interventions_chart(
-                my_interventions, int(main.turn.max()) + 1
+                my_interventions, n_turns
             )
             interventions_section = sections.section(
                 "Human interventions",
@@ -270,7 +271,7 @@ def render_report(
         lanes = _span_lanes(my_subagents, main)
         if lanes:
             subagent_section = _subagent_section(
-                int(main.turn.max()) + 1 if len(main) else 0,
+                n_turns,
                 lanes,
                 my_subagents,
                 my_subagent_votes,
@@ -327,7 +328,7 @@ def render_report(
             ctx = custom.SectionContext(
                 transcript_id=transcript_id,
                 frame=layer_frame,
-                n_turns=int(main.turn.max()) + 1 if len(main) else 0,
+                n_turns=n_turns,
             )
             add(
                 (
@@ -549,20 +550,17 @@ def _subagent_section(
         if pd.notna(row.span_task)
     }
     spawn_prompts = {**stored, **spawn_prompts}
-    spawn_turn_of = dict(
-        zip(subagents.agent_span_id, subagents.spawn_turn, strict=True)
-    )
     spawn_rows = sorted(
         (
             {
-                "turn": int(spawn_turn_of[span_id]),
+                "turn": int(str(row.spawn_turn)),
                 # case (1): no classifier -> no label segment on the row
                 "label": _label(span_id) if classification_ran else None,
                 "text": spawn_prompts[span_id].text,
                 "truncated": spawn_prompts[span_id].truncated,
             }
-            for span_id in (span.span_id for span in lanes)
-            if span_id in spawn_prompts
+            for row in subagents.itertuples()
+            if (span_id := str(row.agent_span_id)) in spawn_prompts
         ),
         key=lambda row: int(row["turn"] or 0),
     )
