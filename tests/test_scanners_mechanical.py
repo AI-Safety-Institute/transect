@@ -338,6 +338,48 @@ def test_operator_messages_sit_on_the_event_turn_axis(shape):
     assert intervention["turn"] == turn
 
 
+def test_sub_agent_assistant_messages_do_not_advance_the_axis():
+    """A handoff appends the sub-agent's messages to the thread; an
+    operator note after them lands on the next orchestrator turn."""
+    note = ChatMessageUser(content="steer", source="operator", id="note")
+    task = ChatMessageUser(content="task", source="input", id="task")
+    lead0 = model_turn("lead 0", input=[task])
+    sub0 = model_turn("sub 0")
+    lead1 = model_turn("lead 1", input=[task, note])
+    events = [lead0, *agent_span("C", "eda", inner=[sub0]), lead1]
+    messages = [
+        task,
+        ChatMessageAssistant(content="lead 0", id=lead0.output.message.id),
+        ChatMessageAssistant(content="sub 0", id=sub0.output.message.id),
+        note,
+        ChatMessageAssistant(content="lead 1", id=lead1.output.message.id),
+    ]
+    value = run_scan(human_intervention(), events, messages).value
+    assert [(i["turn"], i["channel"]) for i in value["interventions"]] == [
+        (1, "operator")
+    ]
+
+
+def test_an_unseen_note_after_sub_agent_messages_takes_the_next_orchestrator_turn():
+    """With no input recording it, the note's footprint counts
+    orchestrator assistant messages only."""
+    note = ChatMessageUser(content="steer", source="operator", id="note")
+    task = ChatMessageUser(content="task", source="input", id="task")
+    lead0 = model_turn("lead 0", input=[task])
+    sub0 = model_turn("sub 0")
+    lead1 = model_turn("lead 1", input=[task])
+    events = [lead0, *agent_span("C", "eda", inner=[sub0]), lead1]
+    messages = [
+        task,
+        ChatMessageAssistant(content="lead 0", id=lead0.output.message.id),
+        ChatMessageAssistant(content="sub 0", id=sub0.output.message.id),
+        note,
+        ChatMessageAssistant(content="lead 1", id=lead1.output.message.id),
+    ]
+    value = run_scan(human_intervention(), events, messages).value
+    assert [i["turn"] for i in value["interventions"]] == [1]
+
+
 def test_the_first_input_message_is_the_task_not_an_intervention():
     messages = [ChatMessageUser(content="the task prompt", source="input")]
     value = run_scan(human_intervention(), [], messages=messages).value

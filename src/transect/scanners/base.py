@@ -268,9 +268,9 @@ def human_intervention() -> Scanner[Transcript]:
     The first user message that arrived on a human channel (operator
     or input) is the task prompt, never an intervention.
 
-    value = {"interventions": [entry, ...]}: turn (the model turn the
-    intervention precedes, on the shared event axis), channel, initiator,
-    prompt, content, outcome.
+    value = {"interventions": [entry, ...]}: turn (the orchestrator turn
+    the intervention precedes), channel, initiator, prompt, content,
+    outcome.
     """
 
     async def execute(transcript: Transcript) -> Result:
@@ -289,36 +289,49 @@ def human_intervention() -> Scanner[Transcript]:
             )
 
         # Human messages live in the history, not the event stream. The log
-        # records which model call first saw each message: the first model
-        # event whose input carries its id (or merged it into a combined
-        # message) is the turn it precedes. A message no input records (one
-        # planted into the history, a history without its event stream)
-        # falls back to the history's footprints of model turns.
+        # records which orchestrator call first saw each message: the first
+        # orchestrator model event whose input carries its id (or merged it
+        # into a combined message) is the turn it precedes. A message no
+        # input records (one planted into the history, a history without
+        # its event stream) falls back to the history's footprints of
+        # orchestrator turns.
+        main_events = main_model_event_ids(main_span(transcript))
         first_seen: dict[str, int] = {}
         turn_of_output: dict[str, int] = {}
-        for turn, (event, _calls) in enumerate(all_model_turns(transcript)):
+        # a sub-agent's outputs: an Inspect handoff appends them to the
+        # parent thread, where they must not advance the orchestrator axis
+        sub_outputs: set[str] = set()
+        turn = 0
+        for event, _calls in all_model_turns(transcript):
+            output_id = event.output.message.id
+            if id(event) not in main_events:
+                if output_id is not None:
+                    sub_outputs.add(output_id)
+                continue
             for seen in event.input:
                 combined = (getattr(seen, "metadata", None) or {}).get("combined_from")
                 for seen_id in (seen.id, *(combined or [])):
                     if seen_id is not None:
                         first_seen.setdefault(seen_id, turn)
-            output_id = event.output.message.id
             if output_id is not None:
                 # first occurrence wins: a cached generate replays an output
                 turn_of_output.setdefault(output_id, turn)
+            turn += 1
         # summary flushes by the turn they precede (as context_flush records
         # them): the fallback footprint for a summary message no input saw
         summary_flushes = [
             turn
-            for turn, event in _non_model_events(transcript)
+            for turn, event in _orchestrator_count_before(transcript, main_events)
             if event.event == "compaction" and event.type == "summary"
         ]
         next_turn = 0
         seen_task_prompt = False
         for message in transcript.messages:
             if message.role == "assistant":
-                # an assistant message no event recorded still advances the
-                # axis by one; a repeated id never moves it back
+                if message.id in sub_outputs:
+                    continue
+                # an orchestrator assistant message no event recorded still
+                # advances the axis by one; a repeated id never moves it back
                 recorded = turn_of_output.get(message.id or "")
                 next_turn = max(next_turn + 1, 0 if recorded is None else recorded + 1)
                 continue
@@ -352,7 +365,7 @@ def human_intervention() -> Scanner[Transcript]:
                 (message.text or "").strip(),
             )
 
-        for turn, event in _non_model_events(transcript):
+        for turn, event in _orchestrator_count_before(transcript, main_events):
             if event.event == "input":
                 prompt = (getattr(event, "message", None) or "").strip() or None
                 entry(
@@ -541,16 +554,6 @@ def _lane_activity(
             }
         )
     return rows
-
-
-def _non_model_events(transcript: Transcript):
-    """Yield (n_model_turns_before, event) for every non-model event."""
-    turns = 0
-    for event in transcript.events:
-        if event.event == "model" and event.output:
-            turns += 1
-            continue
-        yield turns, event
 
 
 def _sub_agent_span(spans: dict[str, Any], span_id, main_id):

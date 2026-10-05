@@ -224,9 +224,15 @@ def main_span(transcript: Any) -> TimelineSpan:
     Returns:
         The ``TimelineSpan`` whose direct content is the main lane.
 
+    A transcript with no model events at all resolves to its root: an
+    empty orchestrator lane with zero turns, which is the honest reading
+    of a run that never called a model (a message history without its
+    event stream included).
+
     Raises:
-        ValueError: When no span holds a model turn, or when a container
-            holds two or more agents that do - there is then no single
+        ValueError: When the transcript holds model turns but none under
+            a single agent span (two or more top-level agents, or model
+            calls only inside utility spans) - there is then no single
             orchestrator lane to number, and guessing one would put the
             whole report on the wrong axis.
     """
@@ -251,6 +257,8 @@ def main_span(transcript: Any) -> TimelineSpan:
             span = children[0]
             continue
         if not children:
+            if not _holds_model_events(timeline.root):
+                return span  # nothing to number anywhere: an empty lane
             raise ValueError(
                 f"transcript has no model turns under its main span {span.name!r}; "
                 "there is no orchestrator lane to number"

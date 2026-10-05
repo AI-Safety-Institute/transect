@@ -16,6 +16,7 @@ import pytest
 from helpers import (
     CLOSED,
     PHASES_SPEC,
+    StubTranscript,
     group,
     model_turn,
     narrate_answer,
@@ -45,6 +46,7 @@ from transect.frames import (
 from transect.frames.common import SCHEMA_VERSION
 from transect.frames.flushes import flushes_df
 from transect.scanners.cohort import judge_setup
+from transect.scanners.helpers import orchestrator_turns
 from transect.scanners.phases import decision_phases
 from transect.scanners.subagents import subagent_classification
 from transect.spec import Spec
@@ -241,8 +243,8 @@ def test_interventions_frame_carries_the_planted_interventions(demo_results):
     full content."""
     interventions = demo_results.interventions.sort_values("turn")
     assert list(zip(interventions.turn, interventions.channel, strict=True)) == [
-        (11, "operator"),
-        (16, "input_event"),
+        (7, "operator"),
+        (9, "input_event"),
     ]
     assert interventions.content.iloc[0].startswith("Operator note: we are time-boxed")
     assert interventions.initiator.tolist() == ["human", "agent"]
@@ -256,15 +258,15 @@ def test_flush_and_intervention_scanners_share_one_turn_axis(demo_results):
     the compaction summary message, and the operator note placed after it."""
     log = read_eval_log(str(DEMO_LOG), resolve_attachments=True)
     sample = log.samples[0]
-    turns = [e for e in sample.events if e.event == "model" and e.output]
+    turns = orchestrator_turns(StubTranscript(sample.events))
     (summary,) = [m for m in sample.messages if (m.metadata or {}).get("summary")]
     first_seen = next(
-        turn for turn, e in enumerate(turns) if summary.id in {m.id for m in e.input}
+        turn for turn, e, _ in turns if summary.id in {m.id for m in e.input}
     )
     (flush_turn,) = demo_results.flushes.turn
     interventions = demo_results.interventions
     (note_turn,) = interventions[interventions.channel == "operator"].turn
-    assert flush_turn == first_seen == note_turn == 11
+    assert flush_turn == first_seen == note_turn == 7
 
 
 def test_lane_activity_frame_anchors_tool_activity_to_orchestrator_turns(
