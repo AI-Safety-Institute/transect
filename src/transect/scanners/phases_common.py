@@ -49,7 +49,13 @@ _NONE_PHASE = Phase(
 
 Basis = Literal["judged", "filled", "no_answer", "refusal", "missing_turn"]
 TurnBasis = Literal[
-    "judged", "filled", "attributed", "no_answer", "refusal", "missing_turn"
+    "judged",
+    "filled",
+    "attributed",
+    "unattributed",
+    "no_answer",
+    "refusal",
+    "missing_turn",
 ]
 
 
@@ -220,6 +226,16 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str]:
     return phases, ops_name
 
 
+def is_labelled(row: DigestJudgement) -> bool:
+    """Whether ``row`` carries a phase label and so lies inside a phase.
+
+    `stitch_phases` closes a phase on a row this rejects, and the dense
+    projection (`transect.scanners.phases.project_phase_turns`) breaks
+    phase inheritance on the same rows.
+    """
+    return row.basis in ("judged", "filled") and row.phase is not None
+
+
 def stitch_phases(
     digest_judgements: Sequence[DigestJudgement],
 ) -> list[StitchedPhase]:
@@ -270,7 +286,7 @@ def stitch_phases(
         members.clear()
 
     for row in digest_judgements:
-        if row.basis not in ("judged", "filled") or row.phase is None:
+        if not is_labelled(row):
             _close()  # an unjudged row ends the current run
             continue
         if members and members[-1].phase != row.phase:

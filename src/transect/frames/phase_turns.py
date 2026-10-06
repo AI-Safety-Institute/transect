@@ -3,10 +3,11 @@
 Columns (identity prefix explained in common.py):
 
 - turn: 0-based orchestrator turn (one row each).
-- phase_index: joins phases_df within the transcript.
-- phase: the turn's label.
+- phase_index: joins phases_df within the transcript; None on
+  unjudged and unattributed turns.
+- phase: the turn's label; None with phase_index.
 - basis: how the turn got its label - judged / filled / attributed /
-  refusal / no_answer / missing_turn.
+  unattributed / refusal / no_answer / missing_turn.
 - label_source: which regime decided - single_judge / majority_vote
   / verifier; doubles as the confidence's source wherever
   confidence is non-null.

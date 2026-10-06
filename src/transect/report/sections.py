@@ -24,7 +24,7 @@ from transect.report import reliability
 from transect.report._jinja import jinja_env
 from transect.report.charts import _END_MARKER_GLYPH, has_judge_agreement
 from transect.report.colors import (
-    _UNJUDGED_BASES,
+    _GREYED_BASES,
     _UNJUDGED_GREY,
     _label_colors,
     cell_text_color,
@@ -1003,12 +1003,7 @@ def phase_meta_line(
     """Phase-cards meta line: counts, judge attribution, and the
     cohort/verifier/unjudged notes."""
     one = phases.sort_values("phase_index")
-    unjudged = (
-        phase_turns[phase_turns.basis.isin(_UNJUDGED_BASES)]
-        if len(phase_turns)
-        else phase_turns
-    )
-    n_unjudged = len(unjudged) if len(phase_turns) else 0
+    n_unjudged = int(phase_turns.basis.isin(_GREYED_BASES).sum())
     label, judge, cohort = _phase_judge_facts(one, phase_turns)
 
     return _notes.phase_meta_line(
@@ -1316,24 +1311,18 @@ def reliability_audit(
     blocks = []
     flag_groups = []
     if phases_ran:
-        total_turns = len(phase_turns)
-        judged_turns = int((phase_turns.basis == "judged").sum())
-        unjudged_turns = sum(reliability.abstention_counts(phase_turns).values())
-        other_turns = total_turns - judged_turns - unjudged_turns
         phase_extra_rows = [
             {
                 "label": "Turns",
-                "value": (
-                    f"{total_turns} total · {judged_turns} judged · "
-                    f"{other_turns} filled/attributed · {unjudged_turns} unjudged"
-                ),
-                "definition": "Orchestrator turns the decision-phases judge covered, "
-                "split by how each turn's label was decided: judged (labelled "
-                "directly); filled (a reasoning turn no judge answer covered, "
-                "inheriting the previous label at low confidence); attributed "
-                "(content-free tool-call-only or failed turns the judge never "
-                "saw, taking the phase whose range contains them); or "
-                "unjudged (refusal / no_answer / missing_turn).",
+                "value": _turns_summary(phase_turns),
+                "definition": "Orchestrator turns of this transcript, split by "
+                "how each turn's label was decided: judged (labelled directly); "
+                "filled (a reasoning turn no judge answer covered, inheriting "
+                "the previous label at low confidence); attributed (content-free "
+                "tool-call-only or failed turns the judge never saw, taking the "
+                "surrounding phase); unjudged (refusal / no_answer / "
+                "missing_turn); or unattributed (tool-only turns after an "
+                "unjudged turn, with no phase to take - greyed in the band).",
             },
             {
                 "label": "Decision phases",
@@ -1491,6 +1480,21 @@ def _verifier_notes(phases: pd.DataFrame) -> dict | None:
         "overturned": int(units.loc[completed, "overturned"].fillna(False).sum()),
         "same_model": bool(same.iloc[0]) if len(same) else False,
     }
+
+
+def _turns_summary(phase_turns: pd.DataFrame) -> str:
+    """The audit's per-turn coverage line; the unattributed bucket is
+    omitted when empty."""
+    total = len(phase_turns)
+    judged = int((phase_turns.basis == "judged").sum())
+    unjudged = sum(reliability.abstention_counts(phase_turns).values())
+    unattributed = int((phase_turns.basis == "unattributed").sum())
+    other = total - judged - unjudged - unattributed
+    line = (
+        f"{total} total · {judged} judged · {other} filled/attributed · "
+        f"{unjudged} unjudged"
+    )
+    return line + (f" · {unattributed} unattributed" if unattributed else "")
 
 
 def _phase_judge_facts(
@@ -2092,7 +2096,7 @@ def _entity_audit(
     # the per-classification maps: decided units, per-member coverage,
     # and deciding-provenance shares, each derived at this surface's
     # own grain (turns for Phases, spans for Sub-agents). The unjudged
-    # rate excludes turns the judge never saw (attributed), so it reads
+    # rate excludes turns the judge never saw (no digest), so it reads
     # "of the units judging attempted, how many got no judgement".
     if name == "Phases":
         decided = (
@@ -2109,7 +2113,7 @@ def _entity_audit(
         unit_word = "turn"
         unjudged_count = sum(reliability.abstention_counts(agreement_source).values())
         attempted = len(agreement_source) - (
-            int((agreement_source.basis == "attributed").sum())
+            int(agreement_source.basis.isin(("attributed", "unattributed")).sum())
             if len(agreement_source)
             else 0
         )

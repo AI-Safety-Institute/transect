@@ -95,8 +95,8 @@ def confidence_tiers(
 
 def abstention_counts(phase_turns: pd.DataFrame) -> dict[str, int]:
     """Per-basis counts over the abstention surface (refusal /
-    no_answer / missing_turn - `colors._UNJUDGED_BASES`, the same set
-    the phase band greys out). These three bases are pipeline-level
+    no_answer / missing_turn - `colors._UNJUDGED_BASES`; the phase band
+    greys these plus unattributed turns). These three bases are pipeline-level
     fallbacks - the judge never delivered a verdict. The judge-stated
     escape is separate and already in every rubric (the reserved
     "none_of_the_above" label, with the judge's explanation); its

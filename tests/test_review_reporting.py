@@ -1,7 +1,9 @@
 """Report consumers expose original review counts and completion."""
 
 import pandas as pd
+import pytest
 from bs4 import BeautifulSoup
+from helpers import phase_turns_frame
 from test_phase_review_units import reviewed_frame
 
 from transect.frames import phase_turn_votes_df
@@ -104,3 +106,43 @@ def test_failed_review_is_not_described_as_an_unchanged_verdict():
             ["1 selected · 0 completed · 1 without usable verdict · 0 overturned"],
         )
     ]
+
+
+def _no_phase_turns():
+    """Eight turns: a refused opening chunk, two unattributed tool-only
+    turns, four judged turns."""
+    return phase_turns_frame(
+        ["refusal"] * 2 + ["unattributed"] * 2 + ["judged"] * 4, [None] * 4 + [0] * 4
+    )
+
+
+@pytest.mark.parametrize(
+    ("bases", "expected"),
+    [
+        (
+            ["refusal"] * 2 + ["unattributed"] * 2 + ["judged"] * 4,
+            "8 total · 4 judged · 0 filled/attributed · 2 unjudged · 2 unattributed",
+        ),
+        # the unattributed bucket is omitted when empty
+        (
+            ["refusal"] * 2 + ["attributed"] * 2 + ["judged"] * 4,
+            "8 total · 4 judged · 2 filled/attributed · 2 unjudged",
+        ),
+    ],
+)
+def test_turns_summary_counts_unattributed_turns_apart_from_covered_ones(
+    bases, expected
+):
+    """Tool-only turns the projection left without a phase are not reported
+    as covered alongside attributed turns that have one."""
+    assert sections._turns_summary(phase_turns_frame(bases, [0] * 8)) == expected
+
+
+def test_meta_line_greyed_count_matches_the_band():
+    """The band greys every unattributed turn, so the caption counts them
+    with the unjudged ones."""
+    frame, _ = reviewed_frame()
+    text = BeautifulSoup(
+        str(sections.phase_meta_line(frame, _no_phase_turns())), "html.parser"
+    ).get_text()
+    assert "4 unjudged turn(s) greyed" in text

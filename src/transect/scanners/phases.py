@@ -2,7 +2,7 @@
 
 import logging
 from bisect import bisect_right
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any, Literal, cast
 
 from inspect_ai.model import CachePolicy, Model, get_model
@@ -41,6 +41,7 @@ from transect.scanners.phases_common import (
     context_blocks,
     digest_line,
     gather_judge_calls,
+    is_labelled,
     resolve_phases,
     stitch_phases,
     vocab_lines,
@@ -230,6 +231,10 @@ def decision_phases(
               projection it takes the phase whose turn range
               contains it (or the nearest preceding phase, for
               turns in a gap).
+            - "unattributed": no digest and no phase to take - an
+              unjudged digest turn separates it from the previous
+              phase, or the first digest turn was unjudged
+              (`project_phase_turns`).
             - "refusal": its chunk's judge calls were refused on
               both the cached and the uncached attempt.
             - "no_answer": its chunk's judge calls never produced a
@@ -627,29 +632,43 @@ def chunk_user_prompt(chunk: Sequence[Digest], last_phase: str | None) -> str:
     return f"{hint}Segment turns {first}..{last} into phases:\n{lines}"
 
 
-def project_phase_turns(phase_starts: Sequence[int], n_turns: int) -> list[int | None]:
-    """Assign every orchestrator turn (tool-call-only included) to a phase.
+def project_phase_turns(
+    phase_starts: Sequence[int],
+    n_turns: int,
+    unjudged_turns: Collection[int] = (),
+) -> list[int | None]:
+    """Assign orchestrator turns (tool-call-only included) to phases.
 
-    A turn inside a phase belongs to it; a turn between phases inherits
-    the previous one; turns before the first phase belong to the first.
+    A phase start sets the current phase and an unjudged digest turn
+    clears it, so a turn inside a phase belongs to it, a turn between
+    phases inherits the previous one unless an unjudged digest turn
+    separates them, and turns before the first digest turn take that
+    turn's outcome.
 
     Args:
         phase_starts: Each phase's ``turn_start``, in phase order.
         n_turns: Number of orchestrator turns in the transcript.
+        unjudged_turns: Digest turns `is_labelled` rejects - the rows
+            `stitch_phases` closed a phase on, so never inside one.
 
     Returns:
         ``phase_index_of_turn`` of length ``n_turns`` (indices into the
-        phases list). All-None only when there are no phases at all.
+        phases list, None where no phase claims the turn). All-None
+        when there are no phases at all.
     """
     assignment: list[int | None] = [None] * n_turns
     if not phase_starts:
         return assignment
-    ordered = sorted(range(len(phase_starts)), key=lambda i: phase_starts[i])
-    current = ordered[0]  # turns before the first phase -> the first
+    events: list[tuple[int, int | None]] = sorted(
+        [(start, index) for index, start in enumerate(phase_starts)]
+        + [(turn, None) for turn in set(unjudged_turns)],
+        key=lambda event: event[0],
+    )
+    current = events[0][1]
     position = 0
     for turn in range(n_turns):
-        while position < len(ordered) and phase_starts[ordered[position]] <= turn:
-            current = ordered[position]
+        while position < len(events) and events[position][0] <= turn:
+            current = events[position][1]
             position += 1
         assignment[turn] = current
     return assignment
@@ -798,10 +817,14 @@ def _dense_turns(
         n_members: Judge member count (decides the source labels).
 
     Returns:
-        One ``PhaseTurn`` per turn. ``phase_index`` is the index into
-        ``phases`` from the total-coverage projection.
+        One ``PhaseTurn`` per turn; ``phase_index`` is
+        `project_phase_turns`'s assignment.
     """
-    assignment = project_phase_turns([p.turn_start for p in phases], n_turns)
+    assignment = project_phase_turns(
+        [p.turn_start for p in phases],
+        n_turns,
+        [row.turn for row in digest_judgements if not is_labelled(row)],
+    )
     row_of = {row.turn: row for row in digest_judgements}
     regime_label: LabelSource = "majority_vote" if n_members > 1 else "single_judge"
     out: list[PhaseTurn] = []
@@ -813,7 +836,13 @@ def _dense_turns(
             PhaseTurn(
                 turn=turn,
                 phase_index=assignment[turn],
-                basis=row.basis if row is not None else "attributed",
+                basis=(
+                    row.basis
+                    if row is not None
+                    else "attributed"
+                    if assignment[turn] is not None
+                    else "unattributed"
+                ),
                 label_source=(
                     "verifier"
                     if verifier

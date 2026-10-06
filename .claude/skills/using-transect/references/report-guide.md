@@ -84,8 +84,9 @@ armed (the Sub-agent activity summary line does the same).
 - Three different greys exist; when a user asks about "the grey",
   find out which one they see:
   1. a grey chunk in the band = unjudged turns (refusal / no answer /
-     missing turn, or no matching phase - the tooltip names which).
-     An unjudged turn splits an otherwise-judged phase on purpose.
+     missing turn / unattributed, or no matching phase - the tooltip
+     names which). An unjudged turn splits an otherwise-judged phase
+     on purpose.
   2. a grey cell in the agreement strip below = no vote agreement for
      that turn (single voter, a verifier re-label that superseded the
      votes, or a turn no judge saw) - the band above it can still be
@@ -94,8 +95,8 @@ armed (the Sub-agent activity summary line does the same).
      filter - a view state, not a data state.
   Grey means "not judged" one way only: filled and attributed turns
   (label inherited or taken from the surrounding phase) are painted
-  their phase's colour - the basis says how a turn got its label,
-  the paint does not.
+  their phase's colour when they have one - the basis says how a
+  turn got its label, the paint does not.
 - The **agreement strip** below, labelled "agreement" in the margin
   (only when several voters judged; a solo run states in its place
   that a single judge has no one to agree with): green cells, darker
@@ -108,7 +109,9 @@ armed (the Sub-agent activity summary line does the same).
   (mean)" when a vote decided, "(verifier)" after an overturn, bare
   for a single judge), the decided label source, and the turn's basis
   (how it got its label): `judged` directly; `filled` (inherits the
-  previous label); `attributed` (content-free tool-only/failed turn); `refusal` /
+  previous label); `attributed` (content-free tool-only/failed turn);
+  `unattributed` (one after an unjudged turn, with no phase to take);
+  `refusal` /
   `no_answer` / `missing_turn` (unjudged). On a turn whose phase the
   verifier re-labelled, agreement reads "n/a (verifier re-label)" -
   the member ballots still show, they just no longer decide.
