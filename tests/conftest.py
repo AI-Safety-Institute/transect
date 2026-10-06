@@ -119,11 +119,11 @@ def demo_log() -> Path:
     return path
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def parallel_logs() -> Path:
     """The committed parallel sub-agents eval: a deep agent running two
     background sub-agents that overlap each other and several of its
-    own turns."""
+    own turns; module-scoped so one $0 run can serve a whole module."""
     return _log_dir("parallel_logs", "tests/fixtures/generate_parallel_eval.py")
 
 

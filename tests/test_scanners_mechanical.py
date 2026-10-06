@@ -13,6 +13,7 @@ from inspect_ai.event import (
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, ModelUsage
 from inspect_ai.tool import ToolCall
 
+from transect.scanners import helpers
 from transect.scanners.base import context_flush, human_intervention, token_timeline
 
 
@@ -70,47 +71,53 @@ def test_an_init_phase_model_call_is_off_the_axis_and_out_of_every_lane():
     assert rows == [(None, None, None), (0, 0, None)]
 
 
-def test_span_record_anchors_spawn_and_end_by_orchestrator_turn():
-    """Each sub-agent span records the orchestrator turn before its begin
-    and before its end, its activity timestamps, and a recorded end."""
-    events = [
-        *agent_span(
-            "R",
-            "react",
-            inner=[
-                model_turn("lead"),
+@pytest.mark.parametrize(
+    ("events", "spawn_turn", "end_turn"),
+    [
+        (
+            [
                 *agent_span(
-                    "C",
-                    "eda",
-                    inner=[model_turn("sub"), tool_event("t", span_id="C")],
-                    parent_id="R",
-                ),
-                model_turn("wrap"),
+                    "R",
+                    "react",
+                    inner=[
+                        model_turn("lead"),
+                        *agent_span(
+                            "C",
+                            "eda",
+                            inner=[model_turn("sub"), tool_event("t", span_id="C")],
+                            parent_id="R",
+                        ),
+                        model_turn("wrap"),
+                    ],
+                )
             ],
+            0,
+            0,
         ),
-    ]
+        (
+            [*agent_span("C", "eda", inner=[model_turn("sub")]), model_turn("lead")],
+            0,
+            0,
+        ),
+    ],
+    ids=["handoff", "spawned-before-the-first-turn"],
+)
+def test_span_record_anchors_spawn_and_end_by_orchestrator_turn(
+    events, spawn_turn, end_turn
+):
+    """Each sub-agent span records the orchestrator turn before its begin
+    and before its end (zero for a span begun before any main turn), its
+    activity timestamps, and a recorded end."""
     (span,) = run_scan(token_timeline(), events).value["spans"]
     assert (span["agent_span_id"], span["agent_lane"]) == ("C", "eda")
-    assert (span["spawn_turn"], span["event_order_end_turn"]) == (0, 0)
+    assert (span["spawn_turn"], span["event_order_end_turn"]) == (spawn_turn, end_turn)
     assert span["end_recorded"] is True
     assert span["first_at"] <= span["last_at"] <= span["end_at"]
-
-
-def test_a_span_begun_before_any_orchestrator_turn_anchors_at_zero():
-    """A sub-agent spawned before the first main turn still gets a turn."""
-    events = [
-        *agent_span("C", "eda", inner=[model_turn("sub")]),
-        model_turn("lead"),
-    ]
-    (span,) = run_scan(token_timeline(), events).value["spans"]
-    assert span["spawn_turn"] == 0
 
 
 def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
     """A span outside the shared sub-agent definition (a timeline utility
     span) gets no span record and no lane activity."""
-    import transect.scanners.helpers as helpers
-
     events = [
         model_turn("lead"),
         *agent_span(
@@ -386,14 +393,19 @@ def test_operator_messages_sit_on_the_event_turn_axis(shape):
     assert intervention["turn"] == turn
 
 
-def test_sub_agent_assistant_messages_do_not_advance_the_axis():
+@pytest.mark.parametrize(
+    "recorded", [True, False], ids=["note-in-next-input", "note-unrecorded"]
+)
+def test_sub_agent_assistant_messages_do_not_advance_the_axis(recorded):
     """A handoff appends the sub-agent's messages to the thread; an
-    operator note after them lands on the next orchestrator turn."""
+    operator note after them lands on the next orchestrator turn, whether
+    that turn's input recorded the note or the footprint fallback has to
+    count orchestrator assistant messages only."""
     note = ChatMessageUser(content="steer", source="operator", id="note")
     task = ChatMessageUser(content="task", source="input", id="task")
     lead0 = model_turn("lead 0", input=[task])
     sub0 = model_turn("sub 0")
-    lead1 = model_turn("lead 1", input=[task, note])
+    lead1 = model_turn("lead 1", input=[task, note] if recorded else [task])
     events = [lead0, *agent_span("C", "eda", inner=[sub0]), lead1]
     messages = [
         task,
@@ -406,26 +418,6 @@ def test_sub_agent_assistant_messages_do_not_advance_the_axis():
     assert [(i["turn"], i["channel"]) for i in value["interventions"]] == [
         (1, "operator")
     ]
-
-
-def test_an_unseen_note_after_sub_agent_messages_takes_the_next_orchestrator_turn():
-    """With no input recording it, the note's footprint counts
-    orchestrator assistant messages only."""
-    note = ChatMessageUser(content="steer", source="operator", id="note")
-    task = ChatMessageUser(content="task", source="input", id="task")
-    lead0 = model_turn("lead 0", input=[task])
-    sub0 = model_turn("sub 0")
-    lead1 = model_turn("lead 1", input=[task])
-    events = [lead0, *agent_span("C", "eda", inner=[sub0]), lead1]
-    messages = [
-        task,
-        ChatMessageAssistant(content="lead 0", id=lead0.output.message.id),
-        ChatMessageAssistant(content="sub 0", id=sub0.output.message.id),
-        note,
-        ChatMessageAssistant(content="lead 1", id=lead1.output.message.id),
-    ]
-    value = run_scan(human_intervention(), events, messages).value
-    assert [i["turn"] for i in value["interventions"]] == [1]
 
 
 def test_the_first_input_message_is_the_task_not_an_intervention():

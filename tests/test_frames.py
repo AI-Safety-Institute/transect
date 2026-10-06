@@ -94,6 +94,51 @@ def raw_row(result, metadata=None, transcript_id="tr1", input_ids=None):
     }
 
 
+def value_row(value, **kwargs):
+    """A raw row for a label-less (mechanical) scanner value."""
+    result = SimpleNamespace(value=value, label=None, answer=None, explanation=None)
+    return raw_row(result, **kwargs)
+
+
+def context_series(turn, lane_turn, context, agent_span_id=None, agent_lane=None):
+    """A token_timeline slice with just the columns flushes_df reads."""
+    n = len(context)
+    return pd.DataFrame(
+        {
+            "transcript_id": ["tr1"] * n,
+            "turn": turn,
+            "lane_turn": lane_turn,
+            "context": context,
+            "agent_span_id": agent_span_id or [None] * n,
+            "agent_lane": agent_lane or [None] * n,
+        }
+    ).astype({"turn": "Int64", "lane_turn": "Int64"})
+
+
+def recorded_flush(
+    turn,
+    tokens_before,
+    tokens_after,
+    agent_span_id=None,
+    lane_turn=None,
+    type="context",
+):
+    """One Inspect-recorded flush as context_flush stores it."""
+    return {
+        "turn": turn,
+        "agent_span_id": agent_span_id,
+        "lane_turn": turn if lane_turn is None else lane_turn,
+        "type": type,
+        "source": "inspect",
+        "tokens_before": tokens_before,
+        "tokens_after": tokens_after,
+        "role": None,
+        "metadata": None,
+        "compaction_prompt": None,
+        "compaction_nudge": None,
+    }
+
+
 @pytest.fixture(scope="module")
 def demo_results(tmp_path_factory):
     """One $0 run over the committed demo log, shared by the module."""
@@ -454,10 +499,9 @@ def test_errored_solo_rows_project_absent_judge_columns(
 ):
     """An errored solo scan records no value, so there is no judge
     block: the judge columns project as absent, dtypes intact."""
-    result = SimpleNamespace(value={}, label=None, answer=None, explanation=None)
     # an errored scan records no Result, so no Result.metadata - the
     # span id must still arrive via the store's input_ids column
-    row = raw_row(result, metadata=None, input_ids=["sp1"])
+    row = value_row({}, metadata=None, input_ids=["sp1"])
     row["scan_error"] = "boom"
     if storage != "absent":
         row["scan_error_type"] = category
@@ -481,39 +525,11 @@ def test_context_drops_synthesize_flushes_with_the_documented_fences():
     its three fences are pinned: a sustained drop yields a row, a
     transient dip does not, and a drop adjacent to a recorded flush is
     suppressed rather than double-reported."""
-    timeline = pd.DataFrame(
-        {
-            "transcript_id": ["tr1"] * 10,
-            "turn": range(10),
-            "lane_turn": range(10),
-            "context": [1000, 950, 300, 280, 900, 400, 950, 900, 350, 300],
-            "agent_span_id": [None] * 10,
-            "agent_lane": [None] * 10,
-        }
+    timeline = context_series(
+        range(10), range(10), [1000, 950, 300, 280, 900, 400, 950, 900, 350, 300]
     )
-    recorded = SimpleNamespace(
-        value={
-            "flushes": [
-                {
-                    "turn": 8,
-                    "agent_span_id": None,
-                    "lane_turn": 8,
-                    "type": "context",
-                    "source": "inspect",
-                    "tokens_before": 900,
-                    "tokens_after": 350,
-                    "role": None,
-                    "metadata": None,
-                    "compaction_prompt": None,
-                    "compaction_nudge": None,
-                }
-            ]
-        },
-        label=None,
-        answer=None,
-        explanation=None,
-    )
-    frame = flushes_df(pd.DataFrame([raw_row(recorded)]), timeline)
+    recorded = pd.DataFrame([value_row({"flushes": [recorded_flush(8, 900, 350)]})])
+    frame = flushes_df(recorded, timeline)
     assert sorted(frame.turn) == [2, 8]
     synthesized = frame[frame.source == "synthesized"].iloc[0]
     assert synthesized.turn == 2
@@ -526,16 +542,13 @@ def test_sub_agent_lanes_synthesize_their_own_drops():
     """A context reset inside a sub-agent lane is detected on that lane's
     own series and lands tagged with the lane, the lane turn it precedes,
     and the orchestrator turn the axis was on at the time."""
-    timeline = pd.DataFrame(
-        {
-            "transcript_id": ["tr1"] * 5,
-            "turn": [0, 1, None, None, 2],
-            "lane_turn": [0, 1, 0, 1, 2],
-            "context": [1000, 1100, 900, 100, 1200],
-            "agent_span_id": [None, None, "A", "A", None],
-            "agent_lane": [None, None, "a", "a", None],
-        }
-    ).astype({"turn": "Int64", "lane_turn": "Int64"})
+    timeline = context_series(
+        [0, 1, None, None, 2],
+        [0, 1, 0, 1, 2],
+        [1000, 1100, 900, 100, 1200],
+        agent_span_id=[None, None, "A", "A", None],
+        agent_lane=[None, None, "a", "a", None],
+    )
     frame = flushes_df(pd.DataFrame(), timeline)
     (drop,) = frame.itertuples()
     assert (drop.agent_span_id, drop.turn, drop.lane_turn) == ("A", 2, 1)
@@ -546,88 +559,42 @@ def test_sub_agent_lanes_synthesize_their_own_drops():
     )
 
 
-def test_a_sub_agent_flush_infers_tokens_after_from_its_own_lane():
-    """A recorded sub-agent compaction without tokens_after reads the
-    next window of its own lane, and suppresses the drop it explains."""
-    timeline = pd.DataFrame(
-        {
-            "transcript_id": ["tr1"] * 3,
-            "turn": [0, None, None],
-            "lane_turn": [0, 0, 1],
-            "context": [1000, 800, 150],
-            "agent_span_id": [None, "A", "A"],
-            "agent_lane": [None, "a", "a"],
-        }
-    ).astype({"turn": "Int64", "lane_turn": "Int64"})
-    recorded = SimpleNamespace(
-        value={
-            "flushes": [
-                {
-                    "turn": 1,
-                    "agent_span_id": "A",
-                    "lane_turn": 1,
-                    "type": "summary",
-                    "source": "inspect",
-                    "tokens_before": 800,
-                    "tokens_after": 0,
-                    "role": None,
-                    "metadata": None,
-                    "compaction_prompt": None,
-                    "compaction_nudge": None,
-                }
-            ]
-        },
-        label=None,
-        answer=None,
-        explanation=None,
-    )
-    frame = flushes_df(pd.DataFrame([raw_row(recorded)]), timeline)
-    (flush,) = frame.itertuples()
-    assert (flush.tokens_after, flush.tokens_after_inferred) == (150, True)
-    assert flush.source == "inspect"
-
-
-def test_a_recorded_flush_without_tokens_after_infers_it():
+@pytest.mark.parametrize(
+    ("timeline", "recorded", "tokens_after"),
+    [
+        (
+            context_series(range(5), range(5), [1000, 900, 850, 200, 190]),
+            recorded_flush(3, 850, 0),
+            200,
+        ),
+        (
+            context_series(
+                [0, None, None],
+                [0, 0, 1],
+                [1000, 800, 150],
+                agent_span_id=[None, "A", "A"],
+                agent_lane=[None, "a", "a"],
+            ),
+            recorded_flush(1, 800, 0, agent_span_id="A", type="summary"),
+            150,
+        ),
+    ],
+    ids=["main-lane", "sub-agent-lane"],
+)
+def test_a_recorded_flush_without_tokens_after_infers_it_from_its_own_lane(
+    timeline, recorded, tokens_after
+):
     """An export that omits tokens_after gets it from the next real
-    context reading, flagged as inferred rather than passed off as
-    recorded."""
-    timeline = pd.DataFrame(
-        {
-            "transcript_id": ["tr1"] * 5,
-            "turn": range(5),
-            "lane_turn": range(5),
-            "context": [1000, 900, 850, 200, 190],
-            "agent_span_id": [None] * 5,
-            "agent_lane": [None] * 5,
-        }
+    context reading of the flush's own lane, flagged as inferred rather
+    than passed off as recorded; the drop it explains is not also
+    synthesized."""
+    frame = flushes_df(pd.DataFrame([value_row({"flushes": [recorded]})]), timeline)
+    (row,) = frame.itertuples()
+    assert row.source == "inspect"
+    assert (int(row.tokens_after), bool(row.tokens_after_inferred)) == (
+        tokens_after,
+        True,
     )
-    recorded = SimpleNamespace(
-        value={
-            "flushes": [
-                {
-                    "turn": 3,
-                    "agent_span_id": None,
-                    "lane_turn": 3,
-                    "type": "context",
-                    "source": "inspect",
-                    "tokens_before": 850,
-                    "tokens_after": 0,
-                    "role": None,
-                    "metadata": None,
-                    "compaction_prompt": None,
-                    "compaction_nudge": None,
-                }
-            ]
-        },
-        label=None,
-        answer=None,
-        explanation=None,
-    )
-    frame = flushes_df(pd.DataFrame([raw_row(recorded)]), timeline)
-    row = frame[frame.source == "inspect"].iloc[0]
-    assert (int(row.tokens_after), bool(row.tokens_after_inferred)) == (200, True)
-    # and the same drop is not also synthesized (suppressed as nearby)
-    assert (frame.source == "synthesized").sum() == 0
 
 
 def test_phase_rollups_split_orchestrator_and_delegated_spend(raw_phases):
@@ -663,20 +630,37 @@ def test_phase_rollups_split_orchestrator_and_delegated_spend(raw_phases):
     assert phase.n_subagents == 2
 
 
-def test_phase_delegated_spend_is_absent_not_zero_without_usage(raw_phases):
-    """Tool-only lanes spawned in a phase count, but contribute NA spend."""
-    subagents = pd.DataFrame(
-        {
-            "transcript_id": ["tr1"],
-            "agent_span_id": ["A"],
-            "spawn_turn": [1],
-            "new_work": [None],
-        }
-    ).astype({"new_work": "Float64"})
-    phases = phases_df(raw_phases, subagents=subagents)
-    (phase,) = phases.itertuples()
+@pytest.mark.parametrize(
+    ("subagents", "n_subagents"),
+    [
+        (
+            pd.DataFrame(
+                {
+                    "transcript_id": ["tr1"],
+                    "agent_span_id": ["A"],
+                    "spawn_turn": [1],
+                    "new_work": [None],
+                }
+            ).astype({"new_work": "Float64"}),
+            1,
+        ),
+        (subagents_df(pd.DataFrame()), 0),
+        (None, None),
+    ],
+    ids=["tool-only-lane", "no-spans", "no-frame"],
+)
+def test_phase_subagent_counts_tell_zero_from_unknown(
+    raw_phases, subagents, n_subagents
+):
+    """A tool-only lane spawned in the phase counts, a complete scan with
+    no spans is a known zero, and only a missing frame is NA; delegated
+    spend without usage is NA, never a fabricated zero."""
+    (phase,) = phases_df(raw_phases, subagents=subagents).itertuples()
     assert pd.isna(phase.delegated_new_work_tokens)
-    assert phase.n_subagents == 1
+    if n_subagents is None:
+        assert pd.isna(phase.n_subagents)
+    else:
+        assert phase.n_subagents == n_subagents
 
 
 def test_a_skewed_orchestrator_clock_falls_back_to_event_order():
@@ -701,14 +685,9 @@ def test_a_skewed_orchestrator_clock_falls_back_to_event_order():
         ],
         "lane_activity": [],
     }
-    raw = pd.DataFrame(
-        [
-            raw_row(
-                SimpleNamespace(value=value, label=None, answer=None, explanation=None)
-            )
-        ]
+    frame = subagents_df(
+        pd.DataFrame(), timeline_results=pd.DataFrame([value_row(value)])
     )
-    frame = subagents_df(pd.DataFrame(), timeline_results=raw)
     assert frame.turn_source.tolist() == ["event_order"]
     assert frame.anchor_turn.tolist() == [1]
 
@@ -752,20 +731,7 @@ def test_an_off_axis_call_never_seeds_the_orchestrator_context():
         "spans": [],
         "lane_activity": [],
     }
-    row = raw_row(
-        SimpleNamespace(value=value, label=None, answer=None, explanation=None)
-    )
-    frame = token_timeline_df(pd.DataFrame([row]))
+    frame = token_timeline_df(pd.DataFrame([value_row(value)]))
     main = frame[frame.turn.notna()]
     # input + output + the full cache write (window grew from nothing)
     assert main.new_work.tolist() == [170]
-
-
-def test_an_empty_subagents_frame_means_zero_spawns_not_unknown(raw_phases):
-    """A complete structural scan with no spans is a known zero count;
-    only a missing input is NA."""
-    phases = phases_df(raw_phases, subagents=subagents_df(pd.DataFrame()))
-    assert phases.n_subagents.tolist() == [0]
-    assert pd.isna(phases.delegated_new_work_tokens.iloc[0])
-    absent = phases_df(raw_phases, subagents=None)
-    assert pd.isna(absent.n_subagents.iloc[0])

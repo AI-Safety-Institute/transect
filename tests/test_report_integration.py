@@ -48,39 +48,6 @@ SCENARIOS = {
     ),
 }
 
-
-@pytest.mark.parametrize("name", SCENARIOS)
-def test_mechanical_report_renders_whole(name, tmp_path):
-    """A $0 scan of this log shape renders a report with its expected
-    sections and no leaked error text."""
-    logs, kwargs, sections = SCENARIOS[name]
-    root = Path(__file__).parents[1]
-    results = _run(
-        logs=str(root / logs), spec=Spec(), scans_dir=str(tmp_path / "s"), **kwargs
-    )
-    results = render(
-        results,
-        report_path=str(tmp_path / "report.html"),
-        viewer=False,
-        open_report=False,
-    )
-    html = Path(results.report_paths[0]).read_text()
-    for section in sections:
-        assert section in html
-    # an OpenClaw import records no compaction configuration at all; the
-    # parallel fixture is an Inspect log run with compaction disabled
-    recorded = name not in ("openclaw-import", "parallel-subagents")
-    if recorded:
-        assert "Compaction nudge (before compaction)" in html
-    else:
-        assert "Compaction nudge" not in html
-    assert "Traceback" not in html
-    # the other Inspect logs record a compaction threshold (row + toggle)
-    assert ("compaction threshold</span>" in html) == recorded
-    assert ("Compaction threshold:" in html) == recorded
-    assert len(html) > 20_000
-
-
 _STORE_CONTENT = {
     # each store's planted signals, as rendered copy; flags counted
     # twice (once inline in the entity's own section, once in the audit)
@@ -124,6 +91,38 @@ _STORE_CONTENT = {
         ("Provenance map", 1),
     ),
 }
+
+
+@pytest.mark.parametrize("name", SCENARIOS)
+def test_mechanical_report_renders_whole(name, tmp_path):
+    """A $0 scan of this log shape renders a report with its expected
+    sections and no leaked error text."""
+    logs, kwargs, sections = SCENARIOS[name]
+    root = Path(__file__).parents[1]
+    results = _run(
+        logs=str(root / logs), spec=Spec(), scans_dir=str(tmp_path / "s"), **kwargs
+    )
+    results = render(
+        results,
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
+    )
+    html = Path(results.report_paths[0]).read_text()
+    for section in sections:
+        assert section in html
+    # an OpenClaw import records no compaction configuration at all; the
+    # parallel fixture is an Inspect log run with compaction disabled
+    recorded = name not in ("openclaw-import", "parallel-subagents")
+    if recorded:
+        assert "Compaction nudge (before compaction)" in html
+    else:
+        assert "Compaction nudge" not in html
+    assert "Traceback" not in html
+    # the other Inspect logs record a compaction threshold (row + toggle)
+    assert ("compaction threshold</span>" in html) == recorded
+    assert ("Compaction threshold:" in html) == recorded
+    assert len(html) > 20_000
 
 
 @pytest.mark.parametrize("store", ["demo_scan", "demo_scan_cohort"])

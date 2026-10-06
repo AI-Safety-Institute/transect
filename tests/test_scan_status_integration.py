@@ -11,6 +11,7 @@ from inspect_scout import Loader, Transcript, loader, scanner
 
 import transect
 import transect.api as api
+from transect.scanners import helpers
 from transect.scanners.cohort import batch_item_content
 
 
@@ -200,7 +201,6 @@ def test_an_unresolvable_orchestrator_lane_surfaces_as_a_scan_error(
     """A transcript with no single orchestrator lane errors per scanner,
     is named in the scan status section, and never renders a guessed
     axis."""
-    import transect.scanners.helpers as helpers
 
     def ambiguous(transcript):
         raise ValueError(
