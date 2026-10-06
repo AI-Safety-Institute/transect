@@ -1,9 +1,9 @@
 """One-shot generator for tests/fixtures/openclaw/mini_telemetry.jsonl.
 
 Hand-designed miniature of an OpenClaw telemetry-hal capture (a cron
-orchestrator whose sub-agents record tool events only, no model turns). Every importer rule gets one exercising record; the
-expected values in tests/test_ingestion_selection.py are hand-computed
-from here.
+orchestrator whose sub-agents record tool events only, no model turns).
+Every importer rule gets one exercising record; the expected values in
+tests/test_ingestion_selection.py are hand-computed from here.
 """
 
 import json
