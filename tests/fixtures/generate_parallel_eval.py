@@ -9,7 +9,8 @@ Writes one .eval into tests/fixtures/parallel_logs/ (committed): a mockllm
 sub-agents in the background in its first turn, keeps working for two
 turns, waits for them, then submits. Inspect appends the sub-agents'
 events as they happen, so their model turns interleave with the
-orchestrator's in the event stream.
+orchestrator's in the event stream. subagent_a compacts once in its own
+lane (a summary compaction with no memory nudge).
 """
 
 from datetime import timedelta
@@ -22,7 +23,12 @@ from inspect_ai import Task, eval as inspect_eval, task
 from inspect_ai.agent import deepagent, subagent
 from inspect_ai.dataset import Sample
 from inspect_ai.log import EvalLog, read_eval_log, write_eval_log
-from inspect_ai.model import ChatMessageAssistant, ModelOutput, get_model
+from inspect_ai.model import (
+    ChatMessageAssistant,
+    CompactionSummary,
+    ModelOutput,
+    get_model,
+)
 from inspect_ai.tool import Tool, ToolCall, tool
 
 from transect.scanners.helpers import main_span, nearest_agent_span
@@ -34,18 +40,26 @@ FIXTURE = LOG_DIR / f"{STAMP}_parallel-subagents_mockdeepagent.eval"
 
 # the sub-agent system prompts: the routing key for their model calls
 PROMPTS = {
-    "scout_a": "You are scout_a. Survey the repository layout.",
-    "scout_b": "You are scout_b. Check that the build runs.",
+    "subagent_a": "You are subagent_a. Survey the repository layout.",
+    "subagent_b": "You are subagent_b. Check that the build runs.",
 }
 
 # the deterministic schedule (seconds): orchestrator model calls start
 # ORCH_PITCH apart; sub-agent events start SUB_OFFSET after the spawn
-# call, SUB_PITCH apart, with scout_b lagging scout_a by SUB_LAG
+# call, SUB_PITCH apart, with subagent_b lagging subagent_a by SUB_LAG
 ORCH_PITCH = 100
 ORCH_DURATION = 30
 SUB_OFFSET = 20
-SUB_PITCH = 40
+SUB_PITCH = 25
 SUB_LAG = 15
+
+# subagent_a compacts once, between its first and second tool call: its
+# first tool result is a long listing that carries its context over the
+# threshold (tokens), and the short summary brings it back under. The
+# summarization call is routed by its prompt, so it consumes no script.
+COMPACTION_THRESHOLD = 500
+LISTING_FILES = 300
+SUBAGENT_A_SUMMARY = "Listed subagent_a: many files, README still to read."
 
 
 @tool
@@ -56,6 +70,8 @@ def bash() -> Tool:
         Args:
             cmd: command to run
         """
+        if cmd == "ls subagent_a":
+            return "\n".join(f"module_{i}.py" for i in range(LISTING_FILES))
         return f"ran: {cmd}"
 
     return execute
@@ -75,28 +91,41 @@ def _calls(content: str, *calls: tuple[str, dict[str, Any]]) -> ModelOutput:
     )
 
 
+# sub-agent calls answered so far, by name: a compaction empties the
+# history, so the script position cannot be read off the input
+_SUB_CALLS: dict[str, int] = {}
+
+
 def route(input, tools, tool_choice, config) -> ModelOutput:
-    """Content-routed script: sub-agents by their system prompt, the
-    orchestrator by how many of its own turns precede this call."""
+    """Content-routed script: a summarization call by Inspect's prompt,
+    sub-agents by their system prompt and call count, the orchestrator
+    by how many of its own turns precede this call."""
     system = "\n".join(m.text for m in input if m.role == "system")
+    if "tasked with summarizing conversations" in (input[-1].text or ""):
+        return ModelOutput.from_message(
+            ChatMessageAssistant(content=SUBAGENT_A_SUMMARY, model=MOCK)
+        )
     turns = sum(1 for m in input if m.role == "assistant")
     for name, prompt in PROMPTS.items():
         if prompt in system:
             script = [
                 ModelOutput.for_tool_call(MOCK, "bash", {"cmd": f"ls {name}"}),
+                ModelOutput.for_tool_call(MOCK, "bash", {"cmd": f"cat {name}/README"}),
                 ModelOutput.for_tool_call(MOCK, "submit", {"answer": f"{name} done"}),
             ]
-            return script[min(turns, len(script) - 1)]
+            call = _SUB_CALLS.get(name, 0)
+            _SUB_CALLS[name] = call + 1
+            return script[min(call, len(script) - 1)]
     script = [
         _calls(
-            "Fanning out two scouts in the background.",
+            "Fanning out two sub-agents in the background.",
             (
                 "agent",
-                {"subagent_type": "scout_a", "prompt": "survey", "background": True},
+                {"subagent_type": "subagent_a", "prompt": "survey", "background": True},
             ),
             (
                 "agent",
-                {"subagent_type": "scout_b", "prompt": "test", "background": True},
+                {"subagent_type": "subagent_b", "prompt": "test", "background": True},
             ),
         ),
         ModelOutput.for_tool_call(MOCK, "bash", {"cmd": "work 1"}),
@@ -122,6 +151,11 @@ def parallel_subagents() -> Task:
                     description=f"{name} helper",
                     prompt=prompt,
                     tools=[bash()],
+                    compaction=CompactionSummary(
+                        threshold=COMPACTION_THRESHOLD, memory=False
+                    )
+                    if name == "subagent_a"
+                    else None,
                 )
                 for name, prompt in PROMPTS.items()
             ],
@@ -183,6 +217,7 @@ def stretch_wallclock(log: EvalLog) -> None:
 def write_fixture(path: Path = FIXTURE) -> None:
     """Run the mock eval in a scratch log dir, stretch its clock, and
     write the result to ``path``."""
+    _SUB_CALLS.clear()  # the counter outlives a run; a second run starts over
     with TemporaryDirectory() as scratch:
         (written,) = inspect_eval(
             parallel_subagents(), model=MOCK, log_dir=scratch, display="plain"

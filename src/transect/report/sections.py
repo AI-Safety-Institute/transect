@@ -10,7 +10,7 @@ pre-escape a value here (it would double-escape).
 
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -570,25 +570,35 @@ def event_legend(
     return _notes.event_legend(has_context_chart, flushes, threshold)
 
 
-def flush_line(flushes: pd.DataFrame, n_off_axis: int = 0) -> Markup:
-    """The context-flush list: a ``<details>`` whose summary is the
-    count and whose body is one ``<li>`` per flush - turn, type/source,
-    tokens kept. ``n_off_axis`` is the number of compactions in
-    sub-agent lanes, which are off the turn axis and so neither listed
-    nor charted; the summary names them rather than passing the
-    orchestrator's count off as the run's.
+def flush_line(flushes: pd.DataFrame, lane_of: Mapping[str, str]) -> Markup:
+    """The context-flush list for every lane: a ``<details>`` whose
+    summary counts the orchestrator's flushes (the ones the charts
+    mark) and the sub-agent lanes' apart, with one list for the main
+    lane and one per sub-agent lane. An entry is the flush's position
+    (the main-lane turn it precedes; a sub-agent's also its own lane
+    turn), type/source and tokens kept. ``lane_of`` maps a sub-agent
+    span id to its lane name.
     """
-    items = []
-    for _, f in flushes.sort_values("turn").iterrows():
+    main: list[dict[str, Any]] = []
+    lanes: dict[str, list[dict[str, Any]]] = {}
+    for _, f in flushes.sort_values(["turn", "lane_turn"]).iterrows():
         amount = None
         if pd.notna(f.tokens_before) and pd.notna(f.tokens_after):
             amount = f"{int(f.tokens_before):,} → {int(f.tokens_after):,}"
             if f.tokens_after_inferred:
                 amount += " (inferred)"
-        items.append(
-            {"turn": int(f.turn), "type": f.type, "source": f.source, "amount": amount}
-        )
-    return _notes.flush_line(items, n_off_axis)
+        item = {
+            "turn": int(f.turn),
+            "lane_turn": int(f.lane_turn),
+            "type": f.type,
+            "source": f.source,
+            "amount": amount,
+        }
+        if pd.isna(f.agent_span_id):
+            main.append(item)
+        else:
+            lanes.setdefault(lane_of.get(f.agent_span_id) or "unnamed", []).append(item)
+    return _notes.flush_line(main, list(lanes.items()))
 
 
 def intervention_legend() -> Markup:
@@ -715,7 +725,12 @@ def subagent_legend(
     return _notes.phase_chips(None, chips)
 
 
-def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> dict:
+def span_titles(
+    subagents: pd.DataFrame,
+    label_of: dict,
+    geometry_of: dict,
+    compactions_of: Mapping[str, int],
+) -> dict:
     """One hover-tooltip cell set per span for the swimlanes chart:
     ``{span_id: {field: cell}}`` keyed by `charts.SPAN_TIP_FIELDS`.
     "no data" marks a value the source never recorded. The ``turns``
@@ -723,7 +738,10 @@ def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> d
     the span ran (wall-clock), or only its spawn turn when the source
     recorded no usable timestamps; ``geometry_of`` (span id ->
     `lanes_layout.SpanGeometry`) says whether the span ran past the
-    axis's edges, which the cell states."""
+    axis's edges, which the cell states. ``compactions_of`` (span id ->
+    count) is how often the span's own lane compacted, recorded or
+    synthesized (the flushes frame by ``agent_span_id``); the cell
+    reads 0 for a lane that never did."""
 
     def fmt(value) -> str:
         return "no data" if value is None or pd.isna(value) else f"{int(value):,}"
@@ -758,6 +776,7 @@ def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> d
             "verifier": _span_verifier_cell(row),
             "tool calls": fmt(row.tool_calls),
             "busy": _fmt_busy(row.busy_seconds),
+            "compactions": str(compactions_of.get(str(row.agent_span_id), 0)),
         }
     return titles
 

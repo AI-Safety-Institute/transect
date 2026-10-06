@@ -177,9 +177,13 @@ The measure radio picks what the bars show - in the simplest terms:
 - **linear/log scale**: linear for comparing turns at a glance; log
   when a few huge turns flatten everything else - it makes the small
   turns readable again without hiding the big ones. Dashed red rules mark context flushes (compactions);
-the flush list expandable gives, for each one, the turn it precedes
-(events sit between turns, drawn at the half-turn), type/source, and
-tokens before -> after as the compaction event recorded them. Those are
+the flush list expandable lists the main lane's flushes (the ones the
+charts mark) and, under its own heading, each sub-agent lane's, which
+are off the main-lane turn axis and not charted. An entry gives the
+turn it precedes (events sit between turns, drawn at the half-turn; a
+sub-agent's entry gives its own lane turn and the main-lane turn),
+type/source, and tokens before -> after as the compaction event
+recorded them. Those are
 not chart readings: the chart's context is each call's reported input,
 so at a summary flush the flush turn is the summarization call itself
 (whole conversation plus summary prompt) and the first call after it
@@ -234,8 +238,9 @@ duration). Tooltip per span: lane, turns, classification with its
 confidence (provenance suffixed, as on the agreement strip), vote
 agreement and label source, a verifier line
 when the span was reviewed ("overturned (was X)" / "reviewed, not
-overturned"), one joined "member votes" row, then tool calls and
-busy time - "no data" where the source recorded nothing, and
+overturned"), one joined "member votes" row, then tool calls, busy
+time and the lane's own compaction count (0 when it never compacted) -
+"no data" where the source recorded nothing, and
 reliability rows absent where the fact does not apply. Per-label
 token rollups (new work, output, and tokens excluding cache reads) live on the Token spend
 section's "By sub-agent label" bars' tooltip, not here. Spawn

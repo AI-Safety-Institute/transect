@@ -112,12 +112,15 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     for section in sections:
         assert section in html
     # an OpenClaw import records no compaction configuration at all; the
-    # parallel fixture is an Inspect log run with compaction disabled
+    # parallel fixture's orchestrator runs with compaction disabled (its
+    # subagent_a sub-agent compacts without a memory nudge)
     recorded = name not in ("openclaw-import", "parallel-subagents")
     if recorded:
         assert "Compaction nudge (before compaction)" in html
     else:
         assert "Compaction nudge" not in html
+    if name == "parallel-subagents":  # the only flush is subagent_a's
+        assert "0 context flush(es)" in html and "subagent_a lane" in html
     assert "Traceback" not in html
     # the other Inspect logs record a compaction threshold (row + toggle)
     assert ("compaction threshold</span>" in html) == recorded
@@ -302,23 +305,33 @@ def test_interventions_chart_budgets_its_previews_not_a_generic_two_line_row():
     assert len(charts._preview("x" * 100)) == charts._PREVIEW_CHARS + 1
 
 
-def test_flush_line_counts_the_sub_agent_lane_flushes_it_does_not_list():
-    """The flush list says how many compactions happened in sub-agent
-    lanes (off the turn axis, so neither listed nor charted) instead of
-    presenting the orchestrator's count as the run's total."""
+def test_flush_line_separates_the_main_lane_from_each_sub_agent_lane():
+    """The flush list keeps the orchestrator's compactions (the ones the
+    charts mark) in a main-lane list and each sub-agent lane's in its
+    own headed list, placed by lane turn and the main-lane turn they
+    precede; the chart explainer belongs to the main-lane list."""
     flushes = pd.DataFrame(
         {
-            "turn": [3],
-            "type": ["summary"],
-            "source": ["recorded"],
-            "tokens_before": [1000],
-            "tokens_after": [400],
-            "tokens_after_inferred": [False],
+            "turn": [3, 2],
+            "agent_span_id": [None, "S1"],
+            "lane_turn": [3, 2],
+            "type": ["summary", "summary"],
+            "source": ["recorded", "inspect"],
+            "tokens_before": [1000, 1958],
+            "tokens_after": [400, 215],
+            "tokens_after_inferred": [False, False],
         }
     )
-    html = sections.flush_line(flushes, n_off_axis=2)
-    assert "1 context flush(es)" in html and "2 more in sub-agent lanes" in html
-    assert "sub-agent lanes" not in sections.flush_line(flushes, n_off_axis=0)
+    html = sections.flush_line(flushes, {"S1": "subagent_a"})
+    assert "1 context flush(es)" in html and "dashed lines" in html
+    assert "1 in sub-agent lanes (off the main-lane turn axis)" in html
+    assert "Main lane" in html and "subagent_a lane" in html
+    assert "before sub-agent lane turn 2 (before main-lane turn 2)" in html
+    assert "1,958 → 215" in html
+    only_sub = sections.flush_line(flushes[flushes.agent_span_id.notna()], {})
+    assert "0 context flush(es)" in only_sub and "dashed lines" not in only_sub
+    assert "Main lane" not in only_sub and "Token counts are" not in only_sub
+    assert "unnamed lane" in only_sub
 
 
 def empty_flushes() -> pd.DataFrame:
@@ -662,5 +675,36 @@ def test_span_tooltip_says_when_a_span_began_before_the_first_turn():
         }
     )
     geometry = {"A": SpanGeometry("A", "early", -0.5, -0.5, True, before_first=True)}
-    titles = sections.span_titles(span, {}, geometry)
+    titles = sections.span_titles(span, {}, geometry, {})
     assert "began before the first orchestrator turn" in titles["A"]["turns"]
+
+
+def test_span_tooltip_counts_the_lanes_own_compactions():
+    """The span tooltip says how many times the sub-agent's own lane
+    compacted (recorded or synthesized), 0 when it never did."""
+    span = pd.DataFrame(
+        {
+            "agent_span_id": ["A", "B"],
+            "agent_lane": ["x", "y"],
+            "turn_source": ["event_order"] * 2,
+            "spawn_turn": [0, 1],
+            "anchor_turn": [0, 1],
+            "end_turn": [0, 1],
+            "label": [None] * 2,
+            "label_source": [None] * 2,
+            "confidence": [None] * 2,
+            "judge_agreement": [None] * 2,
+            "n_voting": [None] * 2,
+            "n_members": [None] * 2,
+            "verifier_selected": [False] * 2,
+            "overturned": [False] * 2,
+            "verifier_label": [None] * 2,
+            "verifier_confidence": [None] * 2,
+            "verifier_status": [None] * 2,
+            "tool_calls": [1, 1],
+            "busy_seconds": [None] * 2,
+        }
+    )
+    titles = sections.span_titles(span, {}, {}, {"A": 2})
+    assert titles["A"]["compactions"] == "2" and titles["B"]["compactions"] == "0"
+    assert "compactions" in charts.SPAN_TIP_FIELDS
