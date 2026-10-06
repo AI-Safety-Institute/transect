@@ -1,7 +1,6 @@
 """Structural (zero-LLM) Scout scanners: the default path."""
 
 import json
-from collections import Counter
 from typing import Any, cast
 
 from inspect_ai.log import read_eval_log
@@ -56,19 +55,19 @@ def token_timeline() -> Scanner[Transcript]:
         lanes = Lanes.of(transcript)
         timeline: list[dict[str, Any]] = []
         lane_counts: dict[str, int] = {}
-        turn = 0
         for event, calls in all_model_turns(transcript):
             sub = lanes.sub_agent_of(event)
             is_main = lanes.is_main(event)
             # an off-axis call (init/scorer/utility: neither orchestrator
             # nor sub-agent) belongs to no lane and counts in none
             lane_key = sub.id if sub else "__main__" if is_main else None
-            lane_turn = None if lane_key is None else lane_counts.get(lane_key, 0)
-            if lane_key is not None and lane_turn is not None:
+            lane_turn = None
+            if lane_key is not None:
+                lane_turn = lane_counts.get(lane_key, 0)
                 lane_counts[lane_key] = lane_turn + 1
             usage = event.output.usage
             entry: dict[str, Any] = {
-                "turn": turn if is_main else None,
+                "turn": lane_turn if is_main else None,
                 "lane_turn": lane_turn,
                 "agent_lane": sub.name if sub else None,
                 "agent_span_id": sub.id if sub else None,
@@ -79,15 +78,11 @@ def token_timeline() -> Scanner[Transcript]:
             for field in _USAGE_FIELDS:
                 entry[field] = getattr(usage, field, None) if usage else None
             timeline.append(entry)
-            if is_main:
-                turn += 1
-        # lazy, as api.py imports the importer: the vendored package's
-        # __init__ pulls the whole parser in
-        from transect.ingestion.openclaw_telemetry_hal import (
-            OPENCLAW_TELEMETRY_HAL_SOURCE_TYPE,
-        )
-
-        ends_recorded = transcript.source_type != OPENCLAW_TELEMETRY_HAL_SOURCE_TYPE
+        # Inspect records where a span ended; an OpenClaw import
+        # synthesises its span ends at last activity (compaction.py
+        # reads the source the same way)
+        ends_recorded = transcript.source_type == "eval_log"
+        turns = lane_counts.get("__main__", 0)
         return Result(
             value={
                 "timeline": cast(JsonValue, timeline),
@@ -95,7 +90,7 @@ def token_timeline() -> Scanner[Transcript]:
                 "lane_activity": cast(JsonValue, _lane_activity(lanes)),
             },
             explanation=(
-                f"{turn} orchestrator turns, {len(timeline) - turn} other turns"
+                f"{turns} orchestrator turns, {len(timeline) - turns} other turns"
             ),
         )
 
@@ -487,9 +482,7 @@ def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
     exports record them) show up only here. Turn anchor = the
     orchestrator turn preceding the event.
     """
-    hits: Counter[tuple[int, str, str]] = Counter()
-    busy_ms: Counter[tuple[int, str, str]] = Counter()
-    started_at: dict[tuple[int, str, str], Any] = {}
+    rows: dict[tuple[int, str], dict[str, Any]] = {}
     for before, event in lanes.count_before():
         if event.event != "tool":
             continue
@@ -498,34 +491,33 @@ def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
         sub = lanes.sub_agent_of(event)
         if sub is None:
             continue
-        key = (max(before - 1, 0), sub.name, sub.id)
-        hits[key] += 1
+        row = rows.setdefault(
+            (max(before - 1, 0), sub.id),
+            {
+                "turn": max(before - 1, 0),
+                "agent_lane": sub.name,
+                "agent_span_id": sub.id,
+                "tool_calls": 0,
+                # busy time from per-call durations; None when never reported
+                "busy_seconds": None,
+                "started_at": None,
+            },
+        )
+        row["tool_calls"] += 1
         started = getattr(event, "timestamp", None)
         completed = getattr(event, "completed", None)
-        if started is not None:
-            if key not in started_at or started < started_at[key]:
-                started_at[key] = started
-            if completed is not None:
-                busy_ms[key] += (completed - started).total_seconds() * 1000
-    rows = []
-    for key in sorted(hits):
-        turn, lane, span_id = key
-        rows.append(
-            {
-                "turn": turn,
-                "agent_lane": lane,
-                "agent_span_id": span_id,
-                "tool_calls": hits[key],
-                # busy time from per-call durations; None when never reported
-                "busy_seconds": (
-                    round(busy_ms[key] / 1000.0, 1) if key in busy_ms else None
-                ),
-                "started_at": (
-                    started_at[key].isoformat() if key in started_at else None
-                ),
-            }
-        )
-    return rows
+        if started is None:
+            continue
+        if row["started_at"] is None or started < row["started_at"]:
+            row["started_at"] = started
+        if completed is not None:
+            busy = (completed - started).total_seconds()
+            row["busy_seconds"] = (row["busy_seconds"] or 0.0) + busy
+    for row in rows.values():
+        row["started_at"] = _iso(row["started_at"])
+        if row["busy_seconds"] is not None:
+            row["busy_seconds"] = round(row["busy_seconds"], 1)
+    return [rows[key] for key in sorted(rows)]
 
 
 def _eval_header(uri: str) -> dict[str, Any] | None:
