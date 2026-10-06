@@ -7,7 +7,7 @@ span text helpers read what a sub-agent was asked and what it did.
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypeGuard
 
 from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_build
 from inspect_ai.model import ContentReasoning
@@ -31,6 +31,16 @@ class SpanActivity:
     tool_counts: dict[str, int] = field(default_factory=dict)
 
 
+def is_model_turn(event: Any) -> TypeGuard[ModelEvent]:
+    """Whether an event is a model turn on some lane. Every model event is,
+    a failed generate's empty placeholder output included: Inspect never
+    records a model event without an output object, so the None test only
+    guards hand-built events. Every lane count and axis position derives
+    from this one predicate, so no two surfaces can disagree about what a
+    turn is."""
+    return isinstance(event, ModelEvent) and event.output is not None
+
+
 class Lanes:
     """The lanes of one transcript, resolved once.
 
@@ -50,7 +60,7 @@ class Lanes:
         self._main_events = frozenset(
             id(item.event)
             for item in self.main.content
-            if isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
+            if isinstance(item, TimelineEvent) and is_model_turn(item.event)
         )
         self._spans = {e.id: e for e in self.events if e.event == "span_begin"}
 
@@ -85,7 +95,7 @@ class Lanes:
         call or a compaction."""
         turn = 0
         for event in self.events:
-            if event.event == "model" and event.output and self.is_main(event):
+            if is_model_turn(event) and self.is_main(event):
                 turn += 1
                 continue
             yield turn, event
@@ -95,7 +105,7 @@ def all_model_turns(transcript: Any) -> Iterator[tuple[Any, list[ToolCall]]]:
     """Yield (model event, its tool calls) for every model turn in every
     lane, in event order; unnumbered, the turn axis is `orchestrator_turns`."""
     for event in transcript.events:
-        if event.event != "model" or not event.output:
+        if not is_model_turn(event):
             continue
         message = event.output.message
         yield event, (message.tool_calls or []) if message else []
@@ -148,7 +158,7 @@ def main_span(transcript: Any) -> TimelineSpan:
     span = timeline.root
     while True:
         if any(
-            isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
+            isinstance(item, TimelineEvent) and is_model_turn(item.event)
             for item in span.content
         ):
             return span
@@ -181,7 +191,7 @@ def _holds_model_events(span: TimelineSpan) -> bool:
     """Whether a model event with output lives anywhere in the subtree."""
     for item in span.content:
         if isinstance(item, TimelineEvent):
-            if isinstance(item.event, ModelEvent) and item.event.output:
+            if is_model_turn(item.event):
                 return True
         elif _holds_model_events(item):
             return True
@@ -241,11 +251,7 @@ def _span_details(main: TimelineSpan) -> tuple[dict[str, Any], set[str]]:
             if item.utility:
                 utility_ids.add(item.id)
             for sub in item.content:
-                if (
-                    isinstance(sub, TimelineEvent)
-                    and isinstance(sub.event, ModelEvent)
-                    and sub.event.output
-                ):
+                if isinstance(sub, TimelineEvent) and is_model_turn(sub.event):
                     first_models.setdefault(item.id, sub.event)
                     break
             _walk(item)
@@ -323,7 +329,7 @@ def span_activity(lanes: Lanes, span_id: str) -> SpanActivity:
     attribution: nested tool spans roll up)."""
     activity = SpanActivity()
     for event in lanes.events:
-        if isinstance(event, ModelEvent) and event.output:
+        if is_model_turn(event):
             sub = lanes.sub_agent_of(event)
             if sub is not None and sub.id == span_id:
                 message = event.output.message
