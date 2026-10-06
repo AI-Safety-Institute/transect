@@ -708,3 +708,32 @@ def test_span_tooltip_counts_the_lanes_own_compactions():
     titles = sections.span_titles(span, {}, {}, {"A": 2})
     assert titles["A"]["compactions"] == "2" and titles["B"]["compactions"] == "0"
     assert "compactions" in charts.SPAN_TIP_FIELDS
+
+
+def test_phase_runs_split_refused_and_unattributed_turns_into_grey_runs():
+    """Refused turns and the tool-only turns after them form two grey runs,
+    each naming its own reason, ahead of the judged phase's run."""
+    per_turn = pd.DataFrame(
+        {
+            "turn": range(8),
+            "basis": ["refusal"] * 2 + ["attributed"] * 2 + ["judged"] * 4,
+            "phase_index": pd.array([None] * 4 + [0] * 4, dtype="Int64"),
+        }
+    )
+    assert charts.phase_runs(per_turn, {0}) == [
+        (0, 1, None, "refusal"),
+        (2, 3, None, "attributed"),
+        (4, 7, 0, None),
+    ]
+
+
+def test_strip_basis_text_names_the_missing_phase_on_unattributed_turns():
+    """An attributed turn's strip tooltip states this turn's own fact: the
+    surrounding label when it has one, no phase when it does not."""
+    basis = pd.Series(["attributed", "attributed", "judged"], dtype="string")
+    phase_index = pd.array([None, 0, 0], dtype="Int64")
+    text = charts._strip_basis_text(basis, pd.Series(phase_index))
+    assert text.iloc[0] == charts._STRIP_NO_PHASE_WHY
+    assert text.iloc[0].endswith("no phase to take")
+    assert text.iloc[1].endswith("takes the surrounding label")
+    assert text.iloc[2].startswith("judged:")

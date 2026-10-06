@@ -104,3 +104,47 @@ def test_failed_review_is_not_described_as_an_unchanged_verdict():
             ["1 selected · 0 completed · 1 without usable verdict · 0 overturned"],
         )
     ]
+
+
+def _no_phase_turns():
+    """Eight turns: a refused opening chunk, two tool-only turns the
+    projection gave no phase, four judged turns."""
+    return pd.DataFrame(
+        {
+            "transcript_id": ["t1"] * 8,
+            "turn": range(8),
+            "phase_index": pd.array([None] * 4 + [0] * 4, dtype="Int64"),
+            "phase": [None] * 4 + ["A"] * 4,
+            "basis": ["refusal"] * 2 + ["attributed"] * 2 + ["judged"] * 4,
+            "judge_agreement": [None] * 8,
+            "confidence": [None] * 4 + [0.9] * 4,
+            "label_source": [None] * 4 + ["single_judge"] * 4,
+        }
+    )
+
+
+def test_turns_summary_counts_attributed_turns_with_no_phase_separately():
+    """Tool-only turns the projection left without a phase are not reported
+    as covered alongside attributed turns that have one."""
+    assert sections._turns_summary(_no_phase_turns()) == (
+        "8 total · 4 judged · 0 filled/attributed · 2 unjudged · "
+        "2 attributed to no phase"
+    )
+
+
+def test_turns_summary_omits_the_no_phase_bucket_when_empty():
+    turns = _no_phase_turns()
+    turns["phase_index"] = pd.array([0] * 8, dtype="Int64")
+    assert sections._turns_summary(turns) == (
+        "8 total · 4 judged · 2 filled/attributed · 2 unjudged"
+    )
+
+
+def test_meta_line_greyed_count_matches_the_band():
+    """The band greys every turn without a phase, so the caption counts
+    attributed-to-no-phase turns with the unjudged ones."""
+    frame, _ = reviewed_frame()
+    text = BeautifulSoup(
+        str(sections.phase_meta_line(frame, _no_phase_turns())), "html.parser"
+    ).get_text()
+    assert "4 unjudged turn(s) greyed" in text

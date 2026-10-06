@@ -735,3 +735,15 @@ def test_an_off_axis_call_never_seeds_the_orchestrator_context():
     main = frame[frame.turn.notna()]
     # input + output + the full cache write (window grew from nothing)
     assert main.new_work.tolist() == [170]
+
+
+def test_phase_turns_with_no_phase_project_a_null_label(raw_phases):
+    """A turn the projection assigned no phase carries a null phase_index
+    and a null phase label rather than a neighbour's."""
+    raw = raw_phases.copy()
+    value = json.loads(raw.at[0, "value"])
+    value["turns"][0]["phase_index"] = None
+    raw.at[0, "value"] = json.dumps(value)
+    turns = phase_turns_df(raw).sort_values("turn")
+    assert pd.isna(turns.phase_index.iloc[0]) and pd.isna(turns.phase.iloc[0])
+    assert turns.phase.iloc[1] == "experiment"

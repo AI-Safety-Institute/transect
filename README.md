@@ -305,7 +305,7 @@ erDiagram
     token_timeline ||--o{ lane_activity : "turn"
     subagents ||--o{ lane_activity : "agent_span_id"
     subagents ||--o{ subagent_votes : "agent_span_id"
-    phases ||--o{ phase_turns : "phase_index"
+    phases |o--o{ phase_turns : "phase_index"
     phases ||--o{ turn_groups : "phase_index"
     phase_turns ||--o{ phase_turn_votes : "turn"
     label_definitions ||--o{ phases : "label"

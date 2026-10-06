@@ -164,7 +164,9 @@ def phase_band(
       ``phase_index``. The tooltip names whichever of the two is the
       actual reason - ``"unjudged (refusal)"`` off the turn's own basis,
       or ``"unjudged (no matching phase)"`` when the basis is an
-      ordinarily-judged one and it is the phase index that dangles. An
+      ordinarily-judged one and the phase index is None: the scanner's
+      projection gives an attributed turn no phase when an unjudged
+      digest turn separates it from the previous phase. An
       unjudged turn inside an otherwise-judged phase therefore splits
       that phase's chunk rather than being absorbed into it: a doubtful
       or absent judgement is never painted the neighbouring phase's hue.
@@ -308,8 +310,10 @@ def phase_band(
         # to name the right one: where the per-turn record says the
         # judgement was refused/absent, its own basis is the reason;
         # where the basis is an ordinarily-judged one but the phase index
+        # is None (an attributed turn the projection gave no phase) or
         # resolves to no row of `phases`, echoing the basis would read
-        # "unjudged (judged)" and the honest reason is the missing phase.
+        # "unjudged (attributed)" and the honest reason is the missing
+        # phase.
         reason = basis if basis in _UNJUDGED_BASES else "no matching phase"
         # the run's own rendered extent (see docstring), recovered from
         # x1/x2 rather than threaded through both call sites - `x1 =
@@ -632,7 +636,7 @@ def phase_band(
                 basis == "judged",
                 label_source.map(lambda s: f"{s} (inherited)", na_action="ignore"),
             ),
-            basis_text=basis.map(_STRIP_BASIS_WHY).fillna(basis),
+            basis_text=_strip_basis_text(basis, per_turn.phase_index),
             **member_assign,
         ).sort_values("turn")
         strip_channels = {
@@ -753,13 +757,15 @@ def phase_runs(
     of one phase whose ``basis`` differs only among judged kinds merge
     into one run, since nothing in the tooltip distinguishes them.
 
-    One deliberate exception, on malformed input only: a dangling phase
-    index (naming no row of ``phases``) is reported with the turn's own
-    raw basis, so two adjacent dangling turns whose bases differ come
-    back as two runs even though `phase_band` renders them identically.
-    Staying a faithful report of the per-turn record is worth an
-    invisible seam in a case that only arises when the upstream frames
-    disagree with each other.
+    One deliberate exception: a turn with no phase index (the scanner's
+    projection assigns none to a tool-only turn that follows an
+    unjudged digest turn) or a dangling one (naming no row of
+    ``phases``, malformed input) is reported with the turn's own raw
+    basis, so refused turns and the attributed turns after them come
+    back as two runs, each tooltip naming its own reason, and two
+    adjacent dangling turns whose bases differ do the same even though
+    `phase_band` renders them identically. Staying a faithful report of
+    the per-turn record is worth an invisible seam.
     """
     runs: list[list] = []
     previous_key = None
@@ -859,6 +865,25 @@ _STRIP_BASIS_WHY = {
     "no_answer": "not judged: no valid judge answer",
     "missing_turn": "not judged: left uncovered by the judged chunks",
 }
+
+
+# `_STRIP_BASIS_WHY["attributed"]` for the attributed turn that has no phase
+# to take: the projection gives none to a tool-only turn following an
+# unjudged digest turn (`transect.scanners.phases.project_phase_turns`).
+_STRIP_NO_PHASE_WHY = (
+    "not judged: content-free tool-only or failed turn after an unjudged turn; "
+    "no phase to take"
+)
+
+
+def _strip_basis_text(basis: pd.Series, phase_index: pd.Series) -> pd.Series:
+    """The agreement strip's "label basis" tooltip line, per turn: the
+    turn's own fact, so an attributed turn reads the surrounding-label
+    phrase only when it has a phase and the no-phase phrase otherwise. An
+    unmapped basis falls through as its raw value rather than lying."""
+    text = basis.map(_STRIP_BASIS_WHY).fillna(basis)
+    no_phase = (basis == "attributed") & phase_index.isna().to_numpy()
+    return text.where(~no_phase, _STRIP_NO_PHASE_WHY)
 
 
 # The phase-filter select's "clear" menu item, bound to the empty-string

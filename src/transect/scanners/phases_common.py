@@ -57,6 +57,11 @@ NarrationGroupStatus = Literal[
     "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
 ]
 
+# The bases that carry a label; every other basis is an unjudged digest
+# turn. `is_labelled` is the one predicate deciding which rows sit inside
+# a stitched phase.
+LABELLED_BASES: frozenset[str] = frozenset({"judged", "filled"})
+
 
 class Digest(BaseModel):
     """One reasoning-bearing turn, as shown to the judge."""
@@ -220,6 +225,16 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str]:
     return phases, ops_name
 
 
+def is_labelled(row: DigestJudgement) -> bool:
+    """Whether ``row`` carries a phase label and so lies inside a phase.
+
+    `stitch_phases` closes a phase on a row this rejects, and the dense
+    projection (`transect.scanners.phases.project_phase_turns`) breaks
+    phase inheritance on the same rows.
+    """
+    return row.basis in LABELLED_BASES and row.phase is not None
+
+
 def stitch_phases(
     digest_judgements: Sequence[DigestJudgement],
 ) -> list[StitchedPhase]:
@@ -270,7 +285,7 @@ def stitch_phases(
         members.clear()
 
     for row in digest_judgements:
-        if row.basis not in ("judged", "filled") or row.phase is None:
+        if not is_labelled(row):
             _close()  # an unjudged row ends the current run
             continue
         if members and members[-1].phase != row.phase:

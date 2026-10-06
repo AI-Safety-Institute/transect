@@ -1003,12 +1003,17 @@ def phase_meta_line(
     """Phase-cards meta line: counts, judge attribution, and the
     cohort/verifier/unjudged notes."""
     one = phases.sort_values("phase_index")
-    unjudged = (
-        phase_turns[phase_turns.basis.isin(_UNJUDGED_BASES)]
+    # the count the band greys: unjudged bases plus attributed turns
+    # the projection gave no phase (see `charts.phase_runs`)
+    n_unjudged = (
+        int(
+            (
+                phase_turns.basis.isin(_UNJUDGED_BASES) | phase_turns.phase_index.isna()
+            ).sum()
+        )
         if len(phase_turns)
-        else phase_turns
+        else 0
     )
-    n_unjudged = len(unjudged) if len(phase_turns) else 0
     label, judge, cohort = _phase_judge_facts(one, phase_turns)
 
     return _notes.phase_meta_line(
@@ -1316,24 +1321,18 @@ def reliability_audit(
     blocks = []
     flag_groups = []
     if phases_ran:
-        total_turns = len(phase_turns)
-        judged_turns = int((phase_turns.basis == "judged").sum())
-        unjudged_turns = sum(reliability.abstention_counts(phase_turns).values())
-        other_turns = total_turns - judged_turns - unjudged_turns
         phase_extra_rows = [
             {
                 "label": "Turns",
-                "value": (
-                    f"{total_turns} total · {judged_turns} judged · "
-                    f"{other_turns} filled/attributed · {unjudged_turns} unjudged"
-                ),
-                "definition": "Orchestrator turns the decision-phases judge covered, "
-                "split by how each turn's label was decided: judged (labelled "
-                "directly); filled (a reasoning turn no judge answer covered, "
-                "inheriting the previous label at low confidence); attributed "
-                "(content-free tool-call-only or failed turns the judge never "
-                "saw, taking the phase whose range contains them); or "
-                "unjudged (refusal / no_answer / missing_turn).",
+                "value": _turns_summary(phase_turns),
+                "definition": "Orchestrator turns of this transcript, split by "
+                "how each turn's label was decided: judged (labelled directly); "
+                "filled (a reasoning turn no judge answer covered, inheriting "
+                "the previous label at low confidence); attributed (content-free "
+                "tool-call-only or failed turns the judge never saw, taking the "
+                "surrounding phase); unjudged (refusal / no_answer / "
+                "missing_turn); or attributed to no phase (tool-only turns "
+                "after an unjudged turn, greyed in the band like unjudged ones).",
             },
             {
                 "label": "Decision phases",
@@ -1491,6 +1490,27 @@ def _verifier_notes(phases: pd.DataFrame) -> dict | None:
         "overturned": int(units.loc[completed, "overturned"].fillna(False).sum()),
         "same_model": bool(same.iloc[0]) if len(same) else False,
     }
+
+
+def _turns_summary(phase_turns: pd.DataFrame) -> str:
+    """The audit's per-turn coverage line. Attributed turns the projection
+    gave no phase are counted apart from filled/attributed ones, so the
+    line never claims coverage on a turn the band greys; the bucket is
+    omitted when empty."""
+    total = len(phase_turns)
+    judged = int((phase_turns.basis == "judged").sum())
+    unjudged = sum(reliability.abstention_counts(phase_turns).values())
+    no_phase = int(
+        (
+            phase_turns.phase_index.isna() & ~phase_turns.basis.isin(_UNJUDGED_BASES)
+        ).sum()
+    )
+    other = total - judged - unjudged - no_phase
+    line = (
+        f"{total} total · {judged} judged · {other} filled/attributed · "
+        f"{unjudged} unjudged"
+    )
+    return line + (f" · {no_phase} attributed to no phase" if no_phase else "")
 
 
 def _phase_judge_facts(

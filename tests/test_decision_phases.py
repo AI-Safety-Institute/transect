@@ -19,8 +19,18 @@ from helpers import (
 )
 from inspect_ai.model import ContentReasoning, ContentText, get_model
 
-from transect.scanners.phases import decision_phases, system_prompt, turn_digests
-from transect.scanners.phases_common import StitchedPhase, digest_line
+from transect.scanners.phases import (
+    decision_phases,
+    project_phase_turns,
+    system_prompt,
+    turn_digests,
+)
+from transect.scanners.phases_common import (
+    DigestJudgement,
+    StitchedPhase,
+    digest_line,
+    is_labelled,
+)
 from transect.scanners.phases_verify import select_for_verify
 from transect.spec import Spec
 
@@ -141,6 +151,83 @@ def test_a_thinking_only_turn_is_judged_not_attributed():
         decision_phases(PHASES_SPEC, judge, verify=False, narrate=False), events
     ).value
     assert [t["basis"] for t in value["turns"]] == ["judged"] * 3
+
+
+@pytest.mark.parametrize(
+    ("phase_starts", "n_turns", "unjudged", "expected"),
+    [
+        # tool-only turns between two phases inherit the previous one
+        ([0, 5], 8, (), [0, 0, 0, 0, 0, 1, 1, 1]),
+        # a tool-only turn before a judged first digest joins the first phase
+        ([1], 4, (), [0, 0, 0, 0]),
+        # an unjudged digest turn between phases leaves it and the tool-only
+        # turns after it in no phase
+        ([0, 6], 8, (4,), [0, 0, 0, 0, None, None, 1, 1]),
+        # a refused opening chunk leaves everything before the first phase
+        # unassigned, tool-only turns included
+        ([4], 8, (0, 1), [None, None, None, None, 0, 0, 0, 0]),
+        # a tool-only turn before a refused first digest takes that outcome
+        ([3], 4, (1,), [None, None, None, 0]),
+        ([], 3, (0,), [None, None, None]),
+    ],
+)
+def test_projection_stops_inheriting_across_unjudged_turns(
+    phase_starts, n_turns, unjudged, expected
+):
+    """A turn between phases inherits the previous one only when no unjudged
+    digest turn separates them; the leading edge takes the first digest's
+    outcome."""
+    assert project_phase_turns(phase_starts, n_turns, unjudged) == expected
+
+
+@pytest.mark.parametrize(
+    ("basis", "phase", "expected"),
+    [
+        ("judged", "setup", True),
+        ("filled", "setup", True),
+        ("judged", None, False),
+        ("refusal", None, False),
+        ("missing_turn", None, False),
+    ],
+)
+def test_is_labelled_is_the_one_predicate_that_keeps_a_turn_inside_a_phase(
+    basis, phase, expected
+):
+    """The stitcher closes a phase and the projection breaks inheritance on
+    the same rows: those `is_labelled` rejects."""
+    row = DigestJudgement(turn=0, phase=phase, confidence=0.5, basis=basis)
+    assert is_labelled(row) is expected
+
+
+def test_turns_before_a_refused_opening_chunk_belong_to_no_phase():
+    """Refused reasoning turns and the tool-only turns after them carry no
+    phase, so the frame and band cannot claim coverage the judge never gave."""
+    events = [
+        model_turn("reasoning 0"),
+        model_turn("reasoning 1"),
+        model_turn(""),  # tool-call-only: no digest
+        model_turn(""),
+        *[model_turn(f"reasoning {i}") for i in range(4, 8)],
+    ]
+    judge = scripted_judge(
+        *[REFUSED] * 4,
+        seg_answer(seg(4, 5, "experiment", 0.9)),
+        seg_answer(seg(6, 7, "experiment", 0.9)),
+    )
+    value = run_scan(
+        decision_phases(
+            PHASES_SPEC, judge, chunk=2, verify=False, narrate=False, cache=False
+        ),
+        events,
+    ).value
+    assert [(p["turn_start"], p["turn_end"]) for p in value["phases"]] == [(4, 7)]
+    by_turn = {t["turn"]: t for t in value["turns"]}
+    assert [by_turn[t]["basis"] for t in range(4)] == ["refusal"] * 2 + [
+        "attributed"
+    ] * 2
+    assert all(by_turn[t]["phase_index"] is None for t in range(4))
+    assert all(by_turn[t]["label_source"] is None for t in range(4))
+    assert all(by_turn[t]["phase_index"] == 0 for t in range(4, 8))
 
 
 def test_narrator_headlines_and_turn_groups_land_on_the_phase():

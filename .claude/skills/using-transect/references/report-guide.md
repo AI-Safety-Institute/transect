@@ -86,6 +86,10 @@ armed (the Sub-agent activity summary line does the same).
   1. a grey chunk in the band = unjudged turns (refusal / no answer /
      missing turn, or no matching phase - the tooltip names which).
      An unjudged turn splits an otherwise-judged phase on purpose.
+     "No matching phase" is a tool-only turn that follows an
+     unjudged turn: the projection gives it no phase rather than
+     the one the judge last named before refusing, so a refused
+     opening chunk leaves everything before the first phase grey.
   2. a grey cell in the agreement strip below = no vote agreement for
      that turn (single voter, a verifier re-label that superseded the
      votes, or a turn no judge saw) - the band above it can still be
@@ -94,8 +98,8 @@ armed (the Sub-agent activity summary line does the same).
      filter - a view state, not a data state.
   Grey means "not judged" one way only: filled and attributed turns
   (label inherited or taken from the surrounding phase) are painted
-  their phase's colour - the basis says how a turn got its label,
-  the paint does not.
+  their phase's colour when they have one - the basis says how a
+  turn got its label, the paint does not.
 - The **agreement strip** below, labelled "agreement" in the margin
   (only when several voters judged; a solo run states in its place
   that a single judge has no one to agree with): green cells, darker
