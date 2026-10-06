@@ -93,10 +93,15 @@ The pieces, and the rules that make them work:
   main-lane reasoning turn (reasoning blocks inlined behind a
   `[THINKING]` marker when the source records them, sub-agent spawn
   tasks behind a `[DELEGATES]` marker) - the right unit for a second
-  per-turn facet. For another unit shape, write your own `@loader`; whatever
-  metadata you put on each yielded item (e.g. `{"turn": n}`) rides
-  into the frame as columns, and the item id becomes the frame's
-  `item` column. No loader is valid too: `@scanner(messages="all")`
+  per-turn facet, already numbered on the orchestrator turn axis. For
+  another unit shape, write your own `@loader`; whatever metadata you
+  put on each yielded item (e.g. `{"turn": n}`) rides into the frame
+  as columns, and the item id becomes the frame's `item` column. A
+  `turn` fact must be the orchestrator ordinal from
+  `transect.scanners.helpers.orchestrator_turns(transcript)` (section
+  4): a sub-agent's model calls are off the axis, so numbering every
+  model event in the transcript puts your rows on turns the report
+  does not have. No loader is valid too: `@scanner(messages="all")`
   hands the judge the whole transcript as one item - one call, one
   label per transcript - and the frame, ballots, definitions, and
   audit (`audit=("item", "label")`) work unchanged. Only the

@@ -543,7 +543,11 @@ Each `Layer` field is one surface, all optional:
   voting, verifier, and batching; structural scanners are $0. Pass
   the factory un-invoked: `transect()` calls it with the judge
   arguments its signature declares, the loaded `spec` when declared,
-  and any `scanner_args={...}` on the layer.
+  and any `scanner_args={...}` on the layer. `reasoning_turns()`
+  numbers its items on the orchestrator turn axis; a loader or
+  scanner of your own numbers turns the same way, with
+  `transect.scanners.helpers.orchestrator_turns` (a sub-agent's own
+  model calls are not turns).
 - **frame** - post-processes the scan results into the layer's
   dataframe (`turns_frame`: one judged row per turn), or injects a
   ready dataframe with your own data.

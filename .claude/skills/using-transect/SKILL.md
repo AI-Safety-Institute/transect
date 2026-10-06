@@ -219,7 +219,7 @@ means "not judged", never "fine"; absence is stated, never faked.
 | Charts render blank | the report's charts are CDN-loaded - it is an online document; check network |
 | Scanner change has no effect | `load()` reads saved results; call `transect()` for a new scan, and check the separate model-response cache when judging |
 | Label definitions expandable says the definitions are not recorded in the store | the rubric is embedded at scan time - run a new scan to record it and retain the old store |
-| OpenClaw run: no score/success, task name looks like a filename, spans drawn as ticks, sub-agent spend "no data" | expected source gaps (the telemetry never records them), stated honestly in the report - not bugs |
+| OpenClaw run: no score/success, task name looks like a filename, sub-agent spend "no data", spans drawn as ticks rather than boxes when the export carries no timestamps | expected source gaps (the telemetry never records them), stated honestly in the report - not bugs |
 | Viewer link dead after a run in a coding agent | expected on a TTY (viewer dies with the process); without a TTY it detaches - use the printed URL |
 | Run died part-way (OOM kill, Ctrl+C, provider outage) | rerun the same call unchanged with the same `INSPECT_CACHE_DIR`: completed judge calls replay from the response cache, only in-flight and unstarted calls are paid; the old store loads as incomplete and holds nothing for a judged scanner that did not finish |
 
