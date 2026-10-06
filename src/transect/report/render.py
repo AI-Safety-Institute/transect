@@ -263,11 +263,16 @@ def render_report(
                 )
             )
         if len(all_flushes):  # a sub-agent lane's flushes are listed too
-            spans = results.subagents
             token_blocks.append(
                 sections.flush_line(
                     all_flushes,
-                    dict(zip(spans.agent_span_id, spans.agent_lane, strict=True)),
+                    dict(
+                        zip(
+                            my_subagents.agent_span_id,
+                            my_subagents.agent_lane,
+                            strict=True,
+                        )
+                    ),
                 )
             )
         add(("token_telemetry", sections.section("Token telemetry", token_blocks)))

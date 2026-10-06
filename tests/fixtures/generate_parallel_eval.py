@@ -217,6 +217,7 @@ def stretch_wallclock(log: EvalLog) -> None:
 def write_fixture(path: Path = FIXTURE) -> None:
     """Run the mock eval in a scratch log dir, stretch its clock, and
     write the result to ``path``."""
+    _SUB_CALLS.clear()  # the counter outlives a run; a second run starts over
     with TemporaryDirectory() as scratch:
         (written,) = inspect_eval(
             parallel_subagents(), model=MOCK, log_dir=scratch, display="plain"
