@@ -64,8 +64,10 @@ Sub-agent equivalents: `subagent_votes` grouped by `agent_span_id`.
 Disagreement across the same kind of turn, such as delegation or tool errors,
 can suggest an attribution convention. Read those cases and compare fresh
 responses from the unchanged setup before attributing the pattern. If the
-evaluation needs an explicit convention, record it as a Spec decision in phase
-`context` and test it on development cases.
+evaluation needs an explicit convention, record it in phase `context` when it
+applies across phases. Put criteria for a particular phase in that phase's
+`description`. Check both locations when changing a rule, and test it on
+development cases.
 
 ## Reading alpha and AC1
 

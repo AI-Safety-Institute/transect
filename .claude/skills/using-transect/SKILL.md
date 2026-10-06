@@ -70,6 +70,27 @@ disables classification (each warns at run time). Bare strings are
 sugar for `{label: ...}` - but in typed code use
 `Spec.model_validate({...})`, the sugar fails static checkers.
 
+### Authoring and revising a spec
+
+Keep task background, transcript conventions, and rules shared across
+phases in `context`. Put each label's inclusion criteria, exclusions,
+and distinctions from other labels in its `description`. State the
+scope of shared rules and any exceptions.
+
+Before presenting a new or revised spec, read the complete context and
+all label descriptions together:
+
+- Resolve contradictory rules and unclear overlaps. Where several
+  labels can fit, make the distinction or selection rule explicit.
+- Remove obsolete or duplicated rules. When moving a rule, remove
+  the old version.
+- Check that the judge can apply the criteria using the evidence it
+  receives.
+- Check the examples that prompted the edit and previously settled
+  development examples that the edit could affect.
+
+Point out unresolved choices about label meaning.
+
 ## 2. Running
 
 ```python
