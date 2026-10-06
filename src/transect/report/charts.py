@@ -1383,7 +1383,7 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
     One navy solid `rule_x` per intervention turn, offset by the shared
     t-0.5 convention and purely visual (`pointer_events="none"`); an
     `_event_hit_rect` layered under it carries the hover tooltip (turn,
-    channel, 80-char previews of the question asked and the content,
+    channel, `_PREVIEW_CHARS` previews of the question asked and the content,
     the outcome - the last three null on rows without them), so
     hovering anywhere in that turn's column names its source.
 
@@ -1441,10 +1441,16 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
         margin_left=_INTERVENTION_MARGIN_LEFT,
         margin_right=_INTERVENTION_MARGIN_RIGHT,
     )
-    # no widget row here; the content row is the one that wraps in
-    # practice (an 80-character preview at tippy's 350px cap), which is
-    # what `tip_fit_height`'s per-row allowance budgets for
-    return component, _section_height(_INTERVENTION_HEIGHT, _tip_rows(hit_channels))
+    # the two preview rows wrap at tippy's 350px cap; the other three are
+    # single-line, so the floor prices each row for what it is rather
+    # than `tip_fit_height`'s two-lines-everywhere allowance, which left
+    # a hundred blank pixels under the strip
+    preview_px = wrap_row_px(_PREVIEW_CHARS)
+    return component, _section_height(
+        _INTERVENTION_HEIGHT,
+        _tip_rows(hit_channels),
+        floor=_tip_floor(_tip_rows(hit_channels), preview_px, preview_px),
+    )
 
 
 # The interventions chart's height budget. The body - height minus these
@@ -1457,6 +1463,12 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
 _INTERVENTION_HEIGHT = 94
 _INTERVENTION_MARGIN_TOP = 4
 _INTERVENTION_MARGIN_BOTTOM = 30
+
+# A tooltip preview's character cap: enough to identify a message (the
+# list under the chart carries the full text) and, at tippy's 350px
+# width, at most two wrapped lines, which is what the interventions
+# chart's tooltip-fit floor prices each preview row at.
+_PREVIEW_CHARS = 60
 
 
 # Aliases of the band's margins rather than two fresh numbers: this chart
@@ -1471,16 +1483,13 @@ _INTERVENTION_MARGIN_RIGHT = _BAND_MARGIN_RIGHT
 
 
 def _preview(value) -> str | None:
-    """A tooltip text cell trimmed to ~80 characters - long enough to
-    identify the message, short enough to keep the tooltip legible (the
-    list under the chart carries the full text). An ellipsis marks an
-    actual truncation, never appended to text that already fit; None
-    stays None (no tooltip row).
-    """
+    """A tooltip text cell trimmed to `_PREVIEW_CHARS`; an ellipsis marks
+    an actual truncation, never appended to text that already fit, and
+    None stays None (no tooltip row)."""
     if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
         return None
     text = str(value)
-    return text if len(text) <= 80 else text[:80] + "…"
+    return text if len(text) <= _PREVIEW_CHARS else text[:_PREVIEW_CHARS] + "…"
 
 
 def swimlanes(

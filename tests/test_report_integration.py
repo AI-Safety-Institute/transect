@@ -282,6 +282,26 @@ def test_spend_bars_floor_covers_the_declared_tooltip_rows():
     assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
 
 
+def test_interventions_chart_budgets_its_previews_not_a_generic_two_line_row():
+    """The interventions iframe is floored at its own five rows, the two
+    message previews priced as 60-character prose, so the chart no
+    longer carries a hundred blank pixels under a 94px strip."""
+
+    act = pd.DataFrame(
+        {
+            "turn": [3, 7],
+            "channel": ["approval", "operator_message"],
+            "outcome": ["approved", None],
+            "prompt": ["may I delete the cache? " * 8, None],
+            "content": ["yes, but keep the model artefacts " * 6, "stop and report"],
+        }
+    )
+    _, height = charts.interventions_chart(act, n_turns=10)
+    preview_px = wrap_row_px(charts._PREVIEW_CHARS)
+    assert height == _tip_floor(5, preview_px, preview_px)
+    assert len(charts._preview("x" * 100)) == charts._PREVIEW_CHARS + 1
+
+
 def empty_flushes() -> pd.DataFrame:
     return flushes_df(pd.DataFrame(), pd.DataFrame(columns=["transcript_id"]))
 
