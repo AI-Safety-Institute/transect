@@ -17,6 +17,7 @@ from transect.scanners.phases_common import (
     call_judge,
     context_blocks,
     gather_judge_calls,
+    is_labelled,
     phase_evidence,
     resolve_phases,
     stitch_phases,
@@ -373,10 +374,7 @@ def _apply_verdicts(
                     audit.n_random_sample_relabelled += 1
                 applied_any = True
                 for row in digest_judgements:
-                    if p.turn_start <= row.turn <= p.turn_end and row.basis in (
-                        "judged",
-                        "filled",
-                    ):
+                    if p.turn_start <= row.turn <= p.turn_end and is_labelled(row):
                         row.phase = verdict.phase
                         row.confidence = verdict.confidence
                         row.explanation = explanation

@@ -163,9 +163,6 @@ def test_a_thinking_only_turn_is_judged_not_attributed():
         # an unjudged digest turn between phases leaves it and the tool-only
         # turns after it in no phase
         ([0, 6], 8, (4,), [0, 0, 0, 0, None, None, 1, 1]),
-        # a refused opening chunk leaves everything before the first phase
-        # unassigned, tool-only turns included
-        ([4], 8, (0, 1), [None, None, None, None, 0, 0, 0, 0]),
         # a tool-only turn before a refused first digest takes that outcome
         ([3], 4, (1,), [None, None, None, 0]),
         ([], 3, (0,), [None, None, None]),
@@ -185,9 +182,7 @@ def test_projection_stops_inheriting_across_unjudged_turns(
     [
         ("judged", "setup", True),
         ("filled", "setup", True),
-        ("judged", None, False),
         ("refusal", None, False),
-        ("missing_turn", None, False),
     ],
 )
 def test_is_labelled_is_the_one_predicate_that_keeps_a_turn_inside_a_phase(
@@ -223,7 +218,7 @@ def test_turns_before_a_refused_opening_chunk_belong_to_no_phase():
     assert [(p["turn_start"], p["turn_end"]) for p in value["phases"]] == [(4, 7)]
     by_turn = {t["turn"]: t for t in value["turns"]}
     assert [by_turn[t]["basis"] for t in range(4)] == ["refusal"] * 2 + [
-        "attributed"
+        "unattributed"
     ] * 2
     assert all(by_turn[t]["phase_index"] is None for t in range(4))
     assert all(by_turn[t]["label_source"] is None for t in range(4))

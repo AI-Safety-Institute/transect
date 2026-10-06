@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from inspect_ai.event import ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.model import GenerateConfig, ModelOutput, get_model
 
@@ -229,3 +230,17 @@ def demo_judge(model=MODEL, phase_label="model_development", subagent_labels=Non
         raise AssertionError(f"unroutable judge request: {text[:200]}")
 
     return get_model(model, custom_outputs=route, memoize=False)
+
+
+def phase_turns_frame(bases, phase_index):
+    """A minimal phase_turns frame: one row per basis, with the columns the
+    band geometry and the audit's turn counts read."""
+    return pd.DataFrame(
+        {
+            "transcript_id": ["t1"] * len(bases),
+            "turn": range(len(bases)),
+            "phase_index": pd.array(phase_index, dtype="Int64"),
+            "basis": list(bases),
+            "judge_agreement": [None] * len(bases),
+        }
+    )

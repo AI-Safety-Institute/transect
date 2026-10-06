@@ -23,6 +23,9 @@ _PHASE_SLOTS = [
 ]
 _UNJUDGED_GREY = "#c9c9c9"
 _UNJUDGED_BASES = ("refusal", "no_answer", "missing_turn")
+# what the phase band greys: the judge abstentions above plus turns the
+# projection gave no phase
+_GREYED_BASES = (*_UNJUDGED_BASES, "unattributed")
 
 # The agreement strip's single hue
 _AGREEMENT_TEAL = "#0b5e60"

@@ -92,7 +92,7 @@ from inspect_viz.mark import (
 from inspect_viz.plot import plot
 from inspect_viz.transform import Transform, sql
 
-from transect.report.colors import _AGREEMENT_TEAL, _UNJUDGED_BASES, _UNJUDGED_GREY
+from transect.report.colors import _AGREEMENT_TEAL, _GREYED_BASES, _UNJUDGED_GREY
 from transect.report.display import (
     CONFIDENCE_QUALIFIER,
     MEMBER_NO_VOTE,
@@ -160,16 +160,15 @@ def phase_band(
       sharing that phase's colour, tooltip and click target.
     - **An unjudged run**, coloured grey (`_UNJUDGED_GREY`) regardless of
       what phase the turns nominally belong to: turns whose ``basis`` is
-      refusal/no_answer/missing_turn, or that own no resolvable
-      ``phase_index``. The tooltip names whichever of the two is the
-      actual reason - ``"unjudged (refusal)"`` off the turn's own basis,
-      or ``"unjudged (no matching phase)"`` when the basis is an
-      ordinarily-judged one and the phase index is None: the scanner's
-      projection gives an attributed turn no phase when an unjudged
-      digest turn separates it from the previous phase. An
-      unjudged turn inside an otherwise-judged phase therefore splits
-      that phase's chunk rather than being absorbed into it: a doubtful
-      or absent judgement is never painted the neighbouring phase's hue.
+      in `_GREYED_BASES` (refusal/no_answer/missing_turn/unattributed),
+      or that own no resolvable ``phase_index``. The tooltip names
+      whichever of the two is the actual reason - ``"unjudged
+      (refusal)"`` off the turn's own basis, or ``"unjudged (no matching
+      phase)"`` when the basis is an ordinarily-judged one and it is the
+      phase index that dangles. An unjudged turn inside an
+      otherwise-judged phase therefore splits that phase's chunk rather
+      than being absorbed into it: a doubtful or absent judgement is
+      never painted the neighbouring phase's hue.
 
     Both row kinds share one column set, so one ``rect`` mark and one
     tooltip serve both with no render-time branching. ``turns_range`` is
@@ -310,11 +309,9 @@ def phase_band(
         # to name the right one: where the per-turn record says the
         # judgement was refused/absent, its own basis is the reason;
         # where the basis is an ordinarily-judged one but the phase index
-        # is None (an attributed turn the projection gave no phase) or
         # resolves to no row of `phases`, echoing the basis would read
-        # "unjudged (attributed)" and the honest reason is the missing
-        # phase.
-        reason = basis if basis in _UNJUDGED_BASES else "no matching phase"
+        # "unjudged (judged)" and the honest reason is the missing phase.
+        reason = basis if basis in _GREYED_BASES else "no matching phase"
         # the run's own rendered extent (see docstring), recovered from
         # x1/x2 rather than threaded through both call sites - `x1 =
         # start - 0.5`/`x2 = end + 0.5` always, so the inverse is exact
@@ -636,7 +633,7 @@ def phase_band(
                 basis == "judged",
                 label_source.map(lambda s: f"{s} (inherited)", na_action="ignore"),
             ),
-            basis_text=_strip_basis_text(basis, per_turn.phase_index),
+            basis_text=basis.map(_STRIP_BASIS_WHY).fillna(basis),
             **member_assign,
         ).sort_values("turn")
         strip_channels = {
@@ -757,14 +754,13 @@ def phase_runs(
     of one phase whose ``basis`` differs only among judged kinds merge
     into one run, since nothing in the tooltip distinguishes them.
 
-    One deliberate exception: a turn with no resolvable phase (the
-    projection assigned none, or the index names no row of ``phases``)
-    keeps its own raw basis as the run key. Refused turns and the
-    attributed turns after them therefore come back as separate runs,
-    each tooltip naming its own reason; two adjacent dangling turns
-    with different bases split the same way even though `phase_band`
-    paints them identically. A faithful report of the per-turn record
-    is worth an invisible seam.
+    One deliberate exception, on malformed input only: a dangling phase
+    index (naming no row of ``phases``) is reported with the turn's own
+    raw basis, so two adjacent dangling turns whose bases differ come
+    back as two runs even though `phase_band` renders them identically.
+    Staying a faithful report of the per-turn record is worth an
+    invisible seam in a case that only arises when the upstream frames
+    disagree with each other.
     """
     runs: list[list] = []
     previous_key = None
@@ -775,10 +771,9 @@ def phase_runs(
         index = None if pd.isna(row.phase_index) else int(str(row.phase_index))
         # "unjudged" is the union of two facts, both of which forbid
         # painting the turn a phase's colour: the judgement was
-        # refused/absent, or there is no phase to attribute it to
-        unjudged = (
-            basis in _UNJUDGED_BASES or index is None or index not in known_phases
-        )
+        # refused/absent (or there was none to inherit), or there is no
+        # phase to attribute it to
+        unjudged = basis in _GREYED_BASES or index not in known_phases
         key = (basis if unjudged else None, index)
         contiguous = previous_turn is not None and turn == previous_turn + 1
         if contiguous and key == previous_key:
@@ -860,29 +855,14 @@ _STRIP_BASIS_WHY = {
     "attributed": (
         "not judged: content-free tool-only or failed turn; takes the surrounding label"
     ),
+    "unattributed": (
+        "not judged: content-free tool-only or failed turn after an unjudged "
+        "turn; no phase to take"
+    ),
     "refusal": "not judged: the judge refused",
     "no_answer": "not judged: no valid judge answer",
     "missing_turn": "not judged: left uncovered by the judged chunks",
 }
-
-
-# `_STRIP_BASIS_WHY["attributed"]` for the attributed turn that has no phase
-# to take: the projection gives none to a tool-only turn following an
-# unjudged digest turn (`transect.scanners.phases.project_phase_turns`).
-_STRIP_NO_PHASE_WHY = (
-    "not judged: content-free tool-only or failed turn after an unjudged turn; "
-    "no phase to take"
-)
-
-
-def _strip_basis_text(basis: pd.Series, phase_index: pd.Series) -> pd.Series:
-    """The agreement strip's "label basis" tooltip line, per turn: the
-    turn's own fact, so an attributed turn reads the surrounding-label
-    phrase only when it has a phase and the no-phase phrase otherwise. An
-    unmapped basis falls through as its raw value rather than lying."""
-    text = basis.map(_STRIP_BASIS_WHY).fillna(basis)
-    no_phase = (basis == "attributed") & phase_index.isna().to_numpy()
-    return text.where(~no_phase, _STRIP_NO_PHASE_WHY)
 
 
 # The phase-filter select's "clear" menu item, bound to the empty-string

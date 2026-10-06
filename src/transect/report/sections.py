@@ -24,7 +24,7 @@ from transect.report import reliability
 from transect.report._jinja import jinja_env
 from transect.report.charts import _END_MARKER_GLYPH, has_judge_agreement
 from transect.report.colors import (
-    _UNJUDGED_BASES,
+    _GREYED_BASES,
     _UNJUDGED_GREY,
     _label_colors,
     cell_text_color,
@@ -1003,17 +1003,7 @@ def phase_meta_line(
     """Phase-cards meta line: counts, judge attribution, and the
     cohort/verifier/unjudged notes."""
     one = phases.sort_values("phase_index")
-    # the count the band greys: unjudged bases plus attributed turns
-    # the projection gave no phase (see `charts.phase_runs`)
-    n_unjudged = (
-        int(
-            (
-                phase_turns.basis.isin(_UNJUDGED_BASES) | phase_turns.phase_index.isna()
-            ).sum()
-        )
-        if len(phase_turns)
-        else 0
-    )
+    n_unjudged = int(phase_turns.basis.isin(_GREYED_BASES).sum())
     label, judge, cohort = _phase_judge_facts(one, phase_turns)
 
     return _notes.phase_meta_line(
@@ -1331,8 +1321,8 @@ def reliability_audit(
                 "the previous label at low confidence); attributed (content-free "
                 "tool-call-only or failed turns the judge never saw, taking the "
                 "surrounding phase); unjudged (refusal / no_answer / "
-                "missing_turn); or attributed to no phase (tool-only turns "
-                "after an unjudged turn, greyed in the band like unjudged ones).",
+                "missing_turn); or unattributed (tool-only turns after an "
+                "unjudged turn, with no phase to take - greyed in the band).",
             },
             {
                 "label": "Decision phases",
@@ -1493,24 +1483,18 @@ def _verifier_notes(phases: pd.DataFrame) -> dict | None:
 
 
 def _turns_summary(phase_turns: pd.DataFrame) -> str:
-    """The audit's per-turn coverage line. Attributed turns the projection
-    gave no phase are counted apart from filled/attributed ones, so the
-    line never claims coverage on a turn the band greys; the bucket is
+    """The audit's per-turn coverage line; the unattributed bucket is
     omitted when empty."""
     total = len(phase_turns)
     judged = int((phase_turns.basis == "judged").sum())
     unjudged = sum(reliability.abstention_counts(phase_turns).values())
-    no_phase = int(
-        (
-            phase_turns.phase_index.isna() & ~phase_turns.basis.isin(_UNJUDGED_BASES)
-        ).sum()
-    )
-    other = total - judged - unjudged - no_phase
+    unattributed = int((phase_turns.basis == "unattributed").sum())
+    other = total - judged - unjudged - unattributed
     line = (
         f"{total} total · {judged} judged · {other} filled/attributed · "
         f"{unjudged} unjudged"
     )
-    return line + (f" · {no_phase} attributed to no phase" if no_phase else "")
+    return line + (f" · {unattributed} unattributed" if unattributed else "")
 
 
 def _phase_judge_facts(
@@ -2112,7 +2096,7 @@ def _entity_audit(
     # the per-classification maps: decided units, per-member coverage,
     # and deciding-provenance shares, each derived at this surface's
     # own grain (turns for Phases, spans for Sub-agents). The unjudged
-    # rate excludes turns the judge never saw (attributed), so it reads
+    # rate excludes turns the judge never saw (no digest), so it reads
     # "of the units judging attempted, how many got no judgement".
     if name == "Phases":
         decided = (
@@ -2129,7 +2113,7 @@ def _entity_audit(
         unit_word = "turn"
         unjudged_count = sum(reliability.abstention_counts(agreement_source).values())
         attempted = len(agreement_source) - (
-            int((agreement_source.basis == "attributed").sum())
+            int(agreement_source.basis.isin(("attributed", "unattributed")).sum())
             if len(agreement_source)
             else 0
         )

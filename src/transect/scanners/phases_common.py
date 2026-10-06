@@ -49,18 +49,19 @@ _NONE_PHASE = Phase(
 
 Basis = Literal["judged", "filled", "no_answer", "refusal", "missing_turn"]
 TurnBasis = Literal[
-    "judged", "filled", "attributed", "no_answer", "refusal", "missing_turn"
+    "judged",
+    "filled",
+    "attributed",
+    "unattributed",
+    "no_answer",
+    "refusal",
+    "missing_turn",
 ]
 
 
 NarrationGroupStatus = Literal[
     "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
 ]
-
-# The bases that carry a label; every other basis is an unjudged digest
-# turn. `is_labelled` is the one predicate deciding which rows sit inside
-# a stitched phase.
-LABELLED_BASES: frozenset[str] = frozenset({"judged", "filled"})
 
 
 class Digest(BaseModel):
@@ -232,7 +233,7 @@ def is_labelled(row: DigestJudgement) -> bool:
     projection (`transect.scanners.phases.project_phase_turns`) breaks
     phase inheritance on the same rows.
     """
-    return row.basis in LABELLED_BASES and row.phase is not None
+    return row.basis in ("judged", "filled") and row.phase is not None
 
 
 def stitch_phases(

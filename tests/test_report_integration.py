@@ -3,9 +3,11 @@ and check the HTML comes out whole."""
 
 import html as html_mod
 from pathlib import Path
+from typing import get_args
 
 import pandas as pd
 import pytest
+from helpers import phase_turns_frame
 from inspect_ai.log import read_eval_log, write_eval_log
 
 import transect
@@ -21,6 +23,7 @@ from transect.report.embed import (
     wrap_row_px,
 )
 from transect.report.lanes_layout import SpanGeometry
+from transect.scanners.phases_common import TurnBasis
 from transect.spec import Spec
 
 SCENARIOS = {
@@ -711,29 +714,18 @@ def test_span_tooltip_counts_the_lanes_own_compactions():
 
 
 def test_phase_runs_split_refused_and_unattributed_turns_into_grey_runs():
-    """Refused turns and the tool-only turns after them form two grey runs,
-    each naming its own reason, ahead of the judged phase's run."""
-    per_turn = pd.DataFrame(
-        {
-            "turn": range(8),
-            "basis": ["refusal"] * 2 + ["attributed"] * 2 + ["judged"] * 4,
-            "phase_index": pd.array([None] * 4 + [0] * 4, dtype="Int64"),
-        }
+    """Refused turns and the unattributed turns after them form two grey
+    runs, each naming its own reason, ahead of the judged phase's run."""
+    per_turn = phase_turns_frame(
+        ["refusal"] * 2 + ["unattributed"] * 2 + ["judged"] * 4, [None] * 4 + [0] * 4
     )
     assert charts.phase_runs(per_turn, {0}) == [
         (0, 1, None, "refusal"),
-        (2, 3, None, "attributed"),
+        (2, 3, None, "unattributed"),
         (4, 7, 0, None),
     ]
 
 
-def test_strip_basis_text_names_the_missing_phase_on_unattributed_turns():
-    """An attributed turn's strip tooltip states this turn's own fact: the
-    surrounding label when it has one, no phase when it does not."""
-    basis = pd.Series(["attributed", "attributed", "judged"], dtype="string")
-    phase_index = pd.array([None, 0, 0], dtype="Int64")
-    text = charts._strip_basis_text(basis, pd.Series(phase_index))
-    assert text.iloc[0] == charts._STRIP_NO_PHASE_WHY
-    assert text.iloc[0].endswith("no phase to take")
-    assert text.iloc[1].endswith("takes the surrounding label")
-    assert text.iloc[2].startswith("judged:")
+def test_every_basis_has_a_strip_tooltip_phrase():
+    """A basis the strip cannot explain would fall through as its raw name."""
+    assert set(charts._STRIP_BASIS_WHY) == set(get_args(TurnBasis))

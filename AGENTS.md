@@ -165,9 +165,8 @@ scanner change take effect; run a new scan and retain both results for compariso
 
 - **Module layout.** Module docstring, imports, module constants,
   then classes (pydantic models and dataclasses), then public
-  functions, then private `_`-prefixed helpers at the bottom. A
-  helper never sits between two classes or among the public
-  functions. Report modules (`report/charts.py`, `report/embed.py`)
+  functions, then private `_`-prefixed helpers at the bottom.
+  Report modules (`report/charts.py`, `report/embed.py`)
   are the one exception: their measured pixel and layout constants
   stay next to the function that uses them, with the comment that
   says what was measured.

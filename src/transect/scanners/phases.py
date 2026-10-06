@@ -229,10 +229,12 @@ def decision_phases(
             - "attributed": no digest - a content-free tool-call-only
               or failed turn; the judge never saw it, so by
               projection it takes the phase whose turn range
-              contains it, or the nearest preceding phase for turns
-              in a gap. It takes no phase (``phase_index`` None) when
-              an unjudged digest turn separates it from that phase,
-              or when the first digest turn was unjudged.
+              contains it (or the nearest preceding phase, for
+              turns in a gap).
+            - "unattributed": no digest and no phase to take - an
+              unjudged digest turn separates it from the previous
+              phase, or the first digest turn was unjudged
+              (`project_phase_turns`).
             - "refusal": its chunk's judge calls were refused on
               both the cached and the uncached attempt.
             - "no_answer": its chunk's judge calls never produced a
@@ -637,13 +639,11 @@ def project_phase_turns(
 ) -> list[int | None]:
     """Assign orchestrator turns (tool-call-only included) to phases.
 
-    A turn inside a phase belongs to it. A turn between phases inherits
-    the previous one, unless an unjudged digest turn (refusal /
-    no_answer / missing_turn) separates them: that turn closed the
-    phase, so it and the tool-only turns after it belong to no phase
-    until the next one starts. Turns before the first digest turn take
-    that turn's outcome - the first phase when it was judged, no phase
-    when it was unjudged.
+    A phase start sets the current phase and an unjudged digest turn
+    clears it, so a turn inside a phase belongs to it, a turn between
+    phases inherits the previous one unless an unjudged digest turn
+    separates them, and turns before the first digest turn take that
+    turn's outcome.
 
     Args:
         phase_starts: Each phase's ``turn_start``, in phase order.
@@ -659,19 +659,16 @@ def project_phase_turns(
     assignment: list[int | None] = [None] * n_turns
     if not phase_starts:
         return assignment
-    ordered = sorted(range(len(phase_starts)), key=lambda i: phase_starts[i])
-    breaks = sorted(set(unjudged_turns))
-    first_digest_unjudged = bool(breaks) and breaks[0] < phase_starts[ordered[0]]
-    current: int | None = None if first_digest_unjudged else ordered[0]
-    position = next_break = 0
+    events: list[tuple[int, int | None]] = sorted(
+        [(start, index) for index, start in enumerate(phase_starts)]
+        + [(turn, None) for turn in set(unjudged_turns)],
+        key=lambda event: event[0],
+    )
+    current = events[0][1]
+    position = 0
     for turn in range(n_turns):
-        # a phase start and an unjudged turn never coincide, so the
-        # order of these two scans on one turn is immaterial
-        while next_break < len(breaks) and breaks[next_break] <= turn:
-            current = None
-            next_break += 1
-        while position < len(ordered) and phase_starts[ordered[position]] <= turn:
-            current = ordered[position]
+        while position < len(events) and events[position][0] <= turn:
+            current = events[position][1]
             position += 1
         assignment[turn] = current
     return assignment
@@ -820,9 +817,8 @@ def _dense_turns(
         n_members: Judge member count (decides the source labels).
 
     Returns:
-        One ``PhaseTurn`` per turn. ``phase_index`` is the index into
-        ``phases`` from `project_phase_turns`; None where no phase
-        claims the turn.
+        One ``PhaseTurn`` per turn; ``phase_index`` is
+        `project_phase_turns`'s assignment.
     """
     assignment = project_phase_turns(
         [p.turn_start for p in phases],
@@ -840,7 +836,13 @@ def _dense_turns(
             PhaseTurn(
                 turn=turn,
                 phase_index=assignment[turn],
-                basis=row.basis if row is not None else "attributed",
+                basis=(
+                    row.basis
+                    if row is not None
+                    else "attributed"
+                    if assignment[turn] is not None
+                    else "unattributed"
+                ),
                 label_source=(
                     "verifier"
                     if verifier
