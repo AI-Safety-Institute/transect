@@ -31,16 +31,6 @@ class SpanActivity:
     tool_counts: dict[str, int] = field(default_factory=dict)
 
 
-def is_model_turn(event: Any) -> TypeGuard[ModelEvent]:
-    """Whether an event is a model turn on some lane. Every model event is,
-    a failed generate's empty placeholder output included: Inspect never
-    records a model event without an output object, so the None test only
-    guards hand-built events. Every lane count and axis position derives
-    from this one predicate, so no two surfaces can disagree about what a
-    turn is."""
-    return isinstance(event, ModelEvent) and event.output is not None
-
-
 class Lanes:
     """The lanes of one transcript, resolved once.
 
@@ -99,6 +89,16 @@ class Lanes:
                 turn += 1
                 continue
             yield turn, event
+
+
+def is_model_turn(event: Any) -> TypeGuard[ModelEvent]:
+    """Whether an event is a model turn on some lane. Every model event is,
+    a failed generate's empty placeholder output included: Inspect never
+    records a model event without an output object, so the None test only
+    guards hand-built events. Every lane count and axis position derives
+    from this one predicate, so no two surfaces can disagree about what a
+    turn is."""
+    return isinstance(event, ModelEvent) and event.output is not None
 
 
 def all_model_turns(transcript: Any) -> Iterator[tuple[Any, list[ToolCall]]]:
