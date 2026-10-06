@@ -675,5 +675,36 @@ def test_span_tooltip_says_when_a_span_began_before_the_first_turn():
         }
     )
     geometry = {"A": SpanGeometry("A", "early", -0.5, -0.5, True, before_first=True)}
-    titles = sections.span_titles(span, {}, geometry)
+    titles = sections.span_titles(span, {}, geometry, {})
     assert "began before the first orchestrator turn" in titles["A"]["turns"]
+
+
+def test_span_tooltip_counts_the_lanes_own_compactions():
+    """The span tooltip says how many times the sub-agent's own lane
+    compacted (recorded or synthesized), 0 when it never did."""
+    span = pd.DataFrame(
+        {
+            "agent_span_id": ["A", "B"],
+            "agent_lane": ["x", "y"],
+            "turn_source": ["event_order"] * 2,
+            "spawn_turn": [0, 1],
+            "anchor_turn": [0, 1],
+            "end_turn": [0, 1],
+            "label": [None] * 2,
+            "label_source": [None] * 2,
+            "confidence": [None] * 2,
+            "judge_agreement": [None] * 2,
+            "n_voting": [None] * 2,
+            "n_members": [None] * 2,
+            "verifier_selected": [False] * 2,
+            "overturned": [False] * 2,
+            "verifier_label": [None] * 2,
+            "verifier_confidence": [None] * 2,
+            "verifier_status": [None] * 2,
+            "tool_calls": [1, 1],
+            "busy_seconds": [None] * 2,
+        }
+    )
+    titles = sections.span_titles(span, {}, {}, {"A": 2})
+    assert titles["A"]["compactions"] == "2" and titles["B"]["compactions"] == "0"
+    assert "compactions" in charts.SPAN_TIP_FIELDS

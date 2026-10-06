@@ -281,6 +281,7 @@ def render_report(
                 lanes,
                 my_subagents,
                 my_subagent_votes,
+                all_flushes,
                 my_extras.spawn_prompts if my_extras else {},
                 classification_ran=bool(results.subagents.status.notna().any()),
                 label_definitions=my_definitions,
@@ -420,6 +421,7 @@ def _subagent_section(
     lanes: list[SpanGeometry],
     subagents: pd.DataFrame,
     subagent_votes: pd.DataFrame,
+    flushes: pd.DataFrame,
     spawn_prompts: dict[str, SpawnPrompt],
     classification_ran: bool,
     label_definitions: pd.DataFrame | None = None,
@@ -479,7 +481,13 @@ def _subagent_section(
         if boxed and sid in recorded_ends
     ]
 
-    span_title_of = sections.span_titles(subagents, label_of, geometry_of)
+    # the lanes' own compactions (every lane's flushes, by span)
+    compactions_of = {
+        str(span): int(n) for span, n in flushes.groupby("agent_span_id").size().items()
+    }
+    span_title_of = sections.span_titles(
+        subagents, label_of, geometry_of, compactions_of
+    )
     # one "member votes" tooltip row (voting regimes only), mirroring
     # the agreement strip: every member's own label + confidence (or
     # its reason for producing no vote)

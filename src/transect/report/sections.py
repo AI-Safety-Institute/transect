@@ -725,7 +725,12 @@ def subagent_legend(
     return _notes.phase_chips(None, chips)
 
 
-def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> dict:
+def span_titles(
+    subagents: pd.DataFrame,
+    label_of: dict,
+    geometry_of: dict,
+    compactions_of: Mapping[str, int],
+) -> dict:
     """One hover-tooltip cell set per span for the swimlanes chart:
     ``{span_id: {field: cell}}`` keyed by `charts.SPAN_TIP_FIELDS`.
     "no data" marks a value the source never recorded. The ``turns``
@@ -733,7 +738,10 @@ def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> d
     the span ran (wall-clock), or only its spawn turn when the source
     recorded no usable timestamps; ``geometry_of`` (span id ->
     `lanes_layout.SpanGeometry`) says whether the span ran past the
-    axis's edges, which the cell states."""
+    axis's edges, which the cell states. ``compactions_of`` (span id ->
+    count) is how often the span's own lane compacted, recorded or
+    synthesized (the flushes frame by ``agent_span_id``); the cell
+    reads 0 for a lane that never did."""
 
     def fmt(value) -> str:
         return "no data" if value is None or pd.isna(value) else f"{int(value):,}"
@@ -768,6 +776,7 @@ def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> d
             "verifier": _span_verifier_cell(row),
             "tool calls": fmt(row.tool_calls),
             "busy": _fmt_busy(row.busy_seconds),
+            "compactions": str(compactions_of.get(str(row.agent_span_id), 0)),
         }
     return titles
 
