@@ -56,13 +56,13 @@
 {#- ``coincide``: the two per-turn measures are equal on every turn
     (no cache usage recorded), so the selector visibly changes nothing. -#}
 {% macro token_intro_derived(coincide=False) -%}
-<p class="meta explainer">Three measures of the per-turn token stream, selectable below (Inspect input_tokens excludes cache reads and writes; output includes reasoning; missing optional breakdowns count as zero in derived views):</p>
-<ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: an estimate of new content from uncached input, output and context growth; not a measure of effort</li><li><strong>cumulative (excluding cache reads)</strong>: uncached input, output and cache-write tokens summed over turns; excludes cache reads and is not monetary cost</li></ul>
+<p class="meta explainer">Three measures of the orchestrator's per-turn token stream, selectable below (sub-agent lanes are off this axis; their spend is under Token spend, by sub-agent label; Inspect input_tokens excludes cache reads and writes; output includes reasoning; missing optional breakdowns count as zero in derived views):</p>
+<ul class="meta explainer"><li><strong>per-turn total</strong>: everything this turn's API call processed (re-read context plus new output); drops after a context flush</li><li><strong>per-turn new work</strong>: an estimate of new content from uncached input, output and context growth; not a measure of effort</li><li><strong>cumulative (excluding cache reads)</strong>: uncached input, output and cache-write tokens summed over orchestrator turns; excludes cache reads and is not monetary cost</li></ul>
 {% if coincide %}<p class="meta">This transcript recorded no cache reads or writes, so per-turn total and per-turn new work are equal on every turn: switching between them changes nothing here.</p>{% endif %}
 {%- endmacro %}
 
 {% macro token_intro_raw() -%}
-<p class="meta explainer">Per-call output tokens (pre-derivation fallback: this transcript's usage events don't carry the cache/context breakdown the three-measure view needs).</p>
+<p class="meta explainer">The orchestrator's per-call output tokens (pre-derivation fallback: this transcript's usage events don't carry the cache/context breakdown the three-measure view needs).</p>
 <p class="meta explainer">Scale: <em>linear</em> or <em>log</em> (log hides turns with a zero or negative token count, since a token count of zero has no logarithm; a turn with no reading at all is hidden under either scale).</p>
 {%- endmacro %}
 
@@ -81,8 +81,8 @@
     of the conversation it was about to send, its after counts only the
     kept messages), so the list says so rather than leaving the reader to
     reconcile them. -#}
-{% macro flush_line(flushes) -%}
-<details class="event event-list"><summary>{{ flushes|length }} context flush(es) &middot; dashed lines on the charts above</summary><ol>{% for f in flushes %}<li>before turn {{ f.turn }} &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol><p class="meta explainer">Token counts are the recorded compaction event's own (tokens before &rarr; after), not readings off the chart. The chart's context is what each API call reported: at a summary flush the flush turn is the summarization call itself, whose input is the whole conversation plus the summary prompt, and the first call after it adds the tool definitions back on top of the kept messages.</p></details>
+{% macro flush_line(flushes, n_off_axis=0) -%}
+<details class="event event-list"><summary>{{ flushes|length }} context flush(es) &middot; dashed lines on the charts above{% if n_off_axis %} &middot; {{ n_off_axis }} more in sub-agent lanes (off the turn axis: in the flushes frame, not charted){% endif %}</summary><ol>{% for f in flushes %}<li>before turn {{ f.turn }} &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol><p class="meta explainer">Token counts are the recorded compaction event's own (tokens before &rarr; after), not readings off the chart. The chart's context is what each API call reported: at a summary flush the turn before the flush turn is the summarization call itself, whose input is the whole conversation plus the summary prompt, and the flush turn (the first call after it) adds the tool definitions back on top of the kept messages.</p></details>
 {%- endmacro %}
 
 {#- Full text, never cut: the list exists to be read, and a message
@@ -181,7 +181,7 @@
 {%- endmacro %}
 
 {% macro phase_meta_line(n_phases, judge_label, judge, cohort, verifier_note, unjudged_count) -%}
-<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier_note %} · verifier: {{ verifier_note.overturned }} of {{ verifier_note.verified }} completed original phase reviews relabelled ({{ verifier_note.selected }} selected){% if verifier_note.same_model %} <span class="meta">(verifier = the same model; self-revision under a different prompt)</span>{% endif %}{% endif %}{% if unjudged_count %} · <span class="meta">{{ unjudged_count }} unjudged turn(s) greyed</span>{% endif %} · turn indices are 0-based (the Scout viewer numbers turns from 1)</p>
+<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier_note %} · verifier: {{ verifier_note.overturned }} of {{ verifier_note.verified }} completed original phase reviews relabelled ({{ verifier_note.selected }} selected){% if verifier_note.same_model %} <span class="meta">(verifier = the same model; self-revision under a different prompt)</span>{% endif %}{% endif %}{% if unjudged_count %} · <span class="meta">{{ unjudged_count }} unjudged turn(s) greyed</span>{% endif %} · turn indices are 0-based (the Scout viewer numbers every lane's model calls from 1, so its turn chip differs on runs with sub-agents; deep links land on the event itself)</p>
 {%- endmacro %}
 
 {% macro label_definitions(title, entries) -%}

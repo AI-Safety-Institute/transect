@@ -52,7 +52,10 @@ from transect.report.style import _WIDGET_STYLE_CSS
 class SectionContext:
     """What a `Component` block's fn receives.
 
-    ``frame`` is the layer's own frame, cut to this transcript.
+    ``frame`` is the layer's own frame, cut to this transcript;
+    ``n_turns`` the transcript's orchestrator turn count, the x-domain
+    bound every turn block draws against (a row whose ``turn`` is NA is
+    off the axis and skipped).
     """
 
     transcript_id: str
@@ -163,7 +166,7 @@ def _tip_name(column: str) -> str:
 def _turn_chart(block: b.TurnChart, frame: pd.DataFrame, ctx: SectionContext):
     """bar/line/step/area on the orchestrator turn axis, with a per-turn
     tooltip column."""
-    rows = frame.dropna(subset=[block.y]).sort_values("turn")
+    rows = frame.dropna(subset=["turn", block.y]).sort_values("turn")
     values = pd.DataFrame(
         {
             "turn": rows.turn.astype(int),
@@ -216,7 +219,7 @@ def _turn_band(block: b.TurnBand, frame: pd.DataFrame, ctx: SectionContext):
     """Contiguous same-label runs as coloured chunks at the phase
     band's measurements, with its filter select and legend chips;
     judge rows ride the tooltip when the frame carries them."""
-    rows = frame.dropna(subset=[block.label]).sort_values("turn")
+    rows = frame.dropna(subset=["turn", block.label]).sort_values("turn")
     runs: list[dict[str, Any]] = []
     for _, row in rows.iterrows():
         label = str(row[block.label])

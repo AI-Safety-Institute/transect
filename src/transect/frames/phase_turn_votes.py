@@ -2,7 +2,7 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based model turn. One row per (member, digest turn).
+- turn: 0-based orchestrator turn. One row per (member, digest turn).
 - model / roll: the cohort member identity (roll 0-based).
 - basis: the member's own per-turn basis - judged / filled /
   no_answer / refusal / missing_turn (the scanner's vocabulary).

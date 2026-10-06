@@ -2,8 +2,8 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based main-lane turn the flush precedes (the first
-  post-flush main-lane turn), for a flush in any lane.
+- turn: 0-based orchestrator turn the flush precedes (the first
+  post-flush orchestrator turn, in event order), for a flush in any lane.
 - agent_span_id: the sub-agent lane the compaction happened in; None on
   the orchestrator.
 - lane_turn: the first post-flush turn of the compacted lane itself
@@ -160,14 +160,15 @@ def _lane_key(agent_span_id) -> str:
 
 def _lane_frames(group: pd.DataFrame) -> dict[str, pd.DataFrame]:
     """One transcript's token rows split by lane (`lane_series`), each in
-    event order with ``axis_turn``: the main-lane turn the axis was on
-    when the row's call happened (the row's own turn on the main lane,
-    the count of main-lane turns before it otherwise). Off-axis calls
-    (init/scorer: one-row lanes) are left out."""
+    event order with ``axis_turn``: the orchestrator turn the axis was
+    on when the row's call happened (the row's own turn on the
+    orchestrator lane, the count of orchestrator turns before it
+    otherwise). Off-axis calls (init/scorer: one-row lanes) are left
+    out."""
     ordered = group.copy()
-    # main-lane turns are contiguous from 0 in event order, so "main
-    # turns before this row" is the row's own turn on the main lane and
-    # the axis position of any other row
+    # orchestrator turns are contiguous from 0 in event order, so
+    # "orchestrator turns before this row" is the row's own turn on the
+    # orchestrator lane and the axis turn of any other row
     on_axis = ordered.turn.notna().astype(int)
     ordered["axis_turn"] = on_axis.cumsum() - on_axis
     lanes: dict[str, pd.DataFrame] = {}

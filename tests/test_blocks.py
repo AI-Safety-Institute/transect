@@ -16,6 +16,7 @@ from transect.report import (
     TurnChart,
 )
 from transect.report.blocks import validate_section
+from transect.report.custom import SectionContext, layer_section
 
 PER_TURN = pd.DataFrame(
     {
@@ -41,6 +42,21 @@ def test_a_full_section_validates_against_its_frames():
     ]
     layer = Layer(name="tool_risk", frame=PER_TURN, section=section)
     validate_section(layer, PER_TURN)  # raises on any offence
+
+
+def test_turn_blocks_skip_off_axis_rows():
+    """A per-turn layer frame may carry sub-agent rows whose turn is NA
+    (off the orchestrator axis); the turn blocks draw the orchestrator
+    rows and skip those instead of failing at render."""
+    frame = PER_TURN.copy()
+    frame["turn"] = pd.array([0, None, 2], dtype="Int64")
+    layer = Layer(
+        name="tool_risk",
+        frame=frame,
+        section=[TurnChart(y="risk"), TurnBand(label="why"), EventMarks(label="why")],
+    )
+    html = layer_section(layer, frame, SectionContext("tr1", frame, n_turns=3))
+    assert "custom-layer-badge" in html
 
 
 @pytest.mark.parametrize(

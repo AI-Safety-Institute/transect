@@ -302,6 +302,25 @@ def test_interventions_chart_budgets_its_previews_not_a_generic_two_line_row():
     assert len(charts._preview("x" * 100)) == charts._PREVIEW_CHARS + 1
 
 
+def test_flush_line_counts_the_sub_agent_lane_flushes_it_does_not_list():
+    """The flush list says how many compactions happened in sub-agent
+    lanes (off the turn axis, so neither listed nor charted) instead of
+    presenting the orchestrator's count as the run's total."""
+    flushes = pd.DataFrame(
+        {
+            "turn": [3],
+            "type": ["summary"],
+            "source": ["recorded"],
+            "tokens_before": [1000],
+            "tokens_after": [400],
+            "tokens_after_inferred": [False],
+        }
+    )
+    html = sections.flush_line(flushes, n_off_axis=2)
+    assert "1 context flush(es)" in html and "2 more in sub-agent lanes" in html
+    assert "sub-agent lanes" not in sections.flush_line(flushes, n_off_axis=0)
+
+
 def empty_flushes() -> pd.DataFrame:
     return flushes_df(pd.DataFrame(), pd.DataFrame(columns=["transcript_id"]))
 

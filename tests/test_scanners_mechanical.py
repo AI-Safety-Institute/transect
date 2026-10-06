@@ -178,7 +178,7 @@ def test_lane_activity_excludes_the_main_lane_and_folded_spawn_calls():
 
 
 def test_context_flush_records_compaction_events_at_their_turn():
-    """A compaction event lands with the count of model turns before it
+    """A compaction event lands with the count of orchestrator turns before it
     and the event's own type/source/token fields."""
     events = [
         model_turn("a"),
@@ -247,7 +247,7 @@ def test_no_compaction_events_means_no_flushes():
 )
 def test_human_messages_become_interventions_by_source(source, channel):
     """Operator steering and post-task console input register with
-    their channel and the model turn they precede (assistant messages are
+    their channel and the orchestrator turn they precede (assistant messages are
     counted when no event stream records them)."""
     messages = [
         ChatMessageUser(content="the task", source="input"),
@@ -343,8 +343,9 @@ def _intervention_shape(name):
             2,
         )
     if name == "as_tool_lane_flush":
-        # an as_tool sub-agent compacts inside the lead's tool call: its
-        # turns are on the axis, its messages never enter the lead's history
+        # an as_tool sub-agent compacts inside the lead's tool call: it runs
+        # in its own agent span, so its turns and its flush are off the
+        # axis, and its messages never enter the lead's history
         sub1, subsum, sub2 = (
             model_turn("sub"),
             model_turn("sub recap"),
@@ -352,8 +353,9 @@ def _intervention_shape(name):
         )
         leadsum = model_turn("recap")
         a2 = model_turn("blend", input=[task, summary, note])
-        events = [a0, sub1, subsum, _flush(), sub2, leadsum, _flush(), a2]
-        return events, [task, a0.output.message, summary, note, a2.output.message], 5
+        sub = agent_span("C", "sub", inner=[sub1, subsum, _flush(), sub2])
+        events = [a0, *sub, leadsum, _flush(), a2]
+        return events, [task, a0.output.message, summary, note, a2.output.message], 2
     if name == "forced_after_threshold":
         # overflow recovery replaces the history with the new summary, so
         # the earlier flush and its summary are gone from the history
@@ -383,7 +385,7 @@ def _intervention_shape(name):
     ],
 )
 def test_operator_messages_sit_on_the_event_turn_axis(shape):
-    """A human message precedes the first model turn whose input saw it;
+    """A human message precedes the first orchestrator turn whose input saw it;
     a summarization call (a turn with no assistant message in the history)
     never shifts that, whatever other compactions the run recorded."""
     events, history, turn = _intervention_shape(shape)

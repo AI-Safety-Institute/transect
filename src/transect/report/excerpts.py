@@ -54,7 +54,7 @@ _TOOLS_SHOWN = 6
 
 
 _ORCHESTRATOR = "orchestrator"
-"""Lane name for a span-less model turn (see `Excerpt.lane`)."""
+"""The lane name of every excerpt (see `Excerpt.lane`)."""
 
 
 COMPACTION_NOTE = "compaction summary call (the summarizer, not the agent)"
@@ -66,11 +66,9 @@ class Excerpt:
 
     Attributes:
         turn: The orchestrator turn number (the report's turn axis).
-        lane: The turn's agent lane - the sub-agent span's name, or
-            ``"orchestrator"`` for a span-less turn (the token
-            timeline records the same lane as ``None`` there; a
-            reader needs it named, and "orchestrator" is what the
-            report's sub-agent section already calls that lane).
+        lane: Always ``"orchestrator"``: excerpts are orchestrator
+            turns only, and the card names the lane rather than
+            leaving it implied.
         tools: The turn's tool calls, as names ("" for a prose turn);
             the tail beyond `_TOOLS_SHOWN` is counted, not dropped.
         text: The turn's own text, whitespace-flattened and capped at

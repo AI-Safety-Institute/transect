@@ -2,7 +2,7 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based model turn the intervention precedes.
+- turn: 0-based orchestrator turn the intervention precedes.
 - channel: how the human reached the run -
   - operator: user message with source="operator" - unsolicited
     steering injected by a human operator (ACP, OpenClaw inbound

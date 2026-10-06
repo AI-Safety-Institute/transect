@@ -1,4 +1,5 @@
-"""token_timeline_df: one row per model turn + token views.
+"""token_timeline_df: one row per model turn in any lane (orchestrator
+turns on the axis, sub-agent and init/scorer calls off it) + token views.
 
 Columns (identity prefix explained in common.py):
 
@@ -47,7 +48,7 @@ _DERIVED_FIELDS = ("context", "new_work", "billable", "turn_total")
 
 
 def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
-    """token_timeline scanner results -> one row per model turn,
+    """token_timeline scanner results -> one row per model turn in any lane,
     + derived token-view columns (see _derive_token_views)."""
     rows = []
     for _, r in results.iterrows():

@@ -263,7 +263,9 @@ def render_report(
                 )
             )
         if flush_turns:
-            token_blocks.append(sections.flush_line(my_flushes))
+            token_blocks.append(
+                sections.flush_line(my_flushes, len(all_flushes) - len(my_flushes))
+            )
         add(("token_telemetry", sections.section("Token telemetry", token_blocks)))
         # 4. sub-agent activity (the votes slice is shared with the
         # audit section below)

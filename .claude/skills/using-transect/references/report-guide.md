@@ -15,9 +15,10 @@ viewer is wired. Global reading rules:
   "zoomed-in charts (scroll horizontally)" checkbox at the top
   restores full width in a horizontal scroll box; the chart controls
   stay pinned while scrolling.
-- **Turn indices are 0-based** model-turn indices, the same number in
+- **Turn indices are 0-based** orchestrator turn indices (a sub-agent's own model calls take no index), the same number in
   every chart, tooltip, card, and frame (the Scout viewer numbers
-  turns from 1 - the report footer line says so).
+  every lane's model calls from 1, so its chip differs on runs with
+  sub-agents - the report footer line says so).
 
 ## Analysis status
 
@@ -224,9 +225,11 @@ row only when their extents do not overlap (saving vertical space) -
 two marks on the same row are not the same sub-agent resuming. The
 tooltip's lane name is the span's own identity.
 
-Two honest drawing modes: boxes spanning first-to-last observed
-activity when the source records span ends (an x marks a recorded
-completion); start-ticks only when it does not (a box would fake a
+Two honest drawing modes: a box spanning the span's wall-clock
+activity mapped onto the orchestrator turns active at the time, when
+the source recorded timestamps (an x marks a recorded span completion;
+OpenClaw synthesises ends at last activity, so its boxes carry no x); a
+thin tick at the spawn turn when it did not (a box would fake a
 duration). Tooltip per span: lane, turns, classification with its
 confidence (provenance suffixed, as on the agreement strip), vote
 agreement and label source, a verifier line
@@ -245,7 +248,7 @@ prompt - the task the orchestrator handed over - not the sub-agent's
 actual activity. So a role label states the orchestrator's intent for
 the span; a sub-agent that drifted from its brief keeps the label of
 the brief, undetected. To check what a sub-agent actually did, use
-its lane's turns in the token timeline and the transcript deep links,
+its lane's rows (`lane_turn`) in the token timeline and the transcript deep links,
 not the label. Three classification states are distinguished: not
 run (grey note), joined (labels), and ran-but-joined-nothing (loud
 warning - treat as a bug).
@@ -259,12 +262,13 @@ only lanes carry no usage) the report says so instead of drawing a
 zero.
 
 Computing new-work tokens per turn from frames: `phases.n_turns` counts only
-reasoning-bearing turns (judged and filled), but `new_work_tokens` folds
-in sub-agent-lane turns attributed into the phase - so
-`new_work_tokens / n_turns` mixes different turn populations for any phase that
-delegates. For the phase's own reasoning, group `phase_turns` by phase
-and `basis` (reasoning-bearing vs attributed) instead of dividing by
-`n_turns`.
+reasoning-bearing turns (judged and filled), while `new_work_tokens` sums
+every orchestrator turn in the range, tool-only turns included - so
+`new_work_tokens / n_turns` overstates per-reasoning-turn spend. Sub-agent
+spend is never in it: that is `delegated_new_work_tokens` (spans whose
+`spawn_turn` falls in the phase). For the phase's own reasoning, group
+`phase_turns` by phase and `basis` (reasoning-bearing vs attributed)
+instead of dividing by `n_turns`.
 
 ## 6. Phase cards
 

@@ -924,7 +924,10 @@ def token_stack(
     """Token telemetry for one transcript: a continuous-x bar chart (up
     to three selectable measures plus a linear/log scale toggle) and,
     when the derived columns support it, a second always-visible
-    context-window step chart. Both carry real y-axes.
+    context-window step chart. Both carry real y-axes. ``one`` is the
+    orchestrator's token_timeline rows (the turn axis; sub-agent rows
+    never reach this chart), so every measure, ``cum_billable``
+    included, is orchestrator-only.
 
     With the derived token-view columns present (`has_derived_token_views`)
     this returns ``[measure_selector, scale_selector, bars_chart,

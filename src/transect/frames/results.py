@@ -23,7 +23,8 @@ class TransectResults:
     for the report's intro."""
 
     token_timeline: pd.DataFrame
-    """One row per model turn: token usage, new work, context size."""
+    """One row per model turn in any lane (turn NA off the orchestrator
+    axis): token usage, new work, context size."""
 
     flushes: pd.DataFrame
     """One row per context compaction: turn, kind, tokens before/after."""
@@ -32,13 +33,13 @@ class TransectResults:
     """One row per mid-run human intervention: turn, channel, content."""
 
     lane_activity: pd.DataFrame
-    """One row per (turn, sub-agent span) of tool activity."""
+    """One row per (orchestrator turn, sub-agent span) of tool activity."""
 
     phases: pd.DataFrame
     """One row per phase: label, range, narration, reliability."""
 
     phase_turns: pd.DataFrame
-    """One row per turn: the phase label and how it was decided."""
+    """One row per orchestrator turn: the phase label and how it was decided."""
 
     turn_groups: pd.DataFrame
     """One row per narrated turn group within a phase."""

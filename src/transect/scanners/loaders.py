@@ -1,7 +1,7 @@
 """Loaders for user layers.
 
 `reasoning_turns` is the per-turn judged-layer shape: one loader item
-per reasoning-bearing main-lane turn, so a `cohort_llm_scanner` built
+per reasoning-bearing orchestrator turn, so a `cohort_llm_scanner` built
 behind it judges the orchestrator agent one turn at a time.
 """
 
@@ -23,7 +23,7 @@ from transect.scanners.phases_common import digest_line
     )
 )
 def reasoning_turns(batch: int = 1) -> Loader[Transcript]:
-    """One item per reasoning-bearing main-lane turn.
+    """One item per reasoning-bearing orchestrator turn.
 
     Each item's message is the turn's digest - the turn's reasoning
     (when the source records reasoning blocks), its own text, its

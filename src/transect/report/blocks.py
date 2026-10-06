@@ -36,7 +36,9 @@ class TurnBand:
 
 @dataclass(frozen=True)
 class SpanLanes:
-    """Swimlane rectangles from one row per span."""
+    """Swimlane rectangles from one row per span; ``start`` / ``end``
+    name orchestrator-turn columns (``subagents.anchor_turn`` /
+    ``end_turn``, say), not timestamps."""
 
     start: str
     end: str
@@ -73,7 +75,7 @@ class Markdown:
 class Component:
     """The escape hatch: ``fn(ctx)`` returns an inspect-viz Component;
     ``ctx`` is the `SectionContext` (transcript_id, the layer's frame
-    slice, n_turns)."""
+    slice, n_turns: the orchestrator turn count)."""
 
     fn: Callable[[Any], Any]
 

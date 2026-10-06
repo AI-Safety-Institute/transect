@@ -2,11 +2,13 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based orchestrator turn preceding the tool event.
+- turn: 0-based orchestrator turn preceding the tool event, in event
+  order (subagents.anchor_turn / end_turn place spans by wall-clock, so
+  the two can differ on parallel lanes).
 - agent_lane / agent_span_id: the sub-agent span (name / id).
 - tool_calls: tool events in that span at that turn.
 - busy_seconds: summed tool wall-time; None = not reported.
-- started_at: the span's first activity timestamp.
+- started_at: the earliest tool-event start in this row's (turn, span).
 - span_end_turn: the orchestrator turn preceding the span's end event;
   None when the span never closed.
 - schema_version: the frames contract version.

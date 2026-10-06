@@ -217,7 +217,7 @@ def decision_phases(
             - the Scout-viewer deep-link anchor (None when the
             source carries no event uuids).
         - ``turns``: the dense turn-granular surface, one row per
-          model turn:
+          orchestrator turn:
 
           - ``basis``: how the turn got its label:
 
@@ -225,8 +225,8 @@ def decision_phases(
               the voting regimes: by at least one voting member).
             - "filled": digest turn no judge covered; inherits the
               previous (consensus) label at low confidence.
-            - "attributed": no digest - content-free tool-call-only /
-              failed / sub-agent turns; the judge never saw it, so by
+            - "attributed": no digest - a content-free tool-call-only
+              or failed turn; the judge never saw it, so by
               projection it takes the phase whose turn range
               contains it (or the nearest preceding phase, for
               turns in a gap).
@@ -264,6 +264,9 @@ def decision_phases(
           - ``verifier_model``: the verifier's resolved model name.
         - ``narrator``: counts-only audit `{ran, n_fallback, narrator_model}``
           (``ran: false`` with a zero count when the narrator did not run).
+        - ``phase_vocab``: the resolved rubric, one ``{label,
+          description, ops, reserved}`` per judged phase (``reserved``:
+          appended by transect, not declared in the spec).
         - ``judge_models``: the judge model names as given, deduplicated.
         - ``judge``: the `judge_setup` identity block (regime, roster,
           roll count, verifier arming) the frames project as the
@@ -834,10 +837,10 @@ def _dense_turns(
 
 def _span_anchors(lanes: Lanes) -> list[tuple[Any, int]]:
     """Each sub-agent span_begin with its raw anchor: the last
-    orchestrator turn preceding it in event order (-1 when none does).
-    """
+    orchestrator turn preceding it in event order (0 when none does, as
+    `token_timeline`'s ``spawn_turn``)."""
     return [
-        (event, before - 1)
+        (event, max(before - 1, 0))
         for before, event in lanes.events_before_turn()
         if event.event == "span_begin" and event.id in lanes.sub_ids
     ]

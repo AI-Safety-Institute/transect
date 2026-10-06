@@ -570,10 +570,13 @@ def event_legend(
     return _notes.event_legend(has_context_chart, flushes, threshold)
 
 
-def flush_line(flushes: pd.DataFrame) -> Markup:
+def flush_line(flushes: pd.DataFrame, n_off_axis: int = 0) -> Markup:
     """The context-flush list: a ``<details>`` whose summary is the
-    count and whose body is one ``<li>`` per flush - position,
-    type/source, tokens kept.
+    count and whose body is one ``<li>`` per flush - turn, type/source,
+    tokens kept. ``n_off_axis`` is the number of compactions in
+    sub-agent lanes, which are off the turn axis and so neither listed
+    nor charted; the summary names them rather than passing the
+    orchestrator's count off as the run's.
     """
     items = []
     for _, f in flushes.sort_values("turn").iterrows():
@@ -585,7 +588,7 @@ def flush_line(flushes: pd.DataFrame) -> Markup:
         items.append(
             {"turn": int(f.turn), "type": f.type, "source": f.source, "amount": amount}
         )
-    return _notes.flush_line(items)
+    return _notes.flush_line(items, n_off_axis)
 
 
 def intervention_legend() -> Markup:
@@ -1305,7 +1308,7 @@ def reliability_audit(
                     f"{total_turns} total · {judged_turns} judged · "
                     f"{other_turns} filled/attributed · {unjudged_turns} unjudged"
                 ),
-                "definition": "Model turns the decision-phases judge covered, "
+                "definition": "Orchestrator turns the decision-phases judge covered, "
                 "split by how each turn's label was decided: judged (labelled "
                 "directly); filled (a reasoning turn no judge answer covered, "
                 "inheriting the previous label at low confidence); attributed "

@@ -38,7 +38,8 @@ def token_timeline() -> Scanner[Transcript]:
     (None = not reported, never 0).
 
     ``spans``: one entry per sub-agent span (`helpers.subagent_span_begins`'
-    definition): ``spawn_turn`` (the orchestrator turn preceding the
+    definition): ``agent_span_id`` / ``agent_lane`` (the span's id and
+    name), ``spawn_turn`` (the orchestrator turn preceding the
     span_begin in event order; 0 when none does), ``first_at`` /
     ``last_at`` (the span's first and last model or tool event, start
     and completion), ``end_at`` and ``end_recorded`` (the span_end's
@@ -46,9 +47,9 @@ def token_timeline() -> Scanner[Transcript]:
     so recorded is False there), ``event_order_end_turn`` (the
     orchestrator turn preceding the span_end; None when never closed).
 
-    ``lane_activity``: tool events inside sub-agent spans per
-    (orchestrator turn preceding the event, span): calls, busy time,
-    first start.
+    ``lane_activity``: tool events inside sub-agent spans, one entry
+    ``{turn, agent_span_id, agent_lane, tool_calls, busy_seconds,
+    started_at}`` per (orchestrator turn preceding the event, span).
     """
 
     async def execute(transcript: Transcript) -> Result:
@@ -164,8 +165,8 @@ def context_flush() -> Scanner[Transcript]:
     """Context-window compactions (flushes), from explicit compaction events.
 
     value = {"flushes": [entry, ...]} with one entry per compaction:
-    turn (count of main-lane turns preceding the flush, i.e. the first
-    post-flush main-lane turn), agent_span_id (the sub-agent lane the
+    turn (the orchestrator turn the flush precedes, i.e. the first
+    post-flush orchestrator turn), agent_span_id (the sub-agent lane the
     compaction happened in; None on the orchestrator), lane_turn (the
     first post-flush turn of the compacted lane itself: equal to turn on
     the orchestrator, the sub-agent's own lane ordinal otherwise), type,
@@ -284,8 +285,9 @@ def human_intervention() -> Scanner[Transcript]:
         lanes = Lanes(transcript)
         first_seen: dict[str, int] = {}
         turn_of_output: dict[str, int] = {}
-        # a sub-agent's outputs: an Inspect handoff appends them to the
-        # parent thread, where they must not advance the orchestrator axis
+        # every non-orchestrator output (sub-agent, init, scorer): an Inspect
+        # handoff appends a sub-agent's to the parent thread, where they
+        # must not advance the orchestrator axis
         sub_outputs = {
             event.output.message.id
             for _, event in lanes.events_before_turn()
