@@ -112,12 +112,15 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     for section in sections:
         assert section in html
     # an OpenClaw import records no compaction configuration at all; the
-    # parallel fixture is an Inspect log run with compaction disabled
+    # parallel fixture's orchestrator runs with compaction disabled (its
+    # subagent_a sub-agent compacts without a memory nudge)
     recorded = name not in ("openclaw-import", "parallel-subagents")
     if recorded:
         assert "Compaction nudge (before compaction)" in html
     else:
         assert "Compaction nudge" not in html
+    if name == "parallel-subagents":  # the only flush is subagent_a's
+        assert "0 context flush(es)" in html and "1 more in sub-agent lanes" in html
     assert "Traceback" not in html
     # the other Inspect logs record a compaction threshold (row + toggle)
     assert ("compaction threshold</span>" in html) == recorded
@@ -319,6 +322,8 @@ def test_flush_line_counts_the_sub_agent_lane_flushes_it_does_not_list():
     html = sections.flush_line(flushes, n_off_axis=2)
     assert "1 context flush(es)" in html and "2 more in sub-agent lanes" in html
     assert "sub-agent lanes" not in sections.flush_line(flushes, n_off_axis=0)
+    only_sub = sections.flush_line(flushes.iloc[:0], n_off_axis=1)
+    assert "0 context flush(es)" in only_sub and "dashed lines" not in only_sub
 
 
 def empty_flushes() -> pd.DataFrame:

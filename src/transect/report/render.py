@@ -262,7 +262,7 @@ def render_report(
                     derived, flushes=bool(flush_turns), threshold=drawn_threshold
                 )
             )
-        if flush_turns:
+        if len(all_flushes):  # a sub-agent lane's flushes still get counted
             token_blocks.append(
                 sections.flush_line(my_flushes, len(all_flushes) - len(my_flushes))
             )
