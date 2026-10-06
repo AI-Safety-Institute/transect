@@ -57,6 +57,9 @@ _ORCHESTRATOR = "orchestrator"
 """Lane name for a span-less model turn (see `Excerpt.lane`)."""
 
 
+COMPACTION_NOTE = "compaction summary call (the summarizer, not the agent)"
+
+
 @dataclass(frozen=True)
 class Excerpt:
     """One model turn's excerpt, as a card renders it.
@@ -89,28 +92,6 @@ class Excerpt:
     truncated: bool
     note: str | None = None
     reasoning: str = ""
-
-
-COMPACTION_NOTE = "compaction summary call (the summarizer, not the agent)"
-
-
-def mark_compaction_turns(
-    excerpts: dict[int, Excerpt], turns: Iterable[int]
-) -> dict[int, Excerpt]:
-    """Note the turns that were summarization calls.
-
-    A summary compaction's ``generate()`` is a model event like any other,
-    so it holds a turn on the shared axis and its excerpt is the summary
-    body. Unmarked, a card presents that as the agent pausing to recap.
-    ``turns`` derives from the flushes frame (the turn before a flush with
-    a recorded ``compaction_prompt`` is its summarization call), so the
-    card's marker and the flush list can never disagree.
-    """
-    marked = dict(excerpts)
-    for turn in turns:
-        if turn in marked:
-            marked[turn] = replace(marked[turn], note=COMPACTION_NOTE)
-    return marked
 
 
 @dataclass(frozen=True)
@@ -148,6 +129,25 @@ class TranscriptExtras:
     excerpts: dict[int, Excerpt] = field(default_factory=dict)
     spawn_prompts: dict[str, SpawnPrompt] = field(default_factory=dict)
     tool_counts: dict[int, int] = field(default_factory=dict)
+
+
+def mark_compaction_turns(
+    excerpts: dict[int, Excerpt], turns: Iterable[int]
+) -> dict[int, Excerpt]:
+    """Note the turns that were summarization calls.
+
+    A summary compaction's ``generate()`` is a model event like any other,
+    so it holds a turn on the shared axis and its excerpt is the summary
+    body. Unmarked, a card presents that as the agent pausing to recap.
+    ``turns`` derives from the flushes frame (the turn before a flush with
+    a recorded ``compaction_prompt`` is its summarization call), so the
+    card's marker and the flush list can never disagree.
+    """
+    marked = dict(excerpts)
+    for turn in turns:
+        if turn in marked:
+            marked[turn] = replace(marked[turn], note=COMPACTION_NOTE)
+    return marked
 
 
 def read_transcript_extras(

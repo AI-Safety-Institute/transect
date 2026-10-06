@@ -19,20 +19,6 @@ from typing import Any
 LANE_NAME_MAX_CHARS = 120
 
 
-def truncate_lane_name(name: str) -> str:
-    """One lane name, capped at `LANE_NAME_MAX_CHARS` - an ellipsis
-    marks an actual truncation, never appended to a name that already
-    fit.
-
-    Codepoint-safe, not grapheme-safe: a name with a decomposed accent
-    that lands exactly on the cut can be split base-from-mark. Real lane
-    names are plain ASCII task labels, so this is an accepted limitation
-    rather than an observed problem."""
-    return (
-        name if len(name) <= LANE_NAME_MAX_CHARS else name[:LANE_NAME_MAX_CHARS] + "…"
-    )
-
-
 @dataclass(frozen=True)
 class SpanGeometry:
     """One sub-agent span on the orchestrator axis, as the swimlane
@@ -67,6 +53,20 @@ class PackedLanes:
     rows: list[tuple]
     yticks: list[float]
     ylabels: list[str]
+
+
+def truncate_lane_name(name: str) -> str:
+    """One lane name, capped at `LANE_NAME_MAX_CHARS` - an ellipsis
+    marks an actual truncation, never appended to a name that already
+    fit.
+
+    Codepoint-safe, not grapheme-safe: a name with a decomposed accent
+    that lands exactly on the cut can be split base-from-mark. Real lane
+    names are plain ASCII task labels, so this is an accepted limitation
+    rather than an observed problem."""
+    return (
+        name if len(name) <= LANE_NAME_MAX_CHARS else name[:LANE_NAME_MAX_CHARS] + "…"
+    )
 
 
 def pack_lanes(

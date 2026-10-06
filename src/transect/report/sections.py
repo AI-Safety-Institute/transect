@@ -52,17 +52,6 @@ _subagent_tpl: Any = jinja_env().get_template("subagent_notes.html.j2").module
 _reliability_tpl: Any = jinja_env().get_template("reliability.html.j2").module
 
 
-def section(
-    title: str, blocks: Sequence[Markup | None], anchor: str | None = None
-) -> Markup:
-    """One report section: an ``<h3>`` header followed by the given
-    already-rendered fragments in order; empty/`None` entries are
-    dropped, so callers can express optional blocks inline. ``anchor``
-    sets an ``id`` for in-page links; ids must stay unique, so a
-    per-transcript section takes one on its first occurrence only."""
-    return _notes.section(title, [block for block in blocks if block], anchor)
-
-
 _NOT_FOUND = "not recorded by source"
 
 
@@ -72,6 +61,17 @@ class CompactionThreshold:
 
     label: str
     tokens: int | None
+
+
+def section(
+    title: str, blocks: Sequence[Markup | None], anchor: str | None = None
+) -> Markup:
+    """One report section: an ``<h3>`` header followed by the given
+    already-rendered fragments in order; empty/`None` entries are
+    dropped, so callers can express optional blocks inline. ``anchor``
+    sets an ``id`` for in-page links; ids must stay unique, so a
+    per-transcript section takes one on its first occurrence only."""
+    return _notes.section(title, [block for block in blocks if block], anchor)
 
 
 def compaction_threshold(info: pd.DataFrame) -> CompactionThreshold | None:

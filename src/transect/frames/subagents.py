@@ -84,6 +84,30 @@ from transect.frames.common import (
     with_schema,
 )
 
+# the structural columns
+_SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
+    ("spawn_turn", "Int64"),
+    ("anchor_turn", "Int64"),
+    ("end_turn", "Int64"),
+    ("tool_calls", "Int64"),
+    ("busy_seconds", "Float64"),
+    ("output_tokens", "Float64"),
+    ("new_work", "Float64"),
+    ("billable", "Float64"),
+)
+_SPINE_FLAGS = ("end_recorded",)
+_SPINE_TEXT = ("turn_source", "started_at", "ended_at")
+
+
+# the identity and lane columns every structural part carries, so a span
+# present in one source alone still has them after the join (transcript_id
+# is the join key itself)
+_PART_IDENTITY = {
+    col: (col, "first")
+    for col in (*IDENTITY_COLS, "agent_lane")
+    if col != "transcript_id"
+}
+
 
 def subagents_df(
     results: pd.DataFrame,
@@ -170,31 +194,6 @@ def _vocabulary(results: pd.DataFrame) -> list[str]:
             if name and name not in out:
                 out.append(name)
     return out
-
-
-# the structural columns
-_SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
-    ("spawn_turn", "Int64"),
-    ("anchor_turn", "Int64"),
-    ("end_turn", "Int64"),
-    ("tool_calls", "Int64"),
-    ("busy_seconds", "Float64"),
-    ("output_tokens", "Float64"),
-    ("new_work", "Float64"),
-    ("billable", "Float64"),
-)
-_SPINE_FLAGS = ("end_recorded",)
-_SPINE_TEXT = ("turn_source", "started_at", "ended_at")
-
-
-# the identity and lane columns every structural part carries, so a span
-# present in one source alone still has them after the join (transcript_id
-# is the join key itself)
-_PART_IDENTITY = {
-    col: (col, "first")
-    for col in (*IDENTITY_COLS, "agent_lane")
-    if col != "transcript_id"
-}
 
 
 def _structural_spine(
