@@ -496,7 +496,7 @@ def turn_digests(
     Returns:
         ``Digest`` records in turn order.
     """
-    lanes = Lanes.of(transcript)
+    lanes = Lanes(transcript)
     subagent_spans, first_models = lanes.begins, lanes.first_models
 
     by_turn: dict[int, Digest] = {}
@@ -854,7 +854,7 @@ def _span_anchors(lanes: Lanes) -> list[tuple[Any, int]]:
     wanted = {id(begin) for begin in lanes.begins}
     return [
         (event, before - 1)
-        for before, event in lanes.count_before()
+        for before, event in lanes.events_before_turn()
         if event.event == "span_begin" and id(event) in wanted
     ]
 

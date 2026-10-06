@@ -52,7 +52,7 @@ def token_timeline() -> Scanner[Transcript]:
     """
 
     async def execute(transcript: Transcript) -> Result:
-        lanes = Lanes.of(transcript)
+        lanes = Lanes(transcript)
         timeline: list[dict[str, Any]] = []
         lane_counts: dict[str, int] = {}
         for event, calls in all_model_turns(transcript):
@@ -184,9 +184,9 @@ def context_flush() -> Scanner[Transcript]:
     async def execute(transcript: Transcript) -> Result:
         flushes: list[dict[str, Any]] = []
         texts = iter(compaction_texts(transcript))
-        lanes = Lanes.of(transcript)
+        lanes = Lanes(transcript)
         lane_counts: dict[str, int] = {}
-        for turn, event in lanes.count_before():
+        for turn, event in lanes.events_before_turn():
             if event.event == "model" and event.output:
                 sub = lanes.sub_agent_of(event)
                 if sub is not None:
@@ -284,7 +284,7 @@ def human_intervention() -> Scanner[Transcript]:
         # input records (one planted into the history, a history without
         # its event stream) falls back to the history's footprints of
         # orchestrator turns.
-        lanes = Lanes.of(transcript)
+        lanes = Lanes(transcript)
         first_seen: dict[str, int] = {}
         turn_of_output: dict[str, int] = {}
         # a sub-agent's outputs: an Inspect handoff appends them to the
@@ -310,7 +310,7 @@ def human_intervention() -> Scanner[Transcript]:
         # them): the fallback footprint for a summary message no input saw
         summary_flushes = [
             turn
-            for turn, event in lanes.count_before()
+            for turn, event in lanes.events_before_turn()
             if event.event == "compaction" and event.type == "summary"
         ]
         next_turn = 0
@@ -354,7 +354,7 @@ def human_intervention() -> Scanner[Transcript]:
                 (message.text or "").strip(),
             )
 
-        for turn, event in lanes.count_before():
+        for turn, event in lanes.events_before_turn():
             if event.event == "input":
                 prompt = (getattr(event, "message", None) or "").strip() or None
                 entry(
@@ -428,7 +428,7 @@ def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
     """
     sub_ids = lanes.sub_ids
     records: dict[str, dict[str, Any]] = {}
-    for before, event in lanes.count_before():
+    for before, event in lanes.events_before_turn():
         kind = event.event
         if kind == "span_begin":
             if event.id not in sub_ids:
@@ -483,7 +483,7 @@ def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
     orchestrator turn preceding the event.
     """
     rows: dict[tuple[int, str], dict[str, Any]] = {}
-    for before, event in lanes.count_before():
+    for before, event in lanes.events_before_turn():
         if event.event != "tool":
             continue
         if getattr(event, "agent_span_id", None) is not None:

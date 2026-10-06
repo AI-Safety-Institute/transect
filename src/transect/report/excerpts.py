@@ -358,7 +358,7 @@ def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
     Returns:
         ``{agent_span_id: SpawnPrompt}`` for the spans with task text.
     """
-    lanes = Lanes.of(transcript)
+    lanes = Lanes(transcript)
     found: dict[str, SpawnPrompt] = {}
     for begin in lanes.begins:
         text, _source = span_task_text(begin, lanes.first_models.get(begin.id))

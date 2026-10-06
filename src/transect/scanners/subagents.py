@@ -57,7 +57,7 @@ def agent_spans() -> Loader[Transcript]:
     """
 
     async def load(transcript: Transcript) -> AsyncIterator[Transcript]:
-        lanes = Lanes.of(transcript)
+        lanes = Lanes(transcript)
         for span in lanes.begins:  # event order
             task, source = span_task_text(span, lanes.first_models.get(span.id))
             task_truncated = len(task) > _PROMPT_CHARS
