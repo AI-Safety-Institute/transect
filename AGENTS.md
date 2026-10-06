@@ -195,9 +195,11 @@ scanner change take effect; run a new scan and retain both results for compariso
   judges). `examples/transect_*.py` call real provider models - keys and
   spend. Don't "verify" a change by burning judge calls when the
   deterministic loop covers it.
-- **Model caching + refusals (live runs).** Scanners call
-  `generate(cache=True)`; refused judge calls retry under a separate
-  cache scope (`src/transect/scanners/phases_common.py`).
+- **Model caching + retries (live runs).** Scanners call
+  `generate(cache=True)`; a judge call that returns no usable answer is
+  retried once under a separate cache scope (`call_judge` in
+  `src/transect/scanners/phases_common.py`), and refusals are retried by
+  Scout's own loop inside the call.
 - **Ecosystem APIs.** Before writing against inspect_ai /
   inspect_scout / inspect_viz APIs, consult the package's own docs
   (each publishes an `llms.txt`) rather than trusting memory - these

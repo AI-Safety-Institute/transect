@@ -13,6 +13,7 @@ from transect.scanners.cohort import (
     LabelSource,
     cohort_members,
     judge_setup,
+    resolve_verify,
     roll_cache,
 )
 from transect.scanners.helpers import (
@@ -55,7 +56,6 @@ TASK_PROMPT_CHARS = 2400  # agent-task-prompt context cap
 _OPENCLAW_FAILED_TURN_PREFIX = "[assistant turn failed"  # placeholder assistant turn
 _OPENCLAW_SCAFFOLD_USER_MESSAGES = ("[openclaw heartbeat poll]",)  # exact matches
 
-# Appended to the judged phases when the spec declares no operational bucket
 _SYSTEM_HEAD = (
     "You are segmenting an autonomous agent's turns (its [THINKING] "
     "reasoning, its own text, AND the [DELEGATES] tasks it hands to "
@@ -85,7 +85,7 @@ _RULES = (
 class _Segment(BaseModel):
     """One judged phase.
 
-    JUDGE-FACING: the Field descriptions render in the answer() tool."""
+    Judge-facing: the Field descriptions render in the answer() tool."""
 
     turn_start: int = Field(description=("First turn index of this phase (inclusive)."))
     turn_end: int = Field(description=("Last turn index of this phase (inclusive)."))
@@ -98,6 +98,18 @@ class _Segment(BaseModel):
     explanation: str = Field(
         description=("Why this run of turns is this phase (<=14 words).")
     )
+
+
+class PhaseTurn(BaseModel):
+    """One row of the dense ``turns`` surface."""
+
+    turn: int
+    phase_index: int | None = None
+    basis: TurnBasis
+    label_source: LabelSource | None = None
+    confidence: float | None = None
+    confidence_pm: float | None = None  # 95%-CI half-width; 0 non-cohort
+    agreement: float | None = None  # vote agreement; None solo/unvoted
 
 
 @scanner(
@@ -284,28 +296,19 @@ def decision_phases(
     if verify_chunk <= 0:
         raise ValueError("decision_phases requires verify_chunk >= 1")
     members_spec = cohort_members(judge_models, k_rolls)
-    n_models = len({member.name for member in members_spec})
-    if verify is True and n_models > 1:
-        raise ValueError(
-            "verify=True is incompatible with a multi-model cohort - "
-            "the majority vote is the correction mechanism there "
-            "(verifier XOR cohort)"
-        )
-    verify_on = n_models == 1 if verify is None else verify
-    if verify_sample is not None and not 0.0 <= verify_sample <= 1.0:
-        raise ValueError(f"verify_sample must be in [0, 1], got {verify_sample}")
     factory_names = list(dict.fromkeys(m.name for m in members_spec))
+    verify_on = resolve_verify(len(factory_names), verify, verify_sample)
     judge = judge_setup(
         factory_names,
         k_rolls,
         verifier_armed=verify_on,
         verifier_model=(
             (str(verifier_model) if verifier_model is not None else factory_names[0])
-            if verify_on and factory_names
+            if verify_on
             else None
         ),
     )
-    if verify is None and n_models > 1:
+    if verify is None and len(factory_names) > 1:
         logger.info(
             "decision_phases: cohort regime - verifier auto-disabled "
             "(majority vote is the correction mechanism)"
@@ -326,7 +329,6 @@ def decision_phases(
 
     async def execute(transcript: Transcript) -> Result:
         judges = [(member, member.resolve()) for member in members_spec]
-        names = list(dict.fromkeys(m.name for m in members_spec))
         member_keys = [member.key for member in members_spec]
         n_members = len(members_spec)
         digests = turn_digests(transcript, snippet_chars=snippet_chars)
@@ -380,8 +382,6 @@ def decision_phases(
         phases = stitch_phases(digest_judgements)
         audit = VerifierAudit(ran=False)
         if verify_on and phases:
-            # the verifier: verifier_model when given, else the
-            # (first) judge
             verifier = judges[0][1]
             if verifier_model is not None:
                 verifier = (
@@ -426,7 +426,7 @@ def decision_phases(
                 phases=phases,
                 cache=cache,
             )
-            narrator.narrator_model = names[0]
+            narrator.narrator_model = factory_names[0]
         cohort = Cohort()
         if n_members > 1:
             cohort = Cohort(
@@ -438,7 +438,7 @@ def decision_phases(
                 vote=votes,
                 agreement=CohortAgreement(
                     n_members=n_members,
-                    n_models=n_models,
+                    n_models=len(factory_names),
                     k_rolls=k_rolls,
                 ),
             )
@@ -463,7 +463,7 @@ def decision_phases(
                     ],
                     "verifier": audit.model_dump(),
                     "narrator": narrator.model_dump(),
-                    "judge_models": names,
+                    "judge_models": factory_names,
                     "judge": cast(JsonValue, judge),
                     "cohort": cohort.model_dump(),
                 },
@@ -497,8 +497,6 @@ def turn_digests(
         ``Digest`` records in turn order.
     """
     lanes = Lanes(transcript)
-    subagent_spans, first_models = lanes.begins, lanes.first_models
-
     by_turn: dict[int, Digest] = {}
 
     def _digest(turn: int) -> Digest:
@@ -507,7 +505,7 @@ def turn_digests(
         return by_turn[turn]
 
     eligible_turns: list[int] = []  # orchestrator, non-failed: anchor targets
-    for turn, ev, calls in orchestrator_turns(transcript):
+    for turn, ev, calls in lanes.turns():
         event: Any = ev
         if _is_failed_turn(event):
             continue  # provider-failure placeholder: not reasoning
@@ -516,7 +514,7 @@ def turn_digests(
         text = (message.text or "").strip() if message else ""
         reasoning = message_reasoning(message)
         delegations: list[str] = []
-        if not subagent_spans:  # span-less sources: delegations ride tool-call args
+        if not lanes.begins:  # span-less sources: delegations ride tool-call args
             for call in calls:
                 arguments = call.arguments if isinstance(call.arguments, dict) else {}
                 task = arguments.get("task") or arguments.get("prompt")
@@ -541,14 +539,14 @@ def turn_digests(
             continue
         position = bisect_right(eligible_turns, raw_anchor) - 1
         anchor = eligible_turns[position] if position >= 0 else eligible_turns[0]
-        text = span_task_text(span, first_models.get(span.id))[0]
-        goal = _first_line(text) if text else str(span.name)
+        text = span_task_text(span, lanes.first_models.get(span.id))[0]
+        goal = text.splitlines()[0].strip() if text else str(span.name)
         _digest(anchor).delegations.append(goal[:snippet_chars])
 
     return [by_turn[turn] for turn in sorted(by_turn)]
 
 
-def agent_task_prompt(transcript: Any, cap: int = TASK_PROMPT_CHARS) -> str:
+def agent_task_prompt(transcript: Any) -> str:
     """Extract the task the agent was given.
 
     Source-generic: the first non-scaffold user message - the sample
@@ -556,7 +554,6 @@ def agent_task_prompt(transcript: Any, cap: int = TASK_PROMPT_CHARS) -> str:
 
     Args:
         transcript: The transcript whose messages are scanned.
-        cap: Maximum characters returned.
 
     Returns:
         The whitespace-flattened task prompt, or "".
@@ -569,7 +566,7 @@ def agent_task_prompt(transcript: Any, cap: int = TASK_PROMPT_CHARS) -> str:
             continue
         if text.lower() in _OPENCLAW_SCAFFOLD_USER_MESSAGES:
             continue  # known OpenClaw scaffold line (e.g. heartbeat poll)
-        return " ".join(text.split())[:cap]
+        return " ".join(text.split())[:TASK_PROMPT_CHARS]
     return ""
 
 
@@ -783,18 +780,6 @@ def _project_chunk(
     return rows
 
 
-class PhaseTurn(BaseModel):
-    """One row of the dense ``turns`` surface."""
-
-    turn: int
-    phase_index: int | None = None
-    basis: TurnBasis
-    label_source: LabelSource | None = None
-    confidence: float | None = None
-    confidence_pm: float | None = None  # 95%-CI half-width; 0 non-cohort
-    agreement: float | None = None  # vote agreement; None solo/unvoted
-
-
 def _dense_turns(
     digest_judgements: list[ConsensusJudgement],
     phases: list[StitchedPhase],
@@ -851,32 +836,17 @@ def _span_anchors(lanes: Lanes) -> list[tuple[Any, int]]:
     """Each sub-agent span_begin with its raw anchor: the last
     orchestrator turn preceding it in event order (-1 when none does).
     """
-    wanted = {id(begin) for begin in lanes.begins}
     return [
         (event, before - 1)
         for before, event in lanes.events_before_turn()
-        if event.event == "span_begin" and id(event) in wanted
+        if event.event == "span_begin" and event.id in lanes.sub_ids
     ]
 
 
 def _is_failed_turn(event: Any) -> bool:
-    """Detect an OPENCLAW-SPECIFIC provider-failure placeholder turn.
-
-    The OpenClaw scaffold writes a fake assistant turn ("[assistant turn
-    failed ...]") when a provider call dies. Text match against the known
-    2026-07 wording.
-
-    Args:
-        event: A model event.
-
-    Returns:
-        True when the turn is a content-free failure placeholder.
-    """
-    message = event.output.message if event.output else None
+    """Detect an OpenClaw provider-failure placeholder turn: the scaffold
+    writes a fake assistant turn ("[assistant turn failed ...]") when a
+    provider call dies."""
+    message = event.output.message
     text = (message.text or "").strip().lower() if message else ""
     return text.startswith(_OPENCLAW_FAILED_TURN_PREFIX)
-
-
-def _first_line(text: str) -> str:
-    """Return the first non-blank-stripped line of ``text``."""
-    return text.splitlines()[0].strip() if text else text

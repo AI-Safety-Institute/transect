@@ -78,9 +78,8 @@ def token_timeline() -> Scanner[Transcript]:
             for field in _USAGE_FIELDS:
                 entry[field] = getattr(usage, field, None) if usage else None
             timeline.append(entry)
-        # Inspect records where a span ended; an OpenClaw import
-        # synthesises its span ends at last activity (compaction.py
-        # reads the source the same way)
+        # only Inspect records span ends; an OpenClaw import synthesises
+        # them at last activity
         ends_recorded = transcript.source_type == "eval_log"
         turns = lane_counts.get("__main__", 0)
         return Result(
@@ -132,11 +131,15 @@ def eval_setup() -> Scanner[Transcript]:
         )
         meta = transcript.metadata or {}
         header = None
-        if transcript.source_type == "eval_log" and transcript.source_uri:
-            uri = transcript.source_uri
-            if uri not in header_of:
-                header_of[uri] = _eval_header(uri)
-            header = header_of[uri]
+        prompt = None
+        if transcript.source_type == "eval_log":
+            if transcript.source_uri:
+                uri = transcript.source_uri
+                if uri not in header_of:
+                    header_of[uri] = _eval_header(uri)
+                header = header_of[uri]
+            compaction = (transcript.agent_args or {}).get("compaction")
+            prompt = compaction.get("prompt") if isinstance(compaction, dict) else None
         value = {
             "system_prompt": system_prompt,
             "task_message": task_message,
@@ -145,14 +148,8 @@ def eval_setup() -> Scanner[Transcript]:
             "generate_config": meta.get("generate_config"),
             "model_roles": meta.get("model_roles"),
             "header": header,
-            "compaction_prompt": None,
+            "compaction_prompt": prompt if isinstance(prompt, str) else None,
         }
-        if transcript.source_type == "eval_log":
-            compaction = (transcript.agent_args or {}).get("compaction")
-            if isinstance(compaction, dict):
-                prompt = compaction.get("prompt")
-                if isinstance(prompt, str):
-                    value["compaction_prompt"] = prompt
         return Result(value=cast(JsonValue, value), explanation="eval setup")
 
     return execute
@@ -289,14 +286,13 @@ def human_intervention() -> Scanner[Transcript]:
         turn_of_output: dict[str, int] = {}
         # a sub-agent's outputs: an Inspect handoff appends them to the
         # parent thread, where they must not advance the orchestrator axis
-        sub_outputs: set[str] = set()
-        turn = 0
-        for event, _calls in all_model_turns(transcript):
+        sub_outputs = {
+            event.output.message.id
+            for _, event in lanes.events_before_turn()
+            if event.event == "model" and event.output and event.output.message.id
+        }
+        for turn, event, _calls in lanes.turns():
             output_id = event.output.message.id
-            if not lanes.is_main(event):
-                if output_id is not None:
-                    sub_outputs.add(output_id)
-                continue
             for seen in event.input:
                 combined = (getattr(seen, "metadata", None) or {}).get("combined_from")
                 for seen_id in (seen.id, *(combined or [])):
@@ -305,7 +301,6 @@ def human_intervention() -> Scanner[Transcript]:
             if output_id is not None:
                 # first occurrence wins: a cached generate replays an output
                 turn_of_output.setdefault(output_id, turn)
-            turn += 1
         # summary flushes by the turn they precede (as context_flush records
         # them): the fallback footprint for a summary message no input saw
         summary_flushes = [
@@ -419,13 +414,7 @@ def _iso(value: Any) -> str | None:
 
 def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
     """One record per sub-agent span: spawn and end anchors in
-    orchestrator turns, activity timestamps (see `token_timeline`).
-
-    Activity is attributed via the nearest enclosing agent span, so a
-    nested sub-agent owns its own events and its parent does not absorb
-    them; the folded spawn call (``agent_span_id`` set) is the
-    orchestrator's and counts for no span.
-    """
+    orchestrator turns, activity timestamps (see `token_timeline`)."""
     sub_ids = lanes.sub_ids
     records: dict[str, dict[str, Any]] = {}
     for before, event in lanes.events_before_turn():
@@ -453,8 +442,6 @@ def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
             continue
         if kind not in ("model", "tool"):
             continue
-        if kind == "tool" and getattr(event, "agent_span_id", None) is not None:
-            continue  # folded spawn call: the orchestrator's, not the lane's
         sub = lanes.sub_agent_of(event)
         if sub is None or sub.id not in records:
             continue
@@ -473,21 +460,14 @@ def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
 
 
 def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
-    """Tool activity per (orchestrator turn, sub-agent span): calls, busy
-    time, start.
-
-    Counts tool events inside any sub-agent span (the main lane's own
-    span and utility spans excluded); sub-agents whose activity is
+    """Tool activity per (orchestrator turn preceding the event, sub-agent
+    span): calls, busy time, start. Sub-agents whose activity is
     tool-events-only (no model turns of their own, as some OpenClaw
-    exports record them) show up only here. Turn anchor = the
-    orchestrator turn preceding the event.
-    """
+    exports record them) show up only here."""
     rows: dict[tuple[int, str], dict[str, Any]] = {}
     for before, event in lanes.events_before_turn():
         if event.event != "tool":
             continue
-        if getattr(event, "agent_span_id", None) is not None:
-            continue  # folded spawn call: the orchestrator's, not the lane's
         sub = lanes.sub_agent_of(event)
         if sub is None:
             continue

@@ -47,44 +47,8 @@ CallStatus = Literal["ok", "no_answer", "refusal", "error"]
 LOWCONF = 0.60
 
 
-def judge_setup(
-    models: Sequence[str],
-    k_rolls: int,
-    verifier_armed: bool,
-    verifier_model: str | None,
-) -> dict:
-    """The canonical judge-identity block a judged scanner stamps as
-    ``value["judge"]`` on every result.
-
-    Consumed by `transect.reliability.detect_regime` at render time.
-
-    On the ``models=None`` default-model path no name is resolvable
-    at factory time: the block stamps an empty roster (``n_models``
-    stays 1) and ``verifier_same_model`` False, and the frames read
-    the judge name from the recorded model usage instead.
-    """
-    names = list(dict.fromkeys(models))
-    regime = "cohort" if len(names) > 1 else ("k_roll" if k_rolls > 1 else "solo")
-    same_model = bool(
-        verifier_armed
-        and verifier_model is not None
-        and len(names) == 1
-        and verifier_model == names[0]
-    )
-    return {
-        "regime": regime,
-        "models": names,
-        "n_models": len(names) or 1,
-        "k_rolls": k_rolls,
-        "verifier_armed": verifier_armed,
-        "verifier_model": verifier_model if verifier_armed else None,
-        "verifier_same_model": same_model,
-    }
-
-
-# default verify_sample share, shared by both judged scanners; here it
-# drives the floor-less per-item draw (`_spot_check`, seeded on
-# _SPOT_SEED), decision_phases adds a floor of 3 on top of it
+# default verify_sample share; the per-item draw (_spot_check, seeded on
+# _SPOT_SEED) has no floor, decision_phases adds max(.., 3)
 _SPOT_SEED = 20260831
 _SPOT_DEFAULT = 0.05
 
@@ -184,6 +148,41 @@ class VerifierReview(BaseModel):
     """The review call's outcome: ok / no_answer / refusal / error."""
 
 
+def judge_setup(
+    models: Sequence[str],
+    k_rolls: int,
+    verifier_armed: bool,
+    verifier_model: str | None,
+) -> dict:
+    """The canonical judge-identity block a judged scanner stamps as
+    ``value["judge"]`` on every result.
+
+    Consumed by `transect.reliability.detect_regime` at render time.
+
+    On the ``models=None`` default-model path no name is resolvable
+    at factory time: the block stamps an empty roster (``n_models``
+    stays 1) and ``verifier_same_model`` False, and the frames read
+    the judge name from the recorded model usage instead.
+    """
+    names = list(dict.fromkeys(models))
+    regime = "cohort" if len(names) > 1 else ("k_roll" if k_rolls > 1 else "solo")
+    same_model = bool(
+        verifier_armed
+        and verifier_model is not None
+        and len(names) == 1
+        and verifier_model == names[0]
+    )
+    return {
+        "regime": regime,
+        "models": names,
+        "n_models": len(names) or 1,
+        "k_rolls": k_rolls,
+        "verifier_armed": verifier_armed,
+        "verifier_model": verifier_model if verifier_armed else None,
+        "verifier_same_model": same_model,
+    }
+
+
 def cohort_llm_scanner(
     question: str,
     answer: Sequence[str],
@@ -271,9 +270,8 @@ def cohort_llm_scanner(
             top of the doubt triggers - each un-triggered item is
             verifier-reviewed with this probability (deterministic
             per item, seeded on its transcript_id). ``None`` = the
-            default 5% (the same rate as decision_phases' default,
-            minus its min-3 floor - a floor needs a global view this
-            per-item scanner does not have); ``0.0`` = doubt-only. A
+            default 5% (decision_phases' rate without its floor of 3: a
+            per-item draw has no global view); ``0.0`` = doubt-only. A
             per-item draw, not an exact fraction.
         cache: Base cache setting; later rolls get ``{"roll": r}``
             scopes on top.
@@ -303,25 +301,14 @@ def cohort_llm_scanner(
         )
     labels = list(answer)
     vocabulary = _vocabulary_entries(vocabulary)
-    multi_model = (
-        models is not None and not isinstance(models, (str, Model)) and len(models) > 1
-    )
-    if verify is True and multi_model:
-        raise ValueError(
-            "verify=True with a multi-model cohort, the regimes are "
-            "mutually exclusive (verifier XOR cohort): the majority "
-            "vote is the cohort's correction mechanism"
-        )
-    verify_on = (not multi_model) if verify is None else bool(verify)
-    if verify_sample is not None and not 0.0 <= verify_sample <= 1.0:
-        raise ValueError(f"verify_sample must be in [0, 1], got {verify_sample}")
-    spot_p = _SPOT_DEFAULT if verify_sample is None else verify_sample
     if models is None and k_rolls != 1:
         raise ValueError(
             "k_rolls requires an explicit models value - "
             "models=None is the solo default-model path"
         )
     members = cohort_members(models, k_rolls) if models is not None else []
+    verify_on = resolve_verify(len({m.name for m in members}), verify, verify_sample)
+    spot_p = _SPOT_DEFAULT if verify_sample is None else verify_sample
     if members and verifier_model is None:
         verifier_model = members[0].model
     judge_identity = judge_setup(
@@ -410,7 +397,7 @@ def cohort_llm_scanner(
             "label_source": _label_source(decided, solo=False),
             "status": "ok" if decided.label else _failure_status(statuses),
             "label_vocab": cast(JsonValue, list(vocabulary or [])),
-            "judge_models": list(dict.fromkeys(m.name for m in members)),
+            "judge_models": judge_identity["models"],
             "judge": cast(JsonValue, judge_identity),
             "cohort": _cohort_block(records, decided.vote),
         }
@@ -535,15 +522,42 @@ def roll_cache(cache: bool | CachePolicy, roll: int) -> bool | CachePolicy:
     Returns:
         The member's cache setting.
     """
-    if roll == 0 or cache is False:
-        return cache
+    return cache if roll == 0 else scoped_cache(cache, roll=str(roll))
+
+
+def scoped_cache(cache: bool | CachePolicy, **scopes: str) -> bool | CachePolicy:
+    """``cache`` with ``scopes`` added (a bare True becomes a policy);
+    False stays off."""
+    if cache is False:
+        return False
     if isinstance(cache, CachePolicy):
         return CachePolicy(
             expiry=cache.expiry,
             per_epoch=cache.per_epoch,
-            scopes={**cache.scopes, "roll": str(roll)},
+            scopes={**cache.scopes, **scopes},
         )
-    return CachePolicy(scopes={"roll": str(roll)})
+    return CachePolicy(scopes=scopes)
+
+
+def resolve_verify(
+    n_models: int, verify: bool | None, verify_sample: float | None
+) -> bool:
+    """Whether the second-round verifier runs: ``verify`` as given, else
+    on for a single judge model and off for a cohort, whose majority
+    vote is its own correction mechanism.
+
+    Raises:
+        ValueError: ``verify=True`` with a multi-model cohort (verifier
+            XOR cohort), or ``verify_sample`` outside [0, 1].
+    """
+    if verify is True and n_models > 1:
+        raise ValueError(
+            "verify=True is incompatible with a multi-model cohort: the majority "
+            "vote is the correction mechanism there (verifier XOR cohort)"
+        )
+    if verify_sample is not None and not 0.0 <= verify_sample <= 1.0:
+        raise ValueError(f"verify_sample must be in [0, 1], got {verify_sample}")
+    return n_models <= 1 if verify is None else verify
 
 
 def ci_half_width(values: list[float]) -> float:
@@ -561,10 +575,10 @@ def _batch_llm_scanner(
     members: list[Member],
     verify_on: bool,
     verifier_model: str | Model | None,
-    verify_sample: float = 0.0,
-    vocabulary: Sequence[dict] | None = None,
-    cache: bool | CachePolicy = True,
-    judge_identity: dict | None = None,
+    verify_sample: float,
+    vocabulary: Sequence[dict] | None,
+    cache: bool | CachePolicy,
+    judge_identity: dict,
 ) -> Scanner[Transcript]:
     """The batch execution path: one structured answer per member
     call covering every marked unit of the item, split into per-unit
@@ -675,7 +689,7 @@ def _batch_llm_scanner(
         value: dict[str, JsonValue] = {
             "status": "ok" if labelled else _failure_status(call_statuses),
             "label_vocab": cast(JsonValue, list(vocabulary or [])),
-            "judge_models": list(dict.fromkeys(m.name for m in members)),
+            "judge_models": judge_identity["models"],
             "judge": cast(JsonValue, judge_identity),
             "items": cast(JsonValue, entries),
         }
@@ -758,10 +772,10 @@ def _verified_llm_scanner(
     model: str | Model | None,
     verify_on: bool,
     verifier_model: str | Model | None,
-    verify_sample: float = 0.0,
-    vocabulary: Sequence[dict] | None = None,
-    cache: bool | CachePolicy = True,
-    judge_identity: dict | None = None,
+    verify_sample: float,
+    vocabulary: Sequence[dict] | None,
+    cache: bool | CachePolicy,
+    judge_identity: dict,
 ) -> Scanner[Transcript]:
     """The solo execution path: one llm_scanner call per item with an
     optional second-round verifier; ``judge_identity`` is the
@@ -907,7 +921,7 @@ async def _verify_judgement(
         original_label=label,
         original_confidence=confidence,
         original_explanation=explanation,
-        verifier_model=str(verifier_model) if verifier_model is not None else None,
+        verifier_model=_model_name(verifier_model),
     )
     scan = llm_scanner(
         question=review,
@@ -949,8 +963,8 @@ async def _vote_and_verify(
     labels: list[str],
     verify_on: bool,
     verifier_model: str | Model | None,
-    verify_sample: float = 0.0,
-    cache: bool | CachePolicy = True,
+    verify_sample: float,
+    cache: bool | CachePolicy,
 ) -> _UnitDecision:
     """One unit's decision, shared by the per-item and batch paths:
     the ballots' vote, then the verifier's optional second round,

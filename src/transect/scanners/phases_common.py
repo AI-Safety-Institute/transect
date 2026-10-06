@@ -1,7 +1,7 @@
 """Shared pieces of the decision_phases scanner family."""
 
 import asyncio
-from collections.abc import Coroutine, Iterable, Sequence
+from collections.abc import Coroutine, Iterable, Mapping, Sequence
 from typing import Any, Literal
 
 from inspect_ai.model import (
@@ -15,7 +15,13 @@ from inspect_ai.model import (
 from inspect_scout import AnswerStructured, RefusalError, generate_answer
 from pydantic import BaseModel, Field, JsonValue
 
-from transect.scanners.cohort import LabelSource, VerifierReview, ci_half_width
+from transect.scanners.cohort import (
+    LabelSource,
+    VerifierReview,
+    ci_half_width,
+    scoped_cache,
+)
+from transect.scanners.helpers import capped_lines
 from transect.spec import Phase, Spec
 
 SNIPPET_CHARS = 300  # per-digest cap on text, reasoning, and each delegation
@@ -41,6 +47,17 @@ _NONE_PHASE = Phase(
 )
 
 
+Basis = Literal["judged", "filled", "no_answer", "refusal", "missing_turn"]
+TurnBasis = Literal[
+    "judged", "filled", "attributed", "no_answer", "refusal", "missing_turn"
+]
+
+
+NarrationGroupStatus = Literal[
+    "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
+]
+
+
 class Digest(BaseModel):
     """One reasoning-bearing turn, as shown to the judge."""
 
@@ -50,12 +67,6 @@ class Digest(BaseModel):
     tools: list[str] = []
     delegations: list[str] = []
     event_id: str | None = None  # source model event uuid (viewer anchor)
-
-
-Basis = Literal["judged", "filled", "no_answer", "refusal", "missing_turn"]
-TurnBasis = Literal[
-    "judged", "filled", "attributed", "no_answer", "refusal", "missing_turn"
-]
 
 
 class DigestJudgement(BaseModel):
@@ -71,7 +82,7 @@ class DigestJudgement(BaseModel):
 class TurnGroup(BaseModel):
     """One narrative sub-section of a phase.
 
-    JUDGE-FACING: the Field descriptions render in the answer() tool."""
+    Judge-facing: the Field descriptions render in the answer() tool."""
 
     turn_start: int = Field(
         description="First turn index of this group (inclusive, as shown)."
@@ -95,11 +106,6 @@ class PhaseReview(BaseModel):
     turn_start: int
     turn_end: int
     review: VerifierReview
-
-
-NarrationGroupStatus = Literal[
-    "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
-]
 
 
 class StitchedPhase(BaseModel):
@@ -201,7 +207,7 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str]:
     """
     phases = list(spec.phases)
     ops_name = next((p.label for p in phases if p.ops), None)
-    if ops_name is None:  # unflagged "ops" is still OUR reserved name
+    if ops_name is None:  # an unflagged "ops" phase is still the reserved bucket
         ops_name = next(
             (p.label for p in phases if p.label == _DEFAULT_OPS_PHASE.label),
             None,
@@ -227,18 +233,10 @@ def stitch_phases(
         digest_judgements: Per-digest-turn judgements.
 
     Returns:
-        ``StitchedPhase`` entries in turn order, each with:
-
-        - ``phase``: the label shared by the merged judgements.
-        - ``turn_start`` / ``turn_end``: inclusive digest-turn range.
-        - ``n_turns``: digest turns in the phase (the reasoning-
-          bearing turns the judge saw).
-        - ``confidence``: mean over member judgements (fills included,
-          at their 0.3).
-        - ``min_confidence``: minimum over members - the verifier's
-          selection signal.
-        - ``explanation``: the first contributing segment's explanation
-          (judge provenance; may predate a later verifier overturn).
+        ``StitchedPhase`` entries in turn order; the model's field
+        descriptions are the per-field contract. ``explanation`` is the
+        first contributing segment's (judge provenance; it may predate a
+        later verifier overturn).
     """
     phases: list[StitchedPhase] = []
     members: list[DigestJudgement] = []
@@ -384,9 +382,8 @@ async def call_judge(
         ChatMessageUser(content=user),
     ]
     attempts: list[bool | CachePolicy] = [cache]
-    retry = _retry_cache(cache)
-    if retry is not None:
-        attempts.append(retry)
+    if cache is not False:
+        attempts.append(scoped_cache(cache, transect_retry="1"))
     for attempt_cache in attempts:
         try:
             result = await generate_answer(
@@ -404,26 +401,6 @@ async def call_judge(
     return None, "no_answer"
 
 
-def _retry_cache(cache: bool | CachePolicy) -> CachePolicy | None:
-    """Cache policy for the second judge attempt.
-
-    Args:
-        cache: The caller's cache setting for the first attempt.
-
-    Returns:
-        The retry's CachePolicy, or None when caching is off.
-    """
-    if cache is False:
-        return None
-    if isinstance(cache, CachePolicy):
-        return CachePolicy(
-            expiry=cache.expiry,
-            per_epoch=cache.per_epoch,
-            scopes={**cache.scopes, "transect_retry": "1"},
-        )
-    return CachePolicy(scopes={"transect_retry": "1"})
-
-
 def digest_line(d: Digest) -> str:
     """Render one digest as a single prompt line: index, reasoning
     behind a [THINKING] marker, text, tool names, then each delegation
@@ -438,6 +415,17 @@ def digest_line(d: Digest) -> str:
     for goal in d.delegations:
         parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
     return " ".join(parts)
+
+
+def phase_evidence(phase: StitchedPhase, by_turn: Mapping[int, Digest]) -> str:
+    """One phase's evidence block for a judge prompt: its digest lines,
+    capped at ``EVIDENCE_LINES``."""
+    lines = [
+        digest_line(by_turn[turn])
+        for turn in range(phase.turn_start, phase.turn_end + 1)
+        if turn in by_turn
+    ]
+    return "\n".join(capped_lines(lines, EVIDENCE_LINES))
 
 
 def humanise_phase(label: str) -> str:
