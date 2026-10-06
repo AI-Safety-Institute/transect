@@ -69,7 +69,7 @@
 {#- This fact belongs with the chart whose measures it explains, not on
     a judge-reliability surface. -#}
 {#- Both event lists below are a <details class="event event-list">
-    whose <summary> is just the count and whose body is one <li> per
+    whose <summary> is the count (per lane kind for flushes) and whose body is one <li> per
     event, turn-ordered (the builders in sections.py sort explicitly, so
     this template does not have to trust its caller). Same card
     border/radius and summary hover as `.event`, but a muted rather than
@@ -81,8 +81,9 @@
     of the conversation it was about to send, its after counts only the
     kept messages), so the list says so rather than leaving the reader to
     reconcile them. -#}
-{% macro flush_line(flushes, n_off_axis=0) -%}
-<details class="event event-list"><summary>{{ flushes|length }} context flush(es) &middot; dashed lines on the charts above{% if n_off_axis %} &middot; {{ n_off_axis }} more in sub-agent lanes (off the turn axis: in the flushes frame, not charted){% endif %}</summary><ol>{% for f in flushes %}<li>before turn {{ f.turn }} &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol><p class="meta explainer">Token counts are the recorded compaction event's own (tokens before &rarr; after), not readings off the chart. The chart's context is what each API call reported: at a summary flush the turn before the flush turn is the summarization call itself, whose input is the whole conversation plus the summary prompt, and the flush turn (the first call after it) adds the tool definitions back on top of the kept messages.</p></details>
+{% macro flush_line(main, lanes) -%}
+{%- set n_sub = lanes|map("last")|map("length")|sum -%}
+<details class="event event-list"><summary>{{ main|length }} context flush(es){% if main %} &middot; dashed lines on the charts above{% endif %}{% if n_sub %} &middot; {{ n_sub }} in sub-agent lanes (off the main-lane turn axis){% endif %}</summary>{% if main %}<p class="meta"><strong>Main lane</strong> &middot; marked on the charts above</p><ol>{% for f in main %}<li>before turn {{ f.turn }} &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol><p class="meta explainer">Token counts are the recorded compaction event's own (tokens before &rarr; after), not readings off the chart. The chart's context is what each API call reported: at a summary flush the turn before the flush turn is the summarization call itself, whose input is the whole conversation plus the summary prompt, and the flush turn (the first call after it) adds the tool definitions back on top of the kept messages.</p>{% endif %}{% for lane, items in lanes %}<p class="meta"><strong>{{ lane }} lane</strong> &middot; off the main-lane turn axis, not on the charts</p><ol>{% for f in items %}<li>before sub-agent lane turn {{ f.lane_turn }} (before main-lane turn {{ f.turn }}) &middot; {{ f.type }}/{{ f.source }}{% if f.amount %} &middot; {{ f.amount }}{% endif %}</li>{% endfor %}</ol>{% endfor %}</details>
 {%- endmacro %}
 
 {#- Full text, never cut: the list exists to be read, and a message

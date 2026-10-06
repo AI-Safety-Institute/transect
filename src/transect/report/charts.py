@@ -1778,6 +1778,7 @@ SPAN_TIP_FIELDS = (
     "verifier",
     "tool calls",
     "busy",
+    "compactions",
 )
 
 

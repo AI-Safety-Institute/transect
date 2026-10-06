@@ -297,15 +297,21 @@ def test_excerpts_cover_orchestrator_turns_only(demo_log):
 def test_parallel_fixture_frames_number_five_turns_and_overlapping_spans(
     parallel_results,
 ):
-    """Four interleaved sub-agent turns take no turn numbers; the two
-    background sub-agents spawned at turn 0 run across turns 0 to 3 by
-    wall clock and overlap each other."""
+    """Seven interleaved sub-agent turns (subagent_a's summarization call
+    included) take no turn numbers; the two background sub-agents
+    spawned at turn 0 run across turns 0 to 3 by wall clock and overlap
+    each other, and subagent_a's compaction sits in its own lane."""
     timeline = parallel_results.token_timeline
     assert timeline[timeline.turn.notna()].turn.tolist() == [0, 1, 2, 3, 4]
-    assert int(timeline.turn.isna().sum()) == 4
-    assert timeline[timeline.agent_lane == "scout_a"].lane_turn.tolist() == [0, 1]
+    assert int(timeline.turn.isna().sum()) == 7
+    lane_a = timeline[timeline.agent_lane == "subagent_a"]
+    assert lane_a.lane_turn.tolist() == [0, 1, 2, 3]
+    (flush,) = parallel_results.flushes.itertuples()
+    assert (flush.source, flush.lane_turn, flush.turn) == ("inspect", 2, 2)
+    subagent_a = parallel_results.subagents.query("agent_lane == 'subagent_a'")
+    assert flush.agent_span_id == subagent_a.agent_span_id.item()
     spans = parallel_results.subagents.sort_values("agent_lane")
-    assert spans.agent_lane.tolist() == ["scout_a", "scout_b"]
+    assert spans.agent_lane.tolist() == ["subagent_a", "subagent_b"]
     assert spans.spawn_turn.tolist() == [0, 0]
     assert spans.anchor_turn.tolist() == [0, 0]
     assert spans.end_turn.tolist() == [3, 3]
