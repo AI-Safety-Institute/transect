@@ -483,9 +483,9 @@ def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
 
     Counts tool events inside any sub-agent span (the main lane's own
     span and utility spans excluded); sub-agents whose activity is
-    tool-events-only (no model turns of their own, e.g. OpenClaw
-    schema-B) show up only here. Turn anchor = the orchestrator turn
-    preceding the event.
+    tool-events-only (no model turns of their own, as some OpenClaw
+    exports record them) show up only here. Turn anchor = the
+    orchestrator turn preceding the event.
     """
     hits: Counter[tuple[int, str, str]] = Counter()
     busy_ms: Counter[tuple[int, str, str]] = Counter()

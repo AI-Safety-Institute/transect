@@ -1,7 +1,7 @@
 """One-shot generator for tests/fixtures/openclaw/mini_telemetry.jsonl.
 
-Hand-designed miniature of an OpenClaw telemetry-hal capture (schema B,
-cron orchestrator). Every importer rule gets one exercising record; the
+Hand-designed miniature of an OpenClaw telemetry-hal capture (a cron
+orchestrator whose sub-agents record tool events only, no model turns). Every importer rule gets one exercising record; the
 expected values in tests/test_ingestion_selection.py are hand-computed
 from here.
 """
@@ -154,7 +154,7 @@ lines = [
     # cumulative orchestrator snapshots (turns recur -> dedup exercised)
     {"type": "agent.start", "sessionKey": ORCH, "agentId": "main", "messages": [U1]},
     {"type": "agent.end", "sessionKey": ORCH, "agentId": "main", "messages": [U1, A1]},
-    # sub-agent A: spawn-linked via TR1's childSessionKey; schema-B activity
+    # sub-agent A: spawn-linked via TR1's childSessionKey; tool events only
     {
         "type": "agent.start",
         "sessionKey": SUB_A,
