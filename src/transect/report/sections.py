@@ -41,7 +41,7 @@ from transect.report.display import (
     roster,
 )
 from transect.report.excerpts import Excerpt, card_excerpts
-from transect.report.lanes_layout import truncate_lane_name
+from transect.report.lanes_layout import SpanGeometry, truncate_lane_name
 from transect.scan_status import ModelTokenUsage
 from transect.scanners.phases_common import humanise_phase
 
@@ -50,17 +50,6 @@ _notes: Any = jinja_env().get_template("notes.html.j2").module
 _phase_cards_tpl: Any = jinja_env().get_template("phase_cards.html.j2").module
 _subagent_tpl: Any = jinja_env().get_template("subagent_notes.html.j2").module
 _reliability_tpl: Any = jinja_env().get_template("reliability.html.j2").module
-
-
-def section(
-    title: str, blocks: Sequence[Markup | None], anchor: str | None = None
-) -> Markup:
-    """One report section: an ``<h3>`` header followed by the given
-    already-rendered fragments in order; empty/`None` entries are
-    dropped, so callers can express optional blocks inline. ``anchor``
-    sets an ``id`` for in-page links; ids must stay unique, so a
-    per-transcript section takes one on its first occurrence only."""
-    return _notes.section(title, [block for block in blocks if block], anchor)
 
 
 _NOT_FOUND = "not recorded by source"
@@ -72,6 +61,17 @@ class CompactionThreshold:
 
     label: str
     tokens: int | None
+
+
+def section(
+    title: str, blocks: Sequence[Markup | None], anchor: str | None = None
+) -> Markup:
+    """One report section: an ``<h3>`` header followed by the given
+    already-rendered fragments in order; empty/`None` entries are
+    dropped, so callers can express optional blocks inline. ``anchor``
+    sets an ``id`` for in-page links; ids must stay unique, so a
+    per-transcript section takes one on its first occurrence only."""
+    return _notes.section(title, [block for block in blocks if block], anchor)
 
 
 def compaction_threshold(info: pd.DataFrame) -> CompactionThreshold | None:
@@ -570,10 +570,13 @@ def event_legend(
     return _notes.event_legend(has_context_chart, flushes, threshold)
 
 
-def flush_line(flushes: pd.DataFrame) -> Markup:
+def flush_line(flushes: pd.DataFrame, n_off_axis: int = 0) -> Markup:
     """The context-flush list: a ``<details>`` whose summary is the
-    count and whose body is one ``<li>`` per flush - position,
-    type/source, tokens kept.
+    count and whose body is one ``<li>`` per flush - turn, type/source,
+    tokens kept. ``n_off_axis`` is the number of compactions in
+    sub-agent lanes, which are off the turn axis and so neither listed
+    nor charted; the summary names them rather than passing the
+    orchestrator's count off as the run's.
     """
     items = []
     for _, f in flushes.sort_values("turn").iterrows():
@@ -585,7 +588,7 @@ def flush_line(flushes: pd.DataFrame) -> Markup:
         items.append(
             {"turn": int(f.turn), "type": f.type, "source": f.source, "amount": amount}
         )
-    return _notes.flush_line(items)
+    return _notes.flush_line(items, n_off_axis)
 
 
 def intervention_legend() -> Markup:
@@ -630,24 +633,24 @@ def subagent_explanation() -> Markup:
 
 
 def subagent_notes(
-    lanes: list[tuple],
+    lanes: list[SpanGeometry],
     label_of: dict,
     subagents: pd.DataFrame,
     classification_ran: bool,
-    has_end_markers: bool,
 ) -> Markup:
     """The Sub-agent activity section's prose, rendered above its chart
     (the label legend renders below it - `subagent_legend`).
 
     ``lanes`` / ``label_of`` are the same span-grouping the orchestrator
-    built for the chart; ``has_end_markers`` is `charts.swimlanes`'
-    ``span_ends_recorded`` flag and gates the how-to-read line.
+    built for the chart. The how-to-read line renders when any span
+    draws as a wall-clock box, its completion-glyph clause when any
+    span's end was recorded.
     """
     # three states, honestly distinguished: no classification at all
     # (grey note, and NO label vocabulary anywhere; classification joined
     # (labels, no note); and classification present but zero lanes joined
     # - a silent-failure smell (identity/span-id mismatch).
-    any_joined = any(span_id in label_of for span_id, _, _ in lanes)
+    any_joined = any(span.span_id in label_of for span in lanes)
     if not classification_ran:
         state = "not_run"
     elif not any_joined:
@@ -685,7 +688,11 @@ def subagent_notes(
         }
 
     return _subagent_tpl.subagent_notes(
-        state, summary, has_end_markers, _END_MARKER_GLYPH
+        state,
+        summary,
+        any(span.boxed for span in lanes),
+        bool(subagents.end_recorded.any()),
+        _END_MARKER_GLYPH,
     )
 
 
@@ -708,26 +715,36 @@ def subagent_legend(
     return _notes.phase_chips(None, chips)
 
 
-def span_titles(
-    subagents: pd.DataFrame,
-    label_of: dict,
-    span_ends_recorded: bool,
-) -> dict:
+def span_titles(subagents: pd.DataFrame, label_of: dict, geometry_of: dict) -> dict:
     """One hover-tooltip cell set per span for the swimlanes chart:
     ``{span_id: {field: cell}}`` keyed by `charts.SPAN_TIP_FIELDS`.
-    "no data" marks a value the source never recorded."""
+    "no data" marks a value the source never recorded. The ``turns``
+    cell says what the box means: the orchestrator turns active while
+    the span ran (wall-clock), or only its spawn turn when the source
+    recorded no usable timestamps; ``geometry_of`` (span id ->
+    `lanes_layout.SpanGeometry`) says whether the span ran past the
+    axis's edges, which the cell states."""
 
     def fmt(value) -> str:
         return "no data" if value is None or pd.isna(value) else f"{int(value):,}"
 
     titles = {}
     for row in subagents.itertuples():
-        turns = f"{int(str(row.span_start_turn))}–{int(str(row.span_last_turn))}"
+        geometry = geometry_of.get(row.agent_span_id)
+        if geometry is not None and geometry.boxed:
+            turns = (
+                f"{int(str(row.anchor_turn))}–{int(str(row.end_turn))} "
+                "(orchestrator turns active while it ran)"
+            )
+            if geometry.before_first:
+                turns += ", began before the first orchestrator turn"
+            if geometry.after_last:
+                turns += ", continued after the last orchestrator turn"
+        else:
+            turns = f"{int(str(row.spawn_turn))} (spawn turn; no timestamps)"
         titles[row.agent_span_id] = {
             "lane": truncate_lane_name(str(row.agent_lane)),
-            "turns": (
-                f"{turns} (observed activity extent)" if span_ends_recorded else turns
-            ),
+            "turns": turns,
             # "classification", not "label" - a tooltip channel named
             # `label` blanks the chart (charts.SPAN_TIP_FIELDS)
             "classification": _resolved_label(label_of, row.agent_span_id),
@@ -1040,7 +1057,6 @@ def phase_cards(
     container_id: str,
     card_id_prefix: str,
     excerpts: dict[int, Excerpt] | None = None,
-    lanes: pd.DataFrame | None = None,
     tool_counts: dict[int, int] | None = None,
     turn_tags: pd.DataFrame | None = None,
     tag_layer_of: dict[str, str] | None = None,
@@ -1048,9 +1064,9 @@ def phase_cards(
     """Phase cards: one expandable card per phase, chronological (the
     drill-down under the Phase timeline band).
 
-    The spend tag is per-turn new_work summed over the phase's range
-    across all model-turn lanes; the label says "new-work tokens" and
-    must not claim orchestrator-only spend. Each card's ``data-*``
+    The spend tag is the phase's orchestrator new-work
+    (``phases.new_work_tokens``), and the label says so; delegated spend
+    has its own frame column and chart. Each card's ``data-*``
     attributes (documented in `templates/phase_cards.html.j2`) are
     read by `phase_card_controls`' sort/filter JS and reuse the values
     the visible tag line computes, so the two cannot disagree.
@@ -1065,26 +1081,19 @@ def phase_cards(
     sorted_phases = phases.sort_values("phase_index").reset_index(drop=True)
     after_flush_flags = _card_event_flags(sorted_phases, flush_turns)
     after_intervention_flags = _card_event_flags(sorted_phases, intervention_turns)
-    # one spawn turn per span (its first lane_activity row) - the cards'
-    # sub-agent count + filter
-    spawn_turns = (
-        lanes.groupby("agent_span_id").turn.min().tolist()
-        if lanes is not None and len(lanes)
-        else []
-    )
     cards = []
     for pos, (_, p) in enumerate(sorted_phases.iterrows()):
         color, _hatch = colors.get(p.phase, (_UNJUDGED_GREY, None))
-        # the frames' dense-attributed rollup - the same number the
-        # band and the spend chart report (declared-range sums drop
-        # tool-only turns outside the judged ranges)
+        # the frames' dense-attributed orchestrator rollup - the same
+        # number the band and the spend chart report (declared-range sums
+        # drop tool-only turns outside the judged ranges)
         spend = p.new_work_tokens if pd.notna(p.new_work_tokens) else 0
         tags = [
             f"turns {int(p.turn_start)}–{int(p.turn_end)}",
             # n_turns counts the phase's reasoning-bearing (digest) turns,
             # which can be fewer than the range width (tool-only turns)
             f"{int(p.n_turns)} reasoning turn(s)",
-            f"{int(spend):,} new-work tokens",
+            f"{int(spend):,} orchestrator new-work tokens",
         ]
         n_tools = (
             sum(
@@ -1096,9 +1105,10 @@ def phase_cards(
         )
         if n_tools is not None:
             tags.append(f"{n_tools} tool call(s)")
-        n_subagents = sum(1 for t in spawn_turns if p.turn_start <= t <= p.turn_end)
+        # spans whose spawn turn lies in the phase (frames.phases)
+        n_subagents = int(p.n_subagents) if pd.notna(p.n_subagents) else 0
         if n_subagents:
-            tags.append(f"{n_subagents} sub-agent(s)")
+            tags.append(f"{n_subagents} sub-agent(s) spawned")
         if any(p.turn_start <= t <= p.turn_end for t in flush_turns or []):
             tags.append("compaction during phase")
         if any(p.turn_start <= t <= p.turn_end for t in intervention_turns or []):
@@ -1298,12 +1308,12 @@ def reliability_audit(
                     f"{total_turns} total · {judged_turns} judged · "
                     f"{other_turns} filled/attributed · {unjudged_turns} unjudged"
                 ),
-                "definition": "Model turns the decision-phases judge covered, "
+                "definition": "Orchestrator turns the decision-phases judge covered, "
                 "split by how each turn's label was decided: judged (labelled "
                 "directly); filled (a reasoning turn no judge answer covered, "
                 "inheriting the previous label at low confidence); attributed "
-                "(content-free tool-call-only, failed, or sub-agent turns the "
-                "judge never saw, taking the phase whose range contains them); or "
+                "(content-free tool-call-only or failed turns the judge never "
+                "saw, taking the phase whose range contains them); or "
                 "unjudged (refusal / no_answer / missing_turn).",
             },
             {

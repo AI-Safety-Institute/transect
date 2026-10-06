@@ -8,9 +8,11 @@ dataframes nor rendered reports should be treated as text-free exports.
 This module preserves:
 
 - **Same turn axis as everything else.** `_turn_excerpts` iterates
-  `helpers.model_turns`, the one iteration `token_timeline` and the
-  phases scanner both enumerate, so turn *n* here is turn *n* on the
-  charts, in the phase ranges, and in the narrator's turn groups.
+  `helpers.orchestrator_turns`, the one enumeration every scanner
+  numbers by, so turn *n* here is turn *n* on the charts, in the phase
+  ranges, and in the narrator's turn groups. Sub-agent turns are not
+  on that axis and never become excerpt rows: the cards show what the
+  judges read.
 - **Bounded page size.** A real run's groups span more than a thousand
   turns, so the whole store is never inlined: only turns inside a turn
   group, at `TEXT_CHARS` each, under a per-card budget
@@ -33,9 +35,9 @@ from typing import Any
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.scanners.helpers import (
+    Lanes,
     message_reasoning,
-    model_turns,
-    nearest_agent_span,
+    orchestrator_turns,
     span_task_text,
 )
 
@@ -52,7 +54,10 @@ _TOOLS_SHOWN = 6
 
 
 _ORCHESTRATOR = "orchestrator"
-"""Lane name for a span-less model turn (see `Excerpt.lane`)."""
+"""The lane name of every excerpt (see `Excerpt.lane`)."""
+
+
+COMPACTION_NOTE = "compaction summary call (the summarizer, not the agent)"
 
 
 @dataclass(frozen=True)
@@ -60,12 +65,10 @@ class Excerpt:
     """One model turn's excerpt, as a card renders it.
 
     Attributes:
-        turn: The turn number, on the report's shared turn axis.
-        lane: The turn's agent lane - the sub-agent span's name, or
-            ``"orchestrator"`` for a span-less turn (the token
-            timeline records the same lane as ``None`` there; a
-            reader needs it named, and "orchestrator" is what the
-            report's sub-agent section already calls that lane).
+        turn: The orchestrator turn number (the report's turn axis).
+        lane: Always ``"orchestrator"``: excerpts are orchestrator
+            turns only, and the card names the lane rather than
+            leaving it implied.
         tools: The turn's tool calls, as names ("" for a prose turn);
             the tail beyond `_TOOLS_SHOWN` is counted, not dropped.
         text: The turn's own text, whitespace-flattened and capped at
@@ -87,28 +90,6 @@ class Excerpt:
     truncated: bool
     note: str | None = None
     reasoning: str = ""
-
-
-COMPACTION_NOTE = "compaction summary call (the summarizer, not the agent)"
-
-
-def mark_compaction_turns(
-    excerpts: dict[int, Excerpt], turns: Iterable[int]
-) -> dict[int, Excerpt]:
-    """Note the turns that were summarization calls.
-
-    A summary compaction's ``generate()`` is a model event like any other,
-    so it holds a turn on the shared axis and its excerpt is the summary
-    body. Unmarked, a card presents that as the agent pausing to recap.
-    ``turns`` derives from the flushes frame (the turn before a flush with
-    a recorded ``compaction_prompt`` is its summarization call), so the
-    card's marker and the flush list can never disagree.
-    """
-    marked = dict(excerpts)
-    for turn in turns:
-        if turn in marked:
-            marked[turn] = replace(marked[turn], note=COMPACTION_NOTE)
-    return marked
 
 
 @dataclass(frozen=True)
@@ -146,6 +127,25 @@ class TranscriptExtras:
     excerpts: dict[int, Excerpt] = field(default_factory=dict)
     spawn_prompts: dict[str, SpawnPrompt] = field(default_factory=dict)
     tool_counts: dict[int, int] = field(default_factory=dict)
+
+
+def mark_compaction_turns(
+    excerpts: dict[int, Excerpt], turns: Iterable[int]
+) -> dict[int, Excerpt]:
+    """Note the turns that were summarization calls.
+
+    A summary compaction's ``generate()`` is a model event like any other,
+    so it holds a turn on the shared axis and its excerpt is the summary
+    body. Unmarked, a card presents that as the agent pausing to recap.
+    ``turns`` derives from the flushes frame (the turn before a flush with
+    a recorded ``compaction_prompt`` is its summarization call), so the
+    card's marker and the flush list can never disagree.
+    """
+    marked = dict(excerpts)
+    for turn in turns:
+        if turn in marked:
+            marked[turn] = replace(marked[turn], note=COMPACTION_NOTE)
+    return marked
 
 
 def read_transcript_extras(
@@ -251,15 +251,15 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
     from each.
 
     ``events`` is the only content asked for: model events for the turns
-    and their text, span_begin events for the lane names and each
-    sub-agent span's spawn-task metadata. Reading messages as well would
+    and their text, span events for the lane tree and each sub-agent
+    span's spawn-task metadata. Reading messages as well would
     double the read for nothing - the turn axis is an event axis.
 
     Each transcript's read is guarded on its own, so the result holds
     every transcript that could be read and omits only those that could
     not (each named on stderr).
     """
-    content = TranscriptContent(events=["model", "span_begin"])
+    content = TranscriptContent(events=["model", "span_begin", "span_end"])
     found: dict[str, TranscriptExtras] = {}
     async with transcripts_from(location).reader() as reader:
         infos = [info async for info in reader.index() if info.transcript_id in wanted]
@@ -287,13 +287,13 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
 
 
 def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, Excerpt]:
-    """Excerpt every model turn of one transcript that carries text
-    or reasoning-block content.
+    """Excerpt every orchestrator turn of one transcript that carries
+    text or reasoning-block content.
 
     Turns with neither (content-free tool-call-only turns) get no
     excerpt but still consume their turn number, since the axis is
-    `helpers.model_turns`' own enumeration - the module docstring has
-    why that sharing is load-bearing.
+    `helpers.orchestrator_turns`' own enumeration - the module docstring
+    has why that sharing is load-bearing.
 
     Provider-failure placeholder turns (the OpenClaw
     ``[assistant turn failed ...]`` text) are excerpted like any other
@@ -309,19 +309,17 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
     Returns:
         ``{turn: Excerpt}`` for the turns carrying text or reasoning.
     """
-    spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
     found: dict[int, Excerpt] = {}
-    for turn, (event, calls) in enumerate(model_turns(transcript)):
+    for turn, event, calls in orchestrator_turns(transcript):
         message = event.output.message
         raw = (getattr(message, "text", None) or "") if message else ""
         text = " ".join(raw.split())
         reasoning = message_reasoning(message)
         if not text and not reasoning:
             continue
-        span = nearest_agent_span(spans, getattr(event, "span_id", None))
         found[turn] = Excerpt(
             turn=turn,
-            lane=span.name if span is not None else _ORCHESTRATOR,
+            lane=_ORCHESTRATOR,
             tools=_tools_label(calls),
             text=text[:text_chars],
             truncated=len(text) > text_chars or len(reasoning) > text_chars,
@@ -345,47 +343,41 @@ def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
     is, so this expandable can never show a different task text than the
     one the sub-agent was classified against.
 
-    Only `span_task_text`'s first-tier source (the span-begin metadata's
-    own ``task``/``prompt`` field) is read here. Its second-tier fallback
-    needs the span's first model event threaded in, which would mean
-    reproducing `helpers.subagent_span_begins`' main-lane detection - a
-    materially bigger apparatus built for a different job. A span with no
-    ``task``/``prompt`` on its metadata is simply absent from the result,
-    the same honest absence a model turn with no text gets.
+    The spans and each one's first model event (the handoff-input
+    fallback `span_task_text` reads when the span's metadata carries no
+    task) come from `helpers.Lanes`, the same resolution the loader
+    uses. A span with no task text from either source is simply absent
+    from the result, the same honest absence a model turn with no text
+    gets.
 
     Args:
         transcript: The transcript to read (anything with ``events``).
 
     Returns:
-        ``{agent_span_id: SpawnPrompt}`` for the spans whose own
-        metadata records a task/prompt.
+        ``{agent_span_id: SpawnPrompt}`` for the spans with task text.
     """
+    lanes = Lanes(transcript)
     found: dict[str, SpawnPrompt] = {}
-    for event in transcript.events:
-        if event.event != "span_begin":
-            continue
-        text, _source = span_task_text(event, None)
-        if not text:
-            continue
-        found[event.id] = SpawnPrompt(text=text, truncated=False)
+    for begin in lanes.begins:
+        text, _source = span_task_text(begin, lanes.first_models.get(begin.id))
+        if text:
+            found[begin.id] = SpawnPrompt(text=text, truncated=False)
     return found
 
 
 def _tool_call_counts(transcript: Any) -> dict[int, int]:
-    """Per-turn tool-call counts on the same `helpers.model_turns` axis
-    the excerpts use - every model turn, text-bearing or not (a
-    tool-only turn has calls but no excerpt), so the phase cards can sum
-    a turn range for their tool-call sort and tag.
+    """Per-turn tool-call counts on the same `helpers.orchestrator_turns`
+    axis the excerpts use - every orchestrator turn, text-bearing or not
+    (a tool-only turn has calls but no excerpt), so the phase cards can
+    sum a turn range for their tool-call sort and tag.
 
     Descriptive, not an audited total: it counts the calls the
-    transcript's own model turns record. Sub-agent tool events that
-    ride OUTSIDE model turns (the .eval handoff shape `frames.lane_activity`
-    covers) are not in it - summing both here would double-count the
-    OpenClaw shape, where sub-agent turns are model turns too.
+    orchestrator's own model turns record; a sub-agent's tool calls are
+    its own (`frames.lane_activity`, the subagents frame).
     """
     return {
         turn: len(calls)
-        for turn, (_event, calls) in enumerate(model_turns(transcript))
+        for turn, _event, calls in orchestrator_turns(transcript)
         if calls
     }
 

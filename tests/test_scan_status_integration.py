@@ -11,6 +11,7 @@ from inspect_scout import Loader, Transcript, loader, scanner
 
 import transect
 import transect.api as api
+from transect.scanners import helpers
 from transect.scanners.cohort import batch_item_content
 
 
@@ -192,3 +193,35 @@ def test_status_load_preserves_custom_frame_columns(monkeypatch):
     result = transect.load(str(path))
     assert seen
     assert result.scan_status.scanners
+
+
+def test_an_unresolvable_orchestrator_lane_surfaces_as_a_scan_error(
+    demo_log, tmp_path, monkeypatch
+):
+    """A transcript with no single orchestrator lane errors per scanner,
+    is named in the scan status section, and never renders a guessed
+    axis."""
+
+    def ambiguous(transcript):
+        raise ValueError(
+            "transcript has 2 top-level agents ('one', 'two') and no single "
+            "orchestrator lane; transect numbers one orchestrator's turns"
+        )
+
+    monkeypatch.setattr(helpers, "main_span", ambiguous)
+    result = transect.transect(
+        str(demo_log),
+        transect.Spec(),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+    )
+    assert result.scan_status.has_failures
+    timeline = next(
+        s for s in result.scan_status.scanners if s.scanner == "token_timeline"
+    )
+    assert timeline.errors == 1
+    assert result.token_timeline.empty
+    readable = " ".join(_status_element(result.report_paths[0]).itertext())
+    assert "no single orchestrator lane" in readable
+    assert "'one', 'two'" in readable

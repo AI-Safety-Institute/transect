@@ -19,12 +19,11 @@ from inspect_scout import Loader, Result, Scanner, Transcript, loader, scanner
 
 from transect.scanners.cohort import cohort_llm_scanner
 from transect.scanners.helpers import (
+    Lanes,
     SpanActivity,
     capped_lines,
-    main_span,
     span_activity,
     span_task_text,
-    subagent_span_begins,
 )
 from transect.spec import Spec
 
@@ -58,11 +57,9 @@ def agent_spans() -> Loader[Transcript]:
     """
 
     async def load(transcript: Transcript) -> AsyncIterator[Transcript]:
-        main = main_span(transcript)
-        begins, first_models = subagent_span_begins(transcript, main)
-        spans = {e.id: e for e in transcript.events if e.event == "span_begin"}
-        for span in begins:  # event order
-            task, source = span_task_text(span, first_models.get(span.id))
+        lanes = Lanes(transcript)
+        for span in lanes.begins:  # event order
+            task, source = span_task_text(span, lanes.first_models.get(span.id))
             task_truncated = len(task) > _PROMPT_CHARS
             task = task[:_PROMPT_CHARS]
             if not task:
@@ -70,7 +67,7 @@ def agent_spans() -> Loader[Transcript]:
             messages: list[ChatMessage] = [
                 ChatMessageUser(content=f"name: {span.name}\ntask: {task}")
             ]
-            digest = _activity_digest(span_activity(transcript, span.id, spans))
+            digest = _activity_digest(span_activity(lanes, span.id))
             if digest:
                 messages.append(ChatMessageUser(content=digest))
             yield Transcript(

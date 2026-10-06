@@ -228,7 +228,8 @@ to reload that exact scan rather than whichever scan is latest in its parent.
 
 ![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
 
-Top to bottom, everything on a shared turn axis:
+Top to bottom, everything on the orchestrator's turn axis (sub-agents
+appear as swimlanes placed by wall-clock, never as turns of their own):
 
 - **Flags**: a red flag at the very top marks scan execution failures; it
   links to the run-wide "Scan execution & coverage" section at the bottom,
@@ -239,7 +240,8 @@ Top to bottom, everything on a shared turn axis:
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions
   and any recorded compaction threshold marked.
-- **Sub-agent activity**: one swimlane per spawned sub-agent, with its classified role.
+- **Sub-agent activity**: one swimlane box per spawned sub-agent spanning the
+  orchestrator turns active while it ran, with its classified role.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
@@ -267,7 +269,7 @@ frames["transcript_info"]  # one row per transcript: task, model, outcome, setup
 frames["token_timeline"]  # per-turn token usage + context size
 frames["flushes"]  # compaction tokens, role, metadata, Inspect prompt + nudge
 frames["interventions"]  # mid-run human interventions
-frames["lane_activity"]  # per-turn sub-agent tool activity
+frames["lane_activity"]  # sub-agent tool activity per orchestrator turn
 frames["phases"]  # stitched phases + reliability
 frames["phase_turns"]  # per-turn phase attribution
 frames["turn_groups"]  # narrated turn groups within each phase
@@ -328,15 +330,20 @@ erDiagram
         string system_prompt "verbatim; the long prompts sit last"
         string compaction_prompt "configured Inspect template, if recorded"
     }
-    token_timeline["token_timeline (one row per model turn)"] {
-        int turn PK
-        string agent_span_id FK "sub-agent lane; NA on the main lane"
+    token_timeline["token_timeline (one row per model turn, any lane)"] {
+        int turn PK "orchestrator turn; NA on a sub-agent's own turns"
+        int lane_turn "ordinal within the turn's own lane"
+        string agent_span_id FK "sub-agent lane; NA on the orchestrator"
+        string timestamp "model call start, ISO"
+        string completed "model call completion, ISO"
         int output_tokens
         int new_work
         int context
     }
     flushes["flushes (one row per context compaction)"] {
         int turn FK
+        string agent_span_id "sub-agent lane; NA on the orchestrator"
+        int lane_turn "first post-flush turn of the compacted lane"
         string type
         int tokens_before
         int tokens_after
@@ -356,8 +363,8 @@ erDiagram
         string prompt "the question or tool call put to the human; None when human-initiated"
         string outcome "accepted/declined/cancelled or the approval decision"
     }
-    lane_activity["lane_activity (one row per (turn, sub-agent span))"] {
-        int turn FK
+    lane_activity["lane_activity (one row per (orchestrator turn, sub-agent span))"] {
+        int turn FK "orchestrator turn preceding the tool event"
         string agent_span_id FK
         int tool_calls
         float busy_seconds
@@ -369,6 +376,9 @@ erDiagram
         string phase FK
         int turn_start
         int turn_end
+        float new_work_tokens "orchestrator new-work"
+        float delegated_new_work_tokens "spans spawned in the phase"
+        int n_subagents
         string headline
         string narration_group_status
         float confidence
@@ -401,9 +411,15 @@ erDiagram
         string title
         string gist
     }
-    subagents["subagents (one row per classified sub-agent)"] {
+    subagents["subagents (one row per sub-agent span)"] {
         string agent_span_id PK
         string agent_lane
+        int spawn_turn "orchestrator turn that spawned it"
+        int anchor_turn "orchestrator turn active at its first activity"
+        int end_turn "orchestrator turn active at its end"
+        string turn_source "timestamp or event_order"
+        string started_at
+        string ended_at
         string label FK
         float confidence
         string label_source
@@ -527,7 +543,11 @@ Each `Layer` field is one surface, all optional:
   voting, verifier, and batching; structural scanners are $0. Pass
   the factory un-invoked: `transect()` calls it with the judge
   arguments its signature declares, the loaded `spec` when declared,
-  and any `scanner_args={...}` on the layer.
+  and any `scanner_args={...}` on the layer. `reasoning_turns()`
+  numbers its items on the orchestrator turn axis; a loader or
+  scanner of your own numbers turns the same way, with
+  `transect.scanners.helpers.orchestrator_turns` (a sub-agent's own
+  model calls are not turns).
 - **frame** - post-processes the scan results into the layer's
   dataframe (`turns_frame`: one judged row per turn), or injects a
   ready dataframe with your own data.

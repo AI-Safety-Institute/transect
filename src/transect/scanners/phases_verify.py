@@ -9,17 +9,15 @@ from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
 from transect.scanners.cohort import _SPOT_DEFAULT, LOWCONF, Trigger, VerifierReview
-from transect.scanners.helpers import capped_lines
 from transect.scanners.phases_cohort import ConsensusJudgement
 from transect.scanners.phases_common import (
-    EVIDENCE_LINES,
     Digest,
     PhaseReview,
     StitchedPhase,
     call_judge,
     context_blocks,
-    digest_line,
     gather_judge_calls,
+    phase_evidence,
     resolve_phases,
     stitch_phases,
     vocab_lines,
@@ -39,7 +37,7 @@ _VERIFY_HEAD = (
 class _Verdict(BaseModel):
     """One phase's verifier verdict.
 
-    JUDGE-FACING: the Field descriptions render in the answer() tool."""
+    Judge-facing: the Field descriptions render in the answer() tool."""
 
     phase_index: int = Field(description="The PHASE index being reviewed, as shown.")
     phase: str  # judge-facing wording lives on the _VocabVerdict override
@@ -232,7 +230,7 @@ async def verify_phases(
     return _apply_verdicts(digest_judgements, phases, attempts, audit, str(judge))
 
 
-def verify_system_prompt(spec: Spec, task_prompt: str = "") -> str:
+def verify_system_prompt(spec: Spec, task_prompt: str) -> str:
     """Render the verifier system prompt.
 
     Args:
@@ -315,18 +313,9 @@ def _verify_user_prompt(
         p = phases[k]
         prev_l = phases[k - 1].phase if k > 0 else "(none)"
         next_l = phases[k + 1].phase if k + 1 < len(phases) else "(none)"
-        members = capped_lines(
-            [
-                digest_line(by_turn[turn])
-                for turn in range(p.turn_start, p.turn_end + 1)
-                if turn in by_turn
-            ],
-            EVIDENCE_LINES,
-        )
-        lines = "\n".join(members)
         blocks.append(
             f"PHASE {k} [current={p.phase} confidence={p.confidence} "
-            f"prev={prev_l} next={next_l}]:\n{lines}"
+            f"prev={prev_l} next={next_l}]:\n{phase_evidence(p, by_turn)}"
         )
     return "Review these phases:\n\n" + "\n\n".join(blocks)
 
@@ -336,7 +325,7 @@ def _apply_verdicts(
     phases: list[StitchedPhase],
     attempts: dict[int, _ReviewAttempt],
     audit: VerifierAudit,
-    verifier_model: str | None = None,
+    verifier_model: str | None,
 ) -> tuple[list[StitchedPhase], VerifierAudit]:
     """Apply verifier verdicts: repairs, re-stitch, flags, audit counts.
 
@@ -351,6 +340,7 @@ def _apply_verdicts(
         phases: The pre-verification phases.
         attempts: phase index -> review attempt, for every selected phase.
         audit: The audit to fill.
+        verifier_model: The verifier's model name, stamped on every review.
 
     Returns:
         ``(phases, audit)`` with flags attached.
@@ -362,61 +352,47 @@ def _apply_verdicts(
         attempt = attempts[k]
         verdict = attempt.verdict
         p = phases[k]
-        trigger = attempt.trigger
+        review = VerifierReview(
+            trigger=attempt.trigger,
+            original_label=p.phase,
+            original_confidence=p.confidence,
+            original_explanation=p.explanation,
+            verifier_model=verifier_model,
+        )
         if verdict is None:
-            reviews.append(
-                PhaseReview(
-                    original_phase_index=k,
-                    turn_start=p.turn_start,
-                    turn_end=p.turn_end,
-                    review=VerifierReview(
-                        trigger=trigger,
-                        original_label=p.phase,
-                        original_confidence=p.confidence,
-                        original_explanation=p.explanation,
-                        verifier_model=verifier_model,
-                        status=attempt.status,
-                    ),
-                )
-            )
-            continue
-        differs = verdict.phase != p.phase
-        applied = differs and verdict.confidence >= LOWCONF
-        if differs and not applied:
-            audit.n_weak_relabel += 1
-        explanation = verdict.explanation.strip()[:120]
-        if applied:
-            audit.n_relabelled += 1
-            if trigger == "random_sample":
-                audit.n_random_sample_relabelled += 1
-            applied_any = True
-            for row in digest_judgements:
-                if p.turn_start <= row.turn <= p.turn_end and row.basis in (
-                    "judged",
-                    "filled",
-                ):
-                    row.phase = verdict.phase
-                    row.confidence = verdict.confidence
-                    row.explanation = explanation
-                    row.source = "verifier"
-                    row.confidence_pm = 0.0
-                    row.agreement = None
+            review.status = attempt.status
+        else:
+            differs = verdict.phase != p.phase
+            applied = differs and verdict.confidence >= LOWCONF
+            if differs and not applied:
+                audit.n_weak_relabel += 1
+            explanation = verdict.explanation.strip()[:120]
+            if applied:
+                audit.n_relabelled += 1
+                if attempt.trigger == "random_sample":
+                    audit.n_random_sample_relabelled += 1
+                applied_any = True
+                for row in digest_judgements:
+                    if p.turn_start <= row.turn <= p.turn_end and row.basis in (
+                        "judged",
+                        "filled",
+                    ):
+                        row.phase = verdict.phase
+                        row.confidence = verdict.confidence
+                        row.explanation = explanation
+                        row.source = "verifier"
+                        row.confidence_pm = 0.0
+                        row.agreement = None
+            review.verifier_label = verdict.phase
+            review.verifier_confidence = verdict.confidence
+            review.verifier_explanation = explanation
+            review.overturned = applied
         reviews.append(
             PhaseReview(
                 original_phase_index=k,
                 turn_start=p.turn_start,
                 turn_end=p.turn_end,
-                review=VerifierReview(
-                    trigger=trigger,
-                    original_label=p.phase,
-                    original_confidence=p.confidence,
-                    original_explanation=p.explanation,
-                    verifier_label=verdict.phase,
-                    verifier_confidence=verdict.confidence,
-                    verifier_explanation=explanation,
-                    verifier_model=verifier_model,
-                    overturned=applied,
-                ),
+                review=review,
             )
         )
     result = stitch_phases(digest_judgements) if applied_any else phases

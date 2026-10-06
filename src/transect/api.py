@@ -268,6 +268,13 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     # judge scanners are opt-in: absent from the scan -> empty frames
     raw_phases = results.scanners.get("decision_phases", pd.DataFrame())
     raw_subagents = results.scanners.get("subagent_classification", pd.DataFrame())
+    # the phases frame reads the spans' spawn turns, so sub-agents first
+    subagents = subagents_df(
+        raw_subagents,
+        timeline_results=raw,
+        lane_activity=lane_activity,
+        token_timeline=token_timeline,
+    )
     transcripts = getattr(results.spec, "transcripts", None)
     transect_results = TransectResults(
         scan_location=scan_location,
@@ -282,13 +289,12 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
             raw_phases,
             phase_turns=(phase_turns := phase_turns_df(raw_phases)),
             token_timeline=token_timeline,
+            subagents=subagents,
         ),
         phase_turns=phase_turns,
         turn_groups=turn_groups_df(raw_phases),
         phase_turn_votes=phase_turn_votes_df(raw_phases),
-        subagents=subagents_df(
-            raw_subagents, lane_activity=lane_activity, token_timeline=token_timeline
-        ),
+        subagents=subagents,
         subagent_votes=subagent_votes_df(raw_subagents),
         label_definitions=label_definitions_df(
             raw_phases,
@@ -639,10 +645,12 @@ def _epoch_view(results: TransectResults, epoch: int) -> TransectResults:
 
 
 def _n_turns(token_timeline: pd.DataFrame) -> dict[str, int]:
-    """Per-transcript turn counts off the timeline's turn indices."""
-    if not len(token_timeline):
+    """Per-transcript orchestrator turn counts off the timeline's turn
+    indices (sub-agent rows carry no turn and do not count)."""
+    main = token_timeline.dropna(subset=["turn"])
+    if not len(main):
         return {}
-    counts = token_timeline.groupby("transcript_id").turn.max().add(1)
+    counts = main.groupby("transcript_id").turn.max().add(1)
     return {str(tid): int(n) for tid, n in counts.items()}
 
 

@@ -3,10 +3,17 @@ human_intervention - judged by what they extract from event streams."""
 
 import pytest
 from helpers import agent_span, model_turn, run_scan, tool_event
-from inspect_ai.event import ApprovalEvent, CompactionEvent, InputEvent
+from inspect_ai.event import (
+    ApprovalEvent,
+    CompactionEvent,
+    InputEvent,
+    SpanBeginEvent,
+    SpanEndEvent,
+)
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, ModelUsage
 from inspect_ai.tool import ToolCall
 
+from transect.scanners import helpers
 from transect.scanners.base import context_flush, human_intervention, token_timeline
 
 
@@ -18,45 +25,121 @@ def usage(input_tokens=100, output_tokens=10):
     )
 
 
-def test_token_timeline_emits_one_entry_per_model_turn_with_usage():
-    """Every model turn lands as one timeline entry carrying the
-    provider-reported usage fields verbatim; None where unreported."""
-    events = [
-        model_turn("a", usage=usage(100, 10)),
-        model_turn("b"),
-        model_turn("c", usage=usage(300, 30)),
-    ]
-    value = run_scan(token_timeline(), events).value
-    timeline = value["timeline"]
-    assert [entry["turn"] for entry in timeline] == [0, 1, 2]
-    assert timeline[0]["input_tokens"] == 100
-    assert timeline[1]["input_tokens"] is None
-    assert timeline[2]["output_tokens"] == 30
-
-
-def test_token_timeline_attributes_turns_to_their_sub_agent_lane():
-    """A sub-agent's own model turns carry its span; main-lane turns
-    carry no lane, even when the lead agent has an agent span (handoff
-    .eval shape)."""
+def test_token_timeline_numbers_orchestrator_turns_and_lane_turns():
+    """Main-lane turns take 0,1; a sub-agent's turns take no turn but
+    count within their own lane; usage and timestamps ride along."""
     events = [
         *agent_span(
             "R",
             "react",
             inner=[
-                model_turn("lead"),
-                *agent_span("C", "eda", inner=[model_turn("sub")], parent_id="R"),
-                model_turn("lead again"),
+                model_turn("lead", usage=usage(100, 10)),
+                *agent_span(
+                    "C",
+                    "eda",
+                    inner=[model_turn("s0"), model_turn("s1")],
+                    parent_id="R",
+                ),
+                model_turn("lead again", usage=usage(300, 30)),
             ],
         ),
     ]
     value = run_scan(token_timeline(), events).value
-    lanes = [entry["agent_lane"] for entry in value["timeline"]]
-    assert lanes == [None, "eda", None]
+    rows = [(e["turn"], e["lane_turn"], e["agent_lane"]) for e in value["timeline"]]
+    assert rows == [(0, 0, None), (None, 0, "eda"), (None, 1, "eda"), (1, 1, None)]
+    assert value["timeline"][0]["input_tokens"] == 100
+    assert value["timeline"][1]["input_tokens"] is None
+    assert value["timeline"][3]["output_tokens"] == 30
+    assert all(isinstance(e["timestamp"], str) for e in value["timeline"])
 
 
-def test_lane_activity_counts_tool_events_per_sub_agent_turn():
-    """Tool-only sub-agents (no model turns of their own) surface in
-    lane_activity, anchored to the initiating model turn."""
+def test_an_init_phase_model_call_is_off_the_axis_and_out_of_every_lane():
+    """A model call outside the orchestrator and every sub-agent (an
+    Inspect init or scorer call) gets no turn and no lane turn."""
+    init_call = model_turn("init call")
+    events = [
+        SpanBeginEvent(id="init", parent_id=None, type="init", name="init"),
+        init_call,
+        SpanEndEvent(id="init"),
+        SpanBeginEvent(id="solvers", parent_id=None, type="solvers", name="solvers"),
+        *agent_span("R", "react", inner=[model_turn("lead")], parent_id="solvers"),
+        SpanEndEvent(id="solvers"),
+    ]
+    init_call.span_id = "init"
+    value = run_scan(token_timeline(), events).value
+    rows = [(e["turn"], e["lane_turn"], e["agent_lane"]) for e in value["timeline"]]
+    assert rows == [(None, None, None), (0, 0, None)]
+
+
+@pytest.mark.parametrize(
+    ("events", "spawn_turn", "end_turn"),
+    [
+        (
+            [
+                *agent_span(
+                    "R",
+                    "react",
+                    inner=[
+                        model_turn("lead"),
+                        *agent_span(
+                            "C",
+                            "eda",
+                            inner=[model_turn("sub"), tool_event("t", span_id="C")],
+                            parent_id="R",
+                        ),
+                        model_turn("wrap"),
+                    ],
+                )
+            ],
+            0,
+            0,
+        ),
+        (
+            [*agent_span("C", "eda", inner=[model_turn("sub")]), model_turn("lead")],
+            0,
+            0,
+        ),
+    ],
+    ids=["handoff", "spawned-before-the-first-turn"],
+)
+def test_span_record_anchors_spawn_and_end_by_orchestrator_turn(
+    events, spawn_turn, end_turn
+):
+    """Each sub-agent span records the orchestrator turn before its begin
+    and before its end (zero for a span begun before any main turn), its
+    activity timestamps, and a recorded end."""
+    (span,) = run_scan(token_timeline(), events).value["spans"]
+    assert (span["agent_span_id"], span["agent_lane"]) == ("C", "eda")
+    assert (span["spawn_turn"], span["event_order_end_turn"]) == (spawn_turn, end_turn)
+    assert span["end_recorded"] is True
+    assert span["first_at"] <= span["last_at"] <= span["end_at"]
+
+
+def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
+    """A span outside the shared sub-agent definition (a timeline utility
+    span) gets no span record and no lane activity."""
+    events = [
+        model_turn("lead"),
+        *agent_span(
+            "U", "titler", inner=[model_turn("t"), tool_event("x", span_id="U")]
+        ),
+        *agent_span("C", "eda", inner=[model_turn("s"), tool_event("y", span_id="C")]),
+    ]
+    real = helpers.subagent_span_begins
+
+    def only_eda(transcript, main):
+        begins, firsts = real(transcript, main)
+        return [b for b in begins if b.id == "C"], firsts
+
+    monkeypatch.setattr(helpers, "subagent_span_begins", only_eda)
+    value = run_scan(token_timeline(), events).value
+    assert [s["agent_span_id"] for s in value["spans"]] == ["C"]
+    assert [r["agent_span_id"] for r in value["lane_activity"]] == ["C"]
+
+
+def test_lane_activity_counts_tool_events_per_orchestrator_turn():
+    """Tool-only sub-agents surface in lane_activity, anchored to the
+    orchestrator turn that preceded the tool event."""
     events = [
         model_turn("orchestrator"),
         *agent_span("A", "worker", inner=[tool_event("t1", span_id="A")]),
@@ -94,26 +177,8 @@ def test_lane_activity_excludes_the_main_lane_and_folded_spawn_calls():
     ]
 
 
-def test_span_ends_record_sub_agent_completions_only():
-    """span_ends anchors each sub-agent span's close to a turn; the main
-    lane's own span end is not a completion marker."""
-    events = [
-        *agent_span(
-            "R",
-            "react",
-            inner=[
-                model_turn("lead"),
-                *agent_span("C", "eda", inner=[model_turn("sub")], parent_id="R"),
-                model_turn("wrap"),
-            ],
-        ),
-    ]
-    value = run_scan(token_timeline(), events).value
-    assert [(e["agent_span_id"], e["turn"]) for e in value["span_ends"]] == [("C", 1)]
-
-
 def test_context_flush_records_compaction_events_at_their_turn():
-    """A compaction event lands with the count of model turns before it
+    """A compaction event lands with the count of orchestrator turns before it
     and the event's own type/source/token fields."""
     events = [
         model_turn("a"),
@@ -127,6 +192,8 @@ def test_context_flush_records_compaction_events_at_their_turn():
     (flush,) = value["flushes"]
     assert flush == {
         "turn": 2,
+        "agent_span_id": None,
+        "lane_turn": 2,
         "type": "summary",
         "source": "inspect",
         "tokens_before": 900,
@@ -136,6 +203,37 @@ def test_context_flush_records_compaction_events_at_their_turn():
         "compaction_prompt": None,
         "compaction_nudge": None,
     }
+
+
+def test_a_sub_agent_compaction_is_kept_with_its_lane():
+    """A compaction inside a sub-agent span is a flush row that names its
+    lane and the lane turn it precedes; the orchestrator's names no lane
+    and its lane turn is its axis turn."""
+    events = [
+        model_turn("lead"),
+        *agent_span(
+            "C",
+            "eda",
+            inner=[
+                model_turn("s0"),
+                CompactionEvent(
+                    type="summary",
+                    source="inspect",
+                    tokens_before=10,
+                    tokens_after=5,
+                    span_id="C",
+                ),
+                model_turn("s1"),
+            ],
+        ),
+        CompactionEvent(
+            type="summary", source="inspect", tokens_before=20, tokens_after=8
+        ),
+        model_turn("lead 2"),
+    ]
+    value = run_scan(context_flush(), events).value
+    rows = [(f["turn"], f["agent_span_id"], f["lane_turn"]) for f in value["flushes"]]
+    assert rows == [(1, "C", 1), (1, None, 1)]
 
 
 def test_no_compaction_events_means_no_flushes():
@@ -149,7 +247,7 @@ def test_no_compaction_events_means_no_flushes():
 )
 def test_human_messages_become_interventions_by_source(source, channel):
     """Operator steering and post-task console input register with
-    their channel and the model turn they precede (assistant messages are
+    their channel and the orchestrator turn they precede (assistant messages are
     counted when no event stream records them)."""
     messages = [
         ChatMessageUser(content="the task", source="input"),
@@ -245,8 +343,9 @@ def _intervention_shape(name):
             2,
         )
     if name == "as_tool_lane_flush":
-        # an as_tool sub-agent compacts inside the lead's tool call: its
-        # turns are on the axis, its messages never enter the lead's history
+        # an as_tool sub-agent compacts inside the lead's tool call: it runs
+        # in its own agent span, so its turns and its flush are off the
+        # axis, and its messages never enter the lead's history
         sub1, subsum, sub2 = (
             model_turn("sub"),
             model_turn("sub recap"),
@@ -254,8 +353,9 @@ def _intervention_shape(name):
         )
         leadsum = model_turn("recap")
         a2 = model_turn("blend", input=[task, summary, note])
-        events = [a0, sub1, subsum, _flush(), sub2, leadsum, _flush(), a2]
-        return events, [task, a0.output.message, summary, note, a2.output.message], 5
+        sub = agent_span("C", "sub", inner=[sub1, subsum, _flush(), sub2])
+        events = [a0, *sub, leadsum, _flush(), a2]
+        return events, [task, a0.output.message, summary, note, a2.output.message], 2
     if name == "forced_after_threshold":
         # overflow recovery replaces the history with the new summary, so
         # the earlier flush and its summary are gone from the history
@@ -285,7 +385,7 @@ def _intervention_shape(name):
     ],
 )
 def test_operator_messages_sit_on_the_event_turn_axis(shape):
-    """A human message precedes the first model turn whose input saw it;
+    """A human message precedes the first orchestrator turn whose input saw it;
     a summarization call (a turn with no assistant message in the history)
     never shifts that, whatever other compactions the run recorded."""
     events, history, turn = _intervention_shape(shape)
@@ -293,6 +393,33 @@ def test_operator_messages_sit_on_the_event_turn_axis(shape):
         "interventions"
     ]
     assert intervention["turn"] == turn
+
+
+@pytest.mark.parametrize(
+    "recorded", [True, False], ids=["note-in-next-input", "note-unrecorded"]
+)
+def test_sub_agent_assistant_messages_do_not_advance_the_axis(recorded):
+    """A handoff appends the sub-agent's messages to the thread; an
+    operator note after them lands on the next orchestrator turn, whether
+    that turn's input recorded the note or the footprint fallback has to
+    count orchestrator assistant messages only."""
+    note = ChatMessageUser(content="steer", source="operator", id="note")
+    task = ChatMessageUser(content="task", source="input", id="task")
+    lead0 = model_turn("lead 0", input=[task])
+    sub0 = model_turn("sub 0")
+    lead1 = model_turn("lead 1", input=[task, note] if recorded else [task])
+    events = [lead0, *agent_span("C", "eda", inner=[sub0]), lead1]
+    messages = [
+        task,
+        ChatMessageAssistant(content="lead 0", id=lead0.output.message.id),
+        ChatMessageAssistant(content="sub 0", id=sub0.output.message.id),
+        note,
+        ChatMessageAssistant(content="lead 1", id=lead1.output.message.id),
+    ]
+    value = run_scan(human_intervention(), events, messages).value
+    assert [(i["turn"], i["channel"]) for i in value["interventions"]] == [
+        (1, "operator")
+    ]
 
 
 def test_the_first_input_message_is_the_task_not_an_intervention():

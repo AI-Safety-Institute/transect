@@ -20,6 +20,7 @@ from transect.report.embed import (
     _tip_floor,
     wrap_row_px,
 )
+from transect.report.lanes_layout import SpanGeometry
 from transect.spec import Spec
 
 SCENARIOS = {
@@ -33,6 +34,11 @@ SCENARIOS = {
         {"sample": "fixture-sample-1"},
         ["Eval setup", "Token telemetry"],
     ),
+    "parallel-subagents": (
+        "tests/fixtures/parallel_logs",
+        {},
+        ["Eval setup", "Token telemetry", "Sub-agent activity"],
+    ),
     "openclaw-import": (
         "tests/fixtures/openclaw/mini_telemetry.jsonl",
         {},
@@ -41,37 +47,6 @@ SCENARIOS = {
         ["Eval setup", "not recorded by source", "Token telemetry"],
     ),
 }
-
-
-@pytest.mark.parametrize("name", SCENARIOS)
-def test_mechanical_report_renders_whole(name, tmp_path):
-    """A $0 scan of this log shape renders a report with its expected
-    sections and no leaked error text."""
-    logs, kwargs, sections = SCENARIOS[name]
-    root = Path(__file__).parents[1]
-    results = _run(
-        logs=str(root / logs), spec=Spec(), scans_dir=str(tmp_path / "s"), **kwargs
-    )
-    results = render(
-        results,
-        report_path=str(tmp_path / "report.html"),
-        viewer=False,
-        open_report=False,
-    )
-    html = Path(results.report_paths[0]).read_text()
-    for section in sections:
-        assert section in html
-    if name == "openclaw-import":
-        assert "Compaction nudge" not in html
-    else:
-        assert "Compaction nudge (before compaction)" in html
-    assert "Traceback" not in html
-    # the Inspect logs record a compaction threshold (row + chart toggle)
-    recorded = name != "openclaw-import"
-    assert ("compaction threshold</span>" in html) == recorded
-    assert ("Compaction threshold:" in html) == recorded
-    assert len(html) > 20_000
-
 
 _STORE_CONTENT = {
     # each store's planted signals, as rendered copy; flags counted
@@ -116,6 +91,38 @@ _STORE_CONTENT = {
         ("Provenance map", 1),
     ),
 }
+
+
+@pytest.mark.parametrize("name", SCENARIOS)
+def test_mechanical_report_renders_whole(name, tmp_path):
+    """A $0 scan of this log shape renders a report with its expected
+    sections and no leaked error text."""
+    logs, kwargs, sections = SCENARIOS[name]
+    root = Path(__file__).parents[1]
+    results = _run(
+        logs=str(root / logs), spec=Spec(), scans_dir=str(tmp_path / "s"), **kwargs
+    )
+    results = render(
+        results,
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
+    )
+    html = Path(results.report_paths[0]).read_text()
+    for section in sections:
+        assert section in html
+    # an OpenClaw import records no compaction configuration at all; the
+    # parallel fixture is an Inspect log run with compaction disabled
+    recorded = name not in ("openclaw-import", "parallel-subagents")
+    if recorded:
+        assert "Compaction nudge (before compaction)" in html
+    else:
+        assert "Compaction nudge" not in html
+    assert "Traceback" not in html
+    # the other Inspect logs record a compaction threshold (row + toggle)
+    assert ("compaction threshold</span>" in html) == recorded
+    assert ("Compaction threshold:" in html) == recorded
+    assert len(html) > 20_000
 
 
 @pytest.mark.parametrize("store", ["demo_scan", "demo_scan_cohort"])
@@ -275,6 +282,45 @@ def test_spend_bars_floor_covers_the_declared_tooltip_rows():
     assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
 
 
+def test_interventions_chart_budgets_its_previews_not_a_generic_two_line_row():
+    """The interventions iframe is floored at its own five rows, the two
+    message previews priced as 60-character prose, so the chart no
+    longer carries a hundred blank pixels under a 94px strip."""
+
+    act = pd.DataFrame(
+        {
+            "turn": [3, 7],
+            "channel": ["approval", "operator_message"],
+            "outcome": ["approved", None],
+            "prompt": ["may I delete the cache? " * 8, None],
+            "content": ["yes, but keep the model artefacts " * 6, "stop and report"],
+        }
+    )
+    _, height = charts.interventions_chart(act, n_turns=10)
+    preview_px = wrap_row_px(charts._PREVIEW_CHARS)
+    assert height == _tip_floor(5, preview_px, preview_px)
+    assert len(charts._preview("x" * 100)) == charts._PREVIEW_CHARS + 1
+
+
+def test_flush_line_counts_the_sub_agent_lane_flushes_it_does_not_list():
+    """The flush list says how many compactions happened in sub-agent
+    lanes (off the turn axis, so neither listed nor charted) instead of
+    presenting the orchestrator's count as the run's total."""
+    flushes = pd.DataFrame(
+        {
+            "turn": [3],
+            "type": ["summary"],
+            "source": ["recorded"],
+            "tokens_before": [1000],
+            "tokens_after": [400],
+            "tokens_after_inferred": [False],
+        }
+    )
+    html = sections.flush_line(flushes, n_off_axis=2)
+    assert "1 context flush(es)" in html and "2 more in sub-agent lanes" in html
+    assert "sub-agent lanes" not in sections.flush_line(flushes, n_off_axis=0)
+
+
 def empty_flushes() -> pd.DataFrame:
     return flushes_df(pd.DataFrame(), pd.DataFrame(columns=["transcript_id"]))
 
@@ -357,7 +403,7 @@ def test_tag_chips_and_selectors_ride_the_phase_cards(tmp_path):
     chips, and the control bar gains one filter selector per family."""
 
     scans = Path(__file__).parent / "fixtures" / "demo_scan"
-    per_turn = pd.DataFrame({"turn": [0, 1, 12], "quality": ["good", "good", "poor"]})
+    per_turn = pd.DataFrame({"turn": [0, 1, 7], "quality": ["good", "good", "poor"]})
     results = render(
         load(
             str(scans),
@@ -368,8 +414,8 @@ def test_tag_chips_and_selectors_ride_the_phase_cards(tmp_path):
         open_report=False,
     )
     html = Path(results.report_paths[0]).read_text()
-    # the store's two phases span turns 0-7 and 10-15: good lands only
-    # on the first card, poor only on the second
+    # the store's two phases span orchestrator turns 0-4 and 5-9: good
+    # lands only on the first card, poor only on the second
     assert html.count('data-tags="|quality=good|"') == 1
     assert html.count('data-tags="|quality=poor|"') == 1
     assert html.count("user-chip") >= 2
@@ -587,3 +633,34 @@ def test_intervention_list_labels_each_shape_by_its_initiator(row, needles):
     for needle in needles:
         assert needle in html, needle
     assert "message (human)" not in html or row["initiator"] == "human"
+
+
+def test_span_tooltip_says_when_a_span_began_before_the_first_turn():
+    """A span clamped at the axis's left edge does not claim turn 0 was
+    active while it ran."""
+    span = pd.DataFrame(
+        {
+            "agent_span_id": ["A"],
+            "agent_lane": ["early"],
+            "turn_source": ["timestamp"],
+            "spawn_turn": [0],
+            "anchor_turn": [0],
+            "end_turn": [0],
+            "label": [None],
+            "label_source": [None],
+            "confidence": [None],
+            "judge_agreement": [None],
+            "n_voting": [None],
+            "n_members": [None],
+            "verifier_selected": [False],
+            "overturned": [False],
+            "verifier_label": [None],
+            "verifier_confidence": [None],
+            "verifier_status": [None],
+            "tool_calls": [1],
+            "busy_seconds": [None],
+        }
+    )
+    geometry = {"A": SpanGeometry("A", "early", -0.5, -0.5, True, before_first=True)}
+    titles = sections.span_titles(span, {}, geometry)
+    assert "began before the first orchestrator turn" in titles["A"]["turns"]

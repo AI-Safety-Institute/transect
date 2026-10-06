@@ -2,7 +2,7 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based model turn (one row each).
+- turn: 0-based orchestrator turn (one row each).
 - phase_index: joins phases_df within the transcript.
 - phase: the turn's label.
 - basis: how the turn got its label - judged / filled / attributed /
@@ -36,7 +36,7 @@ from transect.frames.common import (
 
 
 def phase_turns_df(results: pd.DataFrame) -> pd.DataFrame:
-    """decision_phases results -> one row per model turn."""
+    """decision_phases results -> one row per orchestrator turn."""
     rows = []
     vocabulary: list[str] = []
     for _, r in results.iterrows():

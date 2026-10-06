@@ -21,6 +21,7 @@ from transect.frames.flushes import flushes_df
 from transect.frames.transcript_info import transcript_info_df
 from transect.report.sections import compaction_threshold, eval_setup_blocks
 from transect.scanners.base import context_flush, eval_setup
+from transect.scanners.helpers import orchestrator_turns
 from transect.spec import Spec
 
 
@@ -50,7 +51,8 @@ def test_recorded_prompt_and_nudge_survive_to_the_stored_report(fixture_logs, tm
     # flushes.turn is the first post-flush turn on the 0-based axis, so the
     # summarization call (whose input ends with the prompt) is the turn before
     log = read_eval_log(next(fixture_logs.glob("*.eval")), resolve_attachments=True)
-    model_turns = [e for e in log.samples[0].events if e.event == "model" and e.output]
+    stub = StubTranscript(log.samples[0].events)
+    model_turns = [e for _, e, _ in orchestrator_turns(stub)]
     for flush in flushes.itertuples():
         assert model_turns[flush.turn - 1].input[-1].text == flush.compaction_prompt
     # identical nudges share one pooled message id in the log, so each flush

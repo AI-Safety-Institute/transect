@@ -2,15 +2,23 @@
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based index of the first post-flush model turn.
+- turn: 0-based orchestrator turn the flush precedes (the first
+  post-flush orchestrator turn, in event order), for a flush in any lane.
+- agent_span_id: the sub-agent lane the compaction happened in; None on
+  the orchestrator.
+- lane_turn: the first post-flush turn of the compacted lane itself
+  (token_timeline's lane_turn): equal to turn on the orchestrator, the
+  sub-agent's own ordinal otherwise.
 - type: the compaction kind as recorded (e.g. summary), or
   "token_drop" for detected-not-recorded drops.
 - source: who recorded the event (e.g. inspect / openclaw), or
-  "synthesized" for detected-not-recorded drops.
+  "synthesized" for detected-not-recorded drops; detection runs over
+  every lane's own context series, the orchestrator's and each
+  sub-agent's.
 - tokens_before / tokens_after: window size around the flush; None =
   not reported and not inferrable.
-- tokens_after_inferred: tokens_after came from the first non-gap
-  main-lane turn after the flush, not the event itself.
+- tokens_after_inferred: tokens_after came from the first non-gap turn
+  of the compacted lane after the flush, not the event itself.
 - role: the model role whose conversation was compacted, when recorded.
 - metadata: the complete recorded compaction event metadata (object), or
   None.
@@ -39,7 +47,21 @@ from transect.frames.common import (
 
 _METADATA_COLUMNS = ("strategy", "messages_before", "messages_after", "trigger")
 _RECORDED_COLUMNS = ("role", "metadata", "compaction_prompt", "compaction_nudge")
-_TEXT_COLUMNS = ("role", "strategy", "trigger", "compaction_prompt", "compaction_nudge")
+_INT_COLUMNS = (
+    "lane_turn",
+    "tokens_before",
+    "tokens_after",
+    "messages_before",
+    "messages_after",
+)
+_TEXT_COLUMNS = (
+    "agent_span_id",
+    "role",
+    "strategy",
+    "trigger",
+    "compaction_prompt",
+    "compaction_nudge",
+)
 
 
 def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFrame:
@@ -50,69 +72,64 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
     series supplies (a) the ``tokens_after`` inference when the event
     omits it, and (b) the detection of unrecorded compactions - the
     0.6x sustained-drop scan over each lane's context series
-    synthesizes flush rows the source never emitted.
+    synthesizes flush rows the source never emitted. Each lane is its
+    own conversation, so both read the compacted lane's rows only, and
+    a switch between lanes is never mistaken for a flush.
 
     A flush never empties the window to zero: when the event omits
-    tokens_after, it is inferred from the first non-gap main-lane turn
-    at/after the flush.
+    tokens_after, it is inferred from the first non-gap turn of its own
+    lane at/after the flush.
     """
-    per_turn_of: dict[str, pd.DataFrame] = {}
-    lanes_of: dict[str, pd.Series] = {}
-    main_lane_of: dict[str, str] = {}
+    lanes_of: dict[str, dict[str, pd.DataFrame]] = {}
     for group_key, group in token_timeline.groupby("transcript_id", sort=False):
-        tid = str(group_key)
-        per_turn = group.sort_values("turn")
-        lanes = lane_series(per_turn)
-        per_turn_of[tid] = per_turn
-        lanes_of[tid] = lanes
-        main_lane_of[tid] = (
-            str(lanes.value_counts().idxmax()) if len(lanes) else "__main__"
-        )
+        lanes_of[str(group_key)] = _lane_frames(group)
 
     rows = []
     for _, r in results.iterrows():
         identity_cols = identity(r)
-        turns = per_turn_of.get(identity_cols["transcript_id"])
+        lanes = lanes_of.get(identity_cols["transcript_id"], {})
         for f in result_value(r["value"]).get("flushes") or []:
             metadata = f["metadata"] or {}
             # indexed, not .get: a store scanned before these fields existed
             # must fail loudly here (it needs a re-scan, not a fallback)
-            details = {name: f[name] for name in _RECORDED_COLUMNS}
+            details = {name: f[name] for name in ("lane_turn", *_RECORDED_COLUMNS)}
             details.update({name: metadata.get(name) for name in _METADATA_COLUMNS})
             f = {**f, "tokens_after_inferred": False}
+            lane = lanes.get(_lane_key(f.get("agent_span_id")))
             if (
                 not f.get("tokens_after")
                 and f.get("tokens_before")
-                and turns is not None
+                and lane is not None
             ):
-                lanes = lanes_of[identity_cols["transcript_id"]]
-                main = main_lane_of[identity_cols["transcript_id"]]
-                observed = turns[
-                    (turns.turn >= f["turn"]) & turns.context.notna() & (lanes == main)
+                observed = lane[
+                    (lane.lane_turn >= f["lane_turn"]) & lane.context.notna()
                 ]
                 if len(observed):
                     f["tokens_after"] = int(observed.context.iloc[0])
                     f["tokens_after_inferred"] = True
             rows.append({**identity_cols, **f, **details})
-    # Synthesize flushes from context drops: a drop counts when context
-    # falls below 0.6x the previous non-gap turn and stays below.
-    recorded_turns: dict[str, set[int]] = {}
+    # Synthesize flushes from context drops, lane by lane: a drop counts
+    # when context falls below 0.6x the previous non-gap turn of the
+    # same lane and stays below.
+    recorded: dict[tuple[str, str], set[int]] = {}
     for row in rows:
-        recorded_turns.setdefault(row["transcript_id"], set()).add(int(row["turn"]))
-    for transcript_id, per_turn in per_turn_of.items():
-        identity_row = per_turn.iloc[0]
-        identity_cols = {ours: identity_row.get(ours) for ours in IDENTITY_COLS}
-        lanes = lanes_of[transcript_id]
-        main = main_lane_of[transcript_id]
-        for lane, lane_turns in per_turn.groupby(lanes, sort=False):
-            nearby = recorded_turns.get(transcript_id, set()) if lane == main else set()
+        key = (row["transcript_id"], _lane_key(row.get("agent_span_id")))
+        recorded.setdefault(key, set()).add(int(row["lane_turn"]))
+    for transcript_id, lanes in lanes_of.items():
+        for lane_key, lane in lanes.items():
+            identity_row = lane.iloc[0]
+            identity_cols = {ours: identity_row.get(ours) for ours in IDENTITY_COLS}
+            nearby = recorded.get((transcript_id, lane_key), set())
+            span_id = None if lane_key == "__main__" else lane_key
             rows.extend(
-                {**identity_cols, **drop}
-                for drop in _synthesized_drops(lane_turns, nearby)
+                {**identity_cols, "agent_span_id": span_id, **drop}
+                for drop in _synthesized_drops(lane, nearby)
             )
     columns = [
         *IDENTITY_COLS,
         "turn",
+        "agent_span_id",
+        "lane_turn",
         "type",
         "source",
         "tokens_before",
@@ -126,20 +143,49 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
     # inferred as float NaN
     df = df.astype(
         {
-            **dict.fromkeys(
-                ("tokens_before", "tokens_after", "messages_before", "messages_after"),
-                "Int64",
-            ),
+            **dict.fromkeys(_INT_COLUMNS, "Int64"),
             **dict.fromkeys(_TEXT_COLUMNS, "string"),
         }
     )
     return with_schema(df)
 
 
-def _synthesized_drops(lane_turns: pd.DataFrame, nearby: set[int]):
-    """The 0.6x sustained-drop scan over one lane's per-turn context series."""
-    ctx = lane_turns[["turn", "context"]].dropna()
-    turns = ctx.turn.tolist()
+def _lane_key(agent_span_id) -> str:
+    return (
+        "__main__"
+        if agent_span_id is None or pd.isna(agent_span_id)
+        else str(agent_span_id)
+    )
+
+
+def _lane_frames(group: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """One transcript's token rows split by lane (`lane_series`), each in
+    event order with ``axis_turn``: the orchestrator turn the axis was
+    on when the row's call happened (the row's own turn on the
+    orchestrator lane, the count of orchestrator turns before it
+    otherwise). Off-axis calls (init/scorer: one-row lanes) are left
+    out."""
+    ordered = group.copy()
+    # orchestrator turns are contiguous from 0 in event order, so
+    # "orchestrator turns before this row" is the row's own turn on the
+    # orchestrator lane and the axis turn of any other row
+    on_axis = ordered.turn.notna().astype(int)
+    ordered["axis_turn"] = on_axis.cumsum() - on_axis
+    lanes: dict[str, pd.DataFrame] = {}
+    for key, lane in ordered.groupby(lane_series(ordered), sort=False):
+        name = str(key)
+        if name.startswith("__offaxis_"):
+            continue
+        lanes[name] = lane
+    return lanes
+
+
+def _synthesized_drops(lane: pd.DataFrame, nearby: set[int]):
+    """The 0.6x sustained-drop scan over one lane's context series,
+    ``nearby`` being the lane turns of that lane's recorded flushes."""
+    ctx = lane[["axis_turn", "lane_turn", "context"]].dropna()
+    axis_turns = ctx.axis_turn.tolist()
+    lane_turns = ctx.lane_turn.tolist()
     values = ctx.context.tolist()
     for i in range(1, len(values)):
         prev, cur = values[i - 1], values[i]
@@ -148,11 +194,12 @@ def _synthesized_drops(lane_turns: pd.DataFrame, nearby: set[int]):
         nxt = values[i + 1] if i + 1 < len(values) else None
         if nxt is not None and nxt >= 0.6 * prev:
             continue  # transient dip, not a reset
-        turn = int(turns[i])
-        if any(abs(turn - r) <= 1 for r in nearby):
+        lane_turn = int(lane_turns[i])
+        if any(abs(lane_turn - r) <= 1 for r in nearby):
             continue
         yield {
-            "turn": turn,
+            "turn": int(axis_turns[i]),
+            "lane_turn": lane_turn,
             "type": "token_drop",
             "source": "synthesized",
             "tokens_before": int(prev),

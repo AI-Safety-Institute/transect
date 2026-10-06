@@ -108,6 +108,18 @@ scanner change take effect; run a new scan and retain both results for compariso
   setup only; never resolve them using the installed model database or
   infer a threshold from `tokens_before`. Unrecorded thresholds render
   no row, line, or toggle.
+- **Orchestrator turn axis.** `turn` is the 0-based ordinal of the
+  orchestrator's (main lane's) model turns, from
+  `scanners.helpers.orchestrator_turns`, in every scanner value, frame,
+  judge digest and chart. Sub-agent turns are off the axis: they carry
+  `agent_span_id` and `lane_turn`, never a turn number. The subagents
+  frame records the orchestrator turns active at each span's start and
+  end by wall-clock (`frames/spine.py`), and the swimlane chart maps the
+  same timestamps to fractional positions when it draws; frames hold
+  timestamps and integer turns only. A custom scanner numbers turns with
+  the same helper. The main lane
+  is the span Scout would scan at depth 1; a transcript with model turns
+  but no single orchestrator agent raises rather than guessing.
 - **Review units.** Phase `verifier_reviews` retains the original
   selected review units through display merging;
   `transect.reliability.review_units` is the review-population read.
@@ -183,9 +195,11 @@ scanner change take effect; run a new scan and retain both results for compariso
   judges). `examples/transect_*.py` call real provider models - keys and
   spend. Don't "verify" a change by burning judge calls when the
   deterministic loop covers it.
-- **Model caching + refusals (live runs).** Scanners call
-  `generate(cache=True)`; refused judge calls retry under a separate
-  cache scope (`src/transect/scanners/phases_common.py`).
+- **Model caching + retries (live runs).** Scanners call
+  `generate(cache=True)`; a judge call that returns no usable answer is
+  retried once under a separate cache scope (`call_judge` in
+  `src/transect/scanners/phases_common.py`), and refusals are retried by
+  Scout's own loop inside the call.
 - **Ecosystem APIs.** Before writing against inspect_ai /
   inspect_scout / inspect_viz APIs, consult the package's own docs
   (each publishes an `llms.txt`) rather than trusting memory - these

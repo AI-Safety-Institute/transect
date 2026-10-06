@@ -93,10 +93,15 @@ The pieces, and the rules that make them work:
   main-lane reasoning turn (reasoning blocks inlined behind a
   `[THINKING]` marker when the source records them, sub-agent spawn
   tasks behind a `[DELEGATES]` marker) - the right unit for a second
-  per-turn facet. For another unit shape, write your own `@loader`; whatever
-  metadata you put on each yielded item (e.g. `{"turn": n}`) rides
-  into the frame as columns, and the item id becomes the frame's
-  `item` column. No loader is valid too: `@scanner(messages="all")`
+  per-turn facet, already numbered on the orchestrator turn axis. For
+  another unit shape, write your own `@loader`; whatever metadata you
+  put on each yielded item (e.g. `{"turn": n}`) rides into the frame
+  as columns, and the item id becomes the frame's `item` column. A
+  `turn` fact must be the orchestrator ordinal from
+  `transect.scanners.helpers.orchestrator_turns(transcript)` (section
+  4): a sub-agent's model calls are off the axis, so numbering every
+  model event in the transcript puts your rows on turns the report
+  does not have. No loader is valid too: `@scanner(messages="all")`
   hands the judge the whole transcript as one item - one call, one
   label per transcript - and the frame, ballots, definitions, and
   audit (`audit=("item", "label")`) work unchanged. Only the
@@ -273,11 +278,15 @@ otherwise.
 A layer needs no judge. Two zero-LLM-call shapes:
 
 - **Mechanical scanner**: any `@scanner` that extracts structure - a
-  regex/grep over turns, a per-turn metric, event counts. Pack
-  per-turn entries as a ``value["turns"]`` list (one result per
-  transcript) and `transect.turns_frame` explodes them into one row per
-  turn - `token_timeline`'s own convention - ready for tags and
-  turn-anchored blocks; any other value shape mounts via
+  regex/grep over turns, a per-turn metric, event counts. Number turns
+  with `transect.scanners.helpers.orchestrator_turns(transcript)`
+  (declare `events=["model", "span_begin", "span_end", "tool"]` so it
+  can resolve the main lane): `turn` means orchestrator turn everywhere,
+  and enumerating every lane's model events would misalign your rows
+  with the axis. Pack per-turn entries as a ``value["turns"]`` list
+  (one result per transcript) and `transect.turns_frame` explodes them
+  into one row per turn - `token_timeline`'s own convention - ready for
+  tags and turn-anchored blocks; any other value shape mounts via
   `generic_flatten` or your own frame fn.
 - **No scanner at all**: pass a ready per-turn DataFrame - e.g.
   `Layer(name="review", frame=my_df, tags=True)`. `tags=True`

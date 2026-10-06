@@ -55,7 +55,7 @@ Grains and join keys, in one table:
 | grain | frame(s) | key |
 |---|---|---|
 | transcript | transcript_info | `transcript_id` (every frame carries the identity prefix: `sample_id`, `task_set`, `epoch`, `transcript_id`, `agent`) |
-| model turn | token_timeline, phase_turns, turn_tags | `turn` (0-based; the Scout viewer numbers from 1) |
+| orchestrator turn | token_timeline, phase_turns, turn_tags | `turn` (0-based orchestrator turn; a sub-agent's own turns are not on the axis and carry `turn` NA with a `lane_turn`) |
 | phase | phases, turn_groups | `phase_index`; `phase` is the label |
 | sub-agent span | subagents, lane_activity | `agent_span_id` |
 | judge ballot | phase_turn_votes, subagent_votes, `transect.member_ballots(frame, unit_col)` | (unit, `model`, `roll`) |

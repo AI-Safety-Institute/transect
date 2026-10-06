@@ -853,8 +853,7 @@ _STRIP_BASIS_WHY = {
     "judged": "judged: reasoning turn scored by the judge(s)",
     "filled": "not judged: inherits the previous label",
     "attributed": (
-        "not judged: content-free tool-only/failed/sub-agent turn; "
-        "takes the surrounding label"
+        "not judged: content-free tool-only or failed turn; takes the surrounding label"
     ),
     "refusal": "not judged: the judge refused",
     "no_answer": "not judged: no valid judge answer",
@@ -925,7 +924,10 @@ def token_stack(
     """Token telemetry for one transcript: a continuous-x bar chart (up
     to three selectable measures plus a linear/log scale toggle) and,
     when the derived columns support it, a second always-visible
-    context-window step chart. Both carry real y-axes.
+    context-window step chart. Both carry real y-axes. ``one`` is the
+    orchestrator's token_timeline rows (the turn axis; sub-agent rows
+    never reach this chart), so every measure, ``cum_billable``
+    included, is orchestrator-only.
 
     With the derived token-view columns present (`has_derived_token_views`)
     this returns ``[measure_selector, scale_selector, bars_chart,
@@ -1384,7 +1386,7 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
     One navy solid `rule_x` per intervention turn, offset by the shared
     t-0.5 convention and purely visual (`pointer_events="none"`); an
     `_event_hit_rect` layered under it carries the hover tooltip (turn,
-    channel, 80-char previews of the question asked and the content,
+    channel, `_PREVIEW_CHARS` previews of the question asked and the content,
     the outcome - the last three null on rows without them), so
     hovering anywhere in that turn's column names its source.
 
@@ -1442,10 +1444,16 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
         margin_left=_INTERVENTION_MARGIN_LEFT,
         margin_right=_INTERVENTION_MARGIN_RIGHT,
     )
-    # no widget row here; the content row is the one that wraps in
-    # practice (an 80-character preview at tippy's 350px cap), which is
-    # what `tip_fit_height`'s per-row allowance budgets for
-    return component, _section_height(_INTERVENTION_HEIGHT, _tip_rows(hit_channels))
+    # the two preview rows wrap at tippy's 350px cap; the other three are
+    # single-line, so the floor prices each row for what it is rather
+    # than `tip_fit_height`'s two-lines-everywhere allowance, which left
+    # a hundred blank pixels under the strip
+    preview_px = wrap_row_px(_PREVIEW_CHARS)
+    return component, _section_height(
+        _INTERVENTION_HEIGHT,
+        _tip_rows(hit_channels),
+        floor=_tip_floor(_tip_rows(hit_channels), preview_px, preview_px),
+    )
 
 
 # The interventions chart's height budget. The body - height minus these
@@ -1458,6 +1466,12 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
 _INTERVENTION_HEIGHT = 94
 _INTERVENTION_MARGIN_TOP = 4
 _INTERVENTION_MARGIN_BOTTOM = 30
+
+# A tooltip preview's character cap: enough to identify a message (the
+# list under the chart carries the full text) and, at tippy's 350px
+# width, at most two wrapped lines, which is what the interventions
+# chart's tooltip-fit floor prices each preview row at.
+_PREVIEW_CHARS = 60
 
 
 # Aliases of the band's margins rather than two fresh numbers: this chart
@@ -1472,16 +1486,13 @@ _INTERVENTION_MARGIN_RIGHT = _BAND_MARGIN_RIGHT
 
 
 def _preview(value) -> str | None:
-    """A tooltip text cell trimmed to ~80 characters - long enough to
-    identify the message, short enough to keep the tooltip legible (the
-    list under the chart carries the full text). An ellipsis marks an
-    actual truncation, never appended to text that already fit; None
-    stays None (no tooltip row).
-    """
+    """A tooltip text cell trimmed to `_PREVIEW_CHARS`; an ellipsis marks
+    an actual truncation, never appended to text that already fit, and
+    None stays None (no tooltip row)."""
     if value is None or (pd.api.types.is_scalar(value) and pd.isna(value)):
         return None
     text = str(value)
-    return text if len(text) <= 80 else text[:80] + "…"
+    return text if len(text) <= _PREVIEW_CHARS else text[:_PREVIEW_CHARS] + "…"
 
 
 def swimlanes(
@@ -1492,22 +1503,19 @@ def swimlanes(
     n_turns: int,
     colors: dict[str, str],
     titles: list[dict[str, str]],
-    span_ends_recorded: bool,
     tip_fields: tuple[str, ...],
 ) -> tuple[Component, int]:
     """Sub-agent activity swimlanes: one mark per placed span, packed
     into sub-lane rows by `lanes_layout.pack_lanes`.
 
-    ``rows`` (``(row_y, x_start, width, label, lane_name)`` per span) and
-    ``end_markers`` (``(end_turn, row_y)``, already filtered by the
-    caller to spans with a harness-recorded end) come straight off a
-    `PackedLanes`. ``titles`` is one dict per span in ``rows``' own
-    order, keyed by ``tip_fields`` (the caller's subset of
+    ``rows`` (``(span_id, row_y, x_start, width, label, lane_name,
+    boxed)`` per span) come straight off a `PackedLanes`;
+    ``end_markers`` (``(end_pos, row_y)``) are the caller's selection of
+    rows with a harness-recorded end. ``titles`` is one dict per span in
+    ``rows``' own order, keyed by ``tip_fields`` (the caller's subset of
     `SPAN_TIP_FIELDS`), one tooltip row per field -
     `render._subagent_section` builds it via `sections.span_titles` and
-    joins it onto `PackedLanes.span_row`, which `pack_lanes` appends in
-    the same per-span iteration as ``rows``, so the two line up
-    positionally.
+    looks each row's up by its ``span_id``.
 
     ``yticks``/``ylabels`` are drawn here as one right-anchored `text`
     mark per label-block, positioned at the turn axis's domain start and
@@ -1515,33 +1523,33 @@ def swimlanes(
     the plotted turn range. The Jinja legend line beside the chart
     carries the same label/swatch pairs.
 
-    **Box width, and what it is allowed to mean.**
-    ``span_ends_recorded`` is the caller's answer to "does this source
-    record where a sub-agent span ended" - the same signal
-    `render._subagent_section` computes as ``has_end_markers`` for the
-    completion markers, reused rather than re-derived so the chart cannot
-    draw a duration the same data was judged not to have.
+    **Box width, and what it is allowed to mean.** Each row's ``boxed``
+    flag comes from `render._span_lanes` (the frame's ``turn_source``
+    plus a usable orchestrator clock): a span placed by wall-clock has a
+    real extent on the axis and draws as a box; a span the source gave
+    no usable timestamps for sits at its spawn turn as a point, and
+    draws as a tick.
 
-    - ``True``: proportional boxes spanning the span's first-to-last
-      observed activity turn, floored at `_span_box_width` so a short
-      span is not sub-pixel on a long axis. What that width means is
-      stated in the section's how-to-read line and in the box's own
-      ``turns`` tooltip cell.
-    - ``False``: no box at all - a thin colored tick
-      (`_TICK_STROKE_WIDTH`, a `rule_x` bounded to the row's own
-      ``y1``/``y2``) marks only the turn where the span started, with an
-      invisible wider `rect` underneath carrying the hover target. A box
-      of any fixed width still reads visually as a span with some
-      extent, which overclaims for a source recording no duration at
-      all; a tick cannot imply duration. This is the honest branch for
-      an OpenClaw export, whose span ends are synthesized at last
-      activity rather than recorded.
+    - boxed: a proportional box from ``x_start`` over ``width`` (the
+      span's wall-clock activity mapped onto the orchestrator turns
+      active at the time), floored at `span_min_box_width` so a short span
+      is not sub-pixel on a long axis. What that width means is stated
+      in the section's how-to-read line and in the box's own ``turns``
+      tooltip cell.
+    - tick: no box at all - a thin colored tick (`_TICK_STROKE_WIDTH`, a
+      `rule_x` bounded to the row's own ``y1``/``y2``) marks only the
+      spawn turn. A box of any fixed width would read as an extent the
+      data does not have; a tick cannot imply duration.
 
-    `_span_box_width` serves both branches, for different jobs: the
-    ``False`` branch's invisible hit-rect (deliberately wider than the
-    2px tick it sits under, for hover ergonomics) and the ``True``
-    branch's minimum-sliver floor. The two branches draw different
-    shapes, but hover ergonomics stay the same in both.
+    The two shapes share one plot, and the "one channel-key set per
+    plot" rule (module docstring) allows one tip-bearing mark, so
+    neither visible mark carries the tooltip: a single invisible `rect`
+    over every row (the box's own extent for a boxed row, a hit
+    footprint `span_min_box_width` wide around a tick) answers hover for
+    both - the "one mark draws, another answers" idiom of
+    `_event_hit_rect`, generalized. Hit-rects may overlap between
+    adjacent rows (only the visible ticks must not) - opacity 0 either
+    way. ``end_markers`` arrive already filtered to recorded ends.
 
     Y axis carries no ticks (``y_axis=False``, not ``None`` - module
     docstring): row_y values are arbitrary sub-lane placements with no
@@ -1580,14 +1588,14 @@ def swimlanes(
       2px tick rather than a box. Pinned by `pack_lanes`' unit tests and
       by a browser test reading real rendered geometry.
     """
-    box_width = _span_box_width(n_turns)
-    n_rows = int(max(row[0] for row in rows)) + 1 if rows else 1
+    n_rows = int(max(row[1] for row in rows)) + 1 if rows else 1
     marks: list[Mark] = []
     max_lane_chars = 0
     max_votes_chars = 0
     if rows:
         frame = pd.DataFrame(
-            rows, columns=["y", "x_start", "width", "label", "lane_name"]
+            rows,
+            columns=["span_id", "y", "x_start", "width", "label", "lane_name", "boxed"],
         )
         frame["y1"] = frame.y - _SWIMLANE_BOX_HALF_HEIGHT
         frame["y2"] = frame.y + _SWIMLANE_BOX_HALF_HEIGHT
@@ -1611,17 +1619,12 @@ def swimlanes(
         )
         channels = {field: f"tip_{index}" for index, field in enumerate(fields)}
 
-        if span_ends_recorded:
-            # proportional mode: a real box, floored at the
-            # minimum-sliver width so a short span isn't sub-pixel
-            frame["x1"] = frame.x_start
-            frame["x2"] = frame.x_start + frame.width.clip(lower=box_width)
-            bars = Data.from_dataframe(
-                frame[["x1", "x2", "y1", "y2", "color", *channels.values()]]
-            )
+        frame = span_geometry(frame, n_turns)
+        boxed = frame[frame.boxed]
+        if len(boxed):
             marks.append(
                 rect(
-                    bars,
+                    Data.from_dataframe(boxed[["x1", "x2", "y1", "y2", "color"]]),
                     x1="x1",
                     x2="x2",
                     y1="y1",
@@ -1629,33 +1632,13 @@ def swimlanes(
                     fill="color",
                     stroke=_SWIMLANE_BOX_STROKE,
                     stroke_width=_SWIMLANE_BOX_STROKE_WIDTH,
-                    tip=True,  # 2-D pointer: spans stack in rows, so the
-                    # hovered row matters as much as the turn
-                    channels=channels,
                 )
             )
-        else:
-            # uniform mode: a thin colored tick at the span's start
-            # turn. The tick carries no tip (2px wide - a pointer would
-            # rarely land on it); an invisible wider `rect` underneath is
-            # the hover target, the same "one mark draws, another answers"
-            # idiom as `_event_hit_rect`, inlined here because that
-            # helper's half-turn placement is for a single-turn event
-            # marker, not a span whose hit-box width is sized for hover
-            # ergonomics. Hit-rects may overlap between adjacent rows
-            # (only the visible ticks must not) - opacity 0 either way.
-            frame["x"] = frame.x_start
-            frame["hx1"] = frame.x_start - box_width / 2
-            frame["hx2"] = frame.hx1 + box_width  # one addition from hx1,
-            # not independently from x_start: keeps every row's
-            # data-space ``hx2 - hx1`` exactly box_width whatever
-            # x_start's magnitude. Plot still maps each rect's x1/x2
-            # through its own scale independently, so rendered pixel
-            # widths can differ by float noise regardless.
-            ticks = Data.from_dataframe(frame[["x", "y1", "y2", "color"]])
+        ticks = frame[~frame.boxed]
+        if len(ticks):
             marks.append(
                 rule_x(
-                    ticks,
+                    Data.from_dataframe(ticks[["x", "y1", "y2", "color"]]),
                     x="x",
                     y1="y1",
                     y2="y2",
@@ -1664,29 +1647,30 @@ def swimlanes(
                     stroke_width=_TICK_STROKE_WIDTH,
                 )
             )
-            hit = Data.from_dataframe(
-                frame[["hx1", "hx2", "y1", "y2", *channels.values()]]
+        # the one tip-bearing mark: the box's extent for a boxed row, a
+        # hover footprint around the tick otherwise (`span_geometry`)
+        marks.append(
+            rect(
+                Data.from_dataframe(
+                    frame[["hx1", "hx2", "y1", "y2", *channels.values()]]
+                ),
+                x1="hx1",
+                x2="hx2",
+                y1="y1",
+                y2="y2",
+                opacity=0,  # hit-target only
+                tip=True,  # 2-D pointer: spans stack in rows, so the
+                # hovered row matters as much as the turn
+                channels=channels,
             )
-            marks.append(
-                rect(
-                    hit,
-                    x1="hx1",
-                    x2="hx2",
-                    y1="y1",
-                    y2="y2",
-                    opacity=0,  # hit-target only
-                    tip=True,  # 2-D pointer: spans stack in rows, so the
-                    # hovered row matters as much as the turn
-                    channels=channels,
-                )
-            )
+        )
     if end_markers:
-        marker_frame = pd.DataFrame(end_markers, columns=["end_turn", "row_y"])
+        marker_frame = pd.DataFrame(end_markers, columns=["end_pos", "row_y"])
         markers = Data.from_dataframe(marker_frame)
         marks.append(
             dot(
                 markers,
-                x="end_turn",
+                x="end_pos",
                 y="row_y",
                 symbol=_END_MARKER_SYMBOL,  # must be a real Plot symbol
                 # name - see that constant's own comment
@@ -1867,14 +1851,48 @@ def _swimlane_tip_fit_height(
     return _tip_floor(tip_rows, lane_px, second_tall_row_px=votes_px)
 
 
-# The minimum drawn width of a proportional swimlane bar, and the width
-# of the invisible hit-rect the uniform (tick) branch puts under its
-# ticks. A minimum-sliver rule in turn units, not pixels: a fixed pixel
-# width would need the inner plot rectangle, which this module has no
-# honest handle on at build time. Against `chart_width`'s 1.6px/turn it
-# is ~8px on a long transcript and wider on a short one.
-def _span_box_width(n_turns: int) -> float:
-    return max(1.0, n_turns / 250.0)
+# The minimum drawn width of a swimlane box, in pixels, converted to turn
+# units through `chart_width`'s pixel-per-turn rate (the same
+# approximation `swimlane_min_footprint` uses: the plotted body is a
+# little narrower than `chart_width`, so the sliver only ever errs wide).
+# A floor in turn units would overstate a short span's wall-clock extent
+# on a short axis, where one turn is a hundred pixels; a pixel floor
+# keeps a box honest and merely visible.
+_MIN_BOX_PX = 6.0
+
+
+def span_min_box_width(n_turns: int) -> float:
+    """The minimum box width in turn units: `_MIN_BOX_PX` at this axis's
+    pixel-per-turn rate. Also the hover footprint under a tick, and the
+    packing footprint `render._subagent_section` reserves for boxed
+    spans, so two sliver-floored boxes never render overlapping."""
+    return _MIN_BOX_PX * n_turns / chart_width(n_turns)
+
+
+def span_geometry(frame: pd.DataFrame, n_turns: int) -> pd.DataFrame:
+    """Rendered geometry for swimlane rows (``x_start``, ``width``,
+    ``boxed``): ``x1``/``x2`` for a box (its extent floored at
+    `span_min_box_width`), ``x`` for a tick, and ``hx1``/``hx2`` for the
+    tip-bearing hit rect over either. A box that would overrun the
+    axis's right edge (activity clamped at the last orchestrator turn)
+    is shifted left to end at the edge, never drawn off-canvas.
+
+    ``hx2`` is one addition from ``hx1``, keeping every tick row's
+    data-space hit width exactly the floor whatever ``x_start``'s
+    magnitude.
+    """
+    out = frame.copy()
+    floor = span_min_box_width(n_turns)
+    right = turn_xlim(n_turns)[1]
+    x1 = out.x_start
+    x2 = out.x_start + out.width.clip(lower=floor)
+    over = (x2 - right).clip(lower=0.0)
+    out["x1"] = x1 - over
+    out["x2"] = x2 - over
+    out["x"] = out.x_start
+    out["hx1"] = out.x1.where(out.boxed, out.x_start - floor / 2)
+    out["hx2"] = out.x2.where(out.boxed, out.hx1 + floor)
+    return out
 
 
 # The seam both the packing decision (`swimlane_min_footprint`) and the

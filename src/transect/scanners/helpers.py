@@ -1,4 +1,9 @@
-"""Shared helpers used by more than one scanner."""
+"""Shared helpers used by more than one scanner.
+
+The turn axis lives here: `orchestrator_turns` numbers the orchestrator's
+model turns, `Lanes` resolves which lane any event belongs to, and the
+span text helpers read what a sub-agent was asked and what it did.
+"""
 
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -7,9 +12,8 @@ from typing import Any
 from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_build
 from inspect_ai.model import ContentReasoning
 from inspect_ai.tool import ToolCall
-from inspect_scout import Transcript
 
-# OPENCLAW-SPECIFIC spawn-prompt scaffold markers.
+# OpenClaw spawn-prompt scaffold markers
 _OPENCLAW_SPAWN_CONTEXT_PREFIX = "[subagent context]"
 _OPENCLAW_SPAWN_TASK_MARKER = "[subagent task]"
 _OPENCLAW_SPAWN_ROLE_PHRASE = "you are running as a subagent"
@@ -27,10 +31,69 @@ class SpanActivity:
     tool_counts: dict[str, int] = field(default_factory=dict)
 
 
-def model_turns(transcript: Transcript) -> Iterator[tuple[Any, list[ToolCall]]]:
-    """Yield (model event, its tool calls) per model turn, in event order.
+class Lanes:
+    """The lanes of one transcript, resolved once.
 
-    Shared across scanners: enumerate() over this is the turn axis."""
+    ``main`` is the orchestrator's span (`main_span`). ``begins`` are the
+    sub-agent span_begin events (`subagent_span_begins`, the shared
+    definition) and ``first_models`` each one's first model event.
+    ``events`` is the transcript's event list. Every scanner that
+    attributes events to lanes starts from one of these.
+    """
+
+    def __init__(self, transcript: Any) -> None:
+        self.main = main_span(transcript)
+        self.begins, self.first_models = subagent_span_begins(transcript, self.main)
+        self.events: list[Any] = list(transcript.events)
+        self._transcript = transcript
+        self.sub_ids = frozenset(begin.id for begin in self.begins)
+        self._main_events = frozenset(
+            id(item.event)
+            for item in self.main.content
+            if isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
+        )
+        self._spans = {e.id: e for e in self.events if e.event == "span_begin"}
+
+    def is_main(self, event: Any) -> bool:
+        """Whether a model event is one of the orchestrator's own turns."""
+        return id(event) in self._main_events
+
+    def sub_agent_of(self, event: Any) -> Any | None:
+        """The sub-agent span_begin an event belongs to: its nearest
+        enclosing agent span, when that is a sub-agent. None when the
+        event is the orchestrator's (a folded spawn call, ``agent_span_id``
+        set, included), a utility or wrapper span's, or off the axis (an
+        init or scorer call)."""
+        if getattr(event, "agent_span_id", None) is not None:
+            return None
+        span = nearest_agent_span(self._spans, getattr(event, "span_id", None))
+        return span if span is not None and span.id in self.sub_ids else None
+
+    def turns(self) -> Iterator[tuple[int, Any, list[ToolCall]]]:
+        """Yield ``(turn, model event, tool calls)`` for the orchestrator's
+        turns: `orchestrator_turns` over these resolved lanes."""
+        turn = 0
+        for event, calls in all_model_turns(self._transcript):
+            if self.is_main(event):
+                yield turn, event, calls
+                turn += 1
+
+    def events_before_turn(self) -> Iterator[tuple[int, Any]]:
+        """Yield ``(turn, event)`` for every event that is not an
+        orchestrator model turn, ``turn`` being the orchestrator turn
+        the event precedes: the axis position of a span begin, a tool
+        call or a compaction."""
+        turn = 0
+        for event in self.events:
+            if event.event == "model" and event.output and self.is_main(event):
+                turn += 1
+                continue
+            yield turn, event
+
+
+def all_model_turns(transcript: Any) -> Iterator[tuple[Any, list[ToolCall]]]:
+    """Yield (model event, its tool calls) for every model turn in every
+    lane, in event order; unnumbered, the turn axis is `orchestrator_turns`."""
     for event in transcript.events:
         if event.event != "model" or not event.output:
             continue
@@ -38,81 +101,157 @@ def model_turns(transcript: Transcript) -> Iterator[tuple[Any, list[ToolCall]]]:
         yield event, (message.tool_calls or []) if message else []
 
 
-def message_reasoning(message: Any) -> str:
-    """Join a message's reasoning-block text, in block order.
+def orchestrator_turns(transcript: Any) -> Iterator[tuple[int, Any, list[ToolCall]]]:
+    """Yield ``(turn, model event, tool calls)`` for the orchestrator's turns.
 
-    A redacted block falls back to its summary, as does a block whose
-    provider reports only a summary; blocks with neither readable field
-    are skipped. "" for a plain-string message or one without
-    reasoning blocks. (``ContentReasoning.text`` is not used: it wraps
-    the text in replay-oriented ``<think>`` tags and drops a
-    summary-only unredacted block.)
+    The orchestrator is the main lane (`main_span`); ``turn`` is the
+    0-based ordinal of its model events with output, in event order.
+    This enumeration is the turn axis: every scanner, frame and chart
+    numbers by it, and a custom scanner must too.
 
     Args:
-        message: An assistant chat message (or None).
+        transcript: A Scout ``Transcript`` or any object with
+            compatible ``events`` and ``timelines``.
+    """
+    return Lanes(transcript).turns()
+
+
+def main_span(transcript: Any) -> TimelineSpan:
+    """Resolve the orchestrator's timeline span.
+
+    The span Scout's ``timeline_messages(..., depth=1)`` would scan: the
+    outermost non-utility span holding a direct model event, container
+    spans (the synthetic root, a solvers wrapper) being transparent.
+    Uses the transcript's stored timeline when present, else builds one
+    in place - importer/database sources arrive with ``timelines`` empty.
+
+    Args:
+        transcript: The transcript whose timeline is resolved.
 
     Returns:
-        The whitespace-flattened reasoning text, or "".
+        The ``TimelineSpan`` whose direct content is the main lane.
+
+    A transcript with no events at all (a message history without its
+    event stream) resolves to its root: an empty orchestrator lane with
+    zero turns, the honest reading of a source that recorded no calls.
+
+    Raises:
+        ValueError: When the transcript has events but no model turn
+            under a single agent span - a sample that errored before its
+            first call, two or more top-level agents, or model calls only
+            inside utility spans. There is then no orchestrator lane to
+            number; the error is recorded per transcript and shown in
+            the scan status section.
     """
-    content = getattr(message, "content", None)
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for block in content:
-        if not isinstance(block, ContentReasoning):
+    timelines = getattr(transcript, "timelines", None)
+    timeline = timelines[0] if timelines else timeline_build(transcript.events)
+    span = timeline.root
+    while True:
+        if any(
+            isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
+            for item in span.content
+        ):
+            return span
+        children = [
+            item
+            for item in span.content
+            if isinstance(item, TimelineSpan)
+            and item.span_type == "agent"
+            and not item.utility
+            and _holds_model_events(item)
+        ]
+        if len(children) == 1:
+            span = children[0]
             continue
-        text = block.reasoning if not block.redacted else ""
-        text = text.strip() or (block.summary or "").strip()
-        if text:
-            parts.append(" ".join(text.split()))
-    return " ".join(parts)
+        if not children:
+            if not transcript.events:
+                return span  # no events at all: an empty lane
+            raise ValueError(
+                f"transcript has no model turns under its main span {span.name!r}; "
+                "there is no orchestrator lane to number"
+            )
+        names = ", ".join(repr(child.name) for child in children)
+        raise ValueError(
+            f"transcript has {len(children)} top-level agents ({names}) and no "
+            "single orchestrator lane; transect numbers one orchestrator's turns"
+        )
 
 
-def span_activity(
-    transcript: Transcript, span_id: str, spans: dict[str, Any]
-) -> SpanActivity:
-    """Collect one sub-agent span's recorded activity.
-
-    Model turns and tool events are attributed via
-    ``nearest_agent_span`` (nested tool spans roll up); the folded
-    spawn call is the orchestrator's, and is excluded.
-    """
-    activity = SpanActivity()
-    for event in transcript.events:
-        if isinstance(event, ModelEvent) and event.output:
-            agent = nearest_agent_span(spans, getattr(event, "span_id", None))
-            if agent is not None and agent.id == span_id:
-                message = event.output.message
-                text = getattr(message, "text", None) if message else None
-                if isinstance(text, str) and text.strip():
-                    activity.turn_texts.append(" ".join(text.split()))
-        elif getattr(event, "event", None) == "tool":
-            if getattr(event, "agent_span_id", None) is not None:
-                continue  # folded spawn call
-            agent = nearest_agent_span(spans, getattr(event, "span_id", None))
-            if agent is not None and agent.id == span_id:
-                name = str(getattr(event, "function", None) or "tool")
-                activity.tool_counts[name] = activity.tool_counts.get(name, 0) + 1
-    return activity
+def _holds_model_events(span: TimelineSpan) -> bool:
+    """Whether a model event with output lives anywhere in the subtree."""
+    for item in span.content:
+        if isinstance(item, TimelineEvent):
+            if isinstance(item.event, ModelEvent) and item.event.output:
+                return True
+        elif _holds_model_events(item):
+            return True
+    return False
 
 
-def capped_lines(lines: list[str], cap: int) -> list[str]:
-    """Bound a line list: head+tail with an elision marker.
+def subagent_span_begins(
+    transcript: Any, main: TimelineSpan
+) -> tuple[list[Any], dict[str, Any]]:
+    """Sub-agent span_begin events + each span's first model event.
+
+    The shared definition of "sub-agent" (decision_phases, the
+    token_timeline span record and the agent_spans loader must agree):
+    an agent-type span_begin that is neither the main lane's own span,
+    nor an ancestor of it (a wrapper the timeline treats as a
+    container), nor a timeline utility span (auto-classified helper
+    calls). Discovery is span_begin-based: metadata-only spawn spans
+    are pruned from the timeline tree, which supplies only the utility
+    exclusion and each surviving span's first model event.
 
     Args:
-        lines: The rendered lines.
-        cap: Maximum lines kept (marker excluded).
+        transcript: The transcript whose events are scanned.
+        main: The main lane's span (see ``main_span``).
 
     Returns:
-        The lines unchanged when under the cap; otherwise the first
-        cap//2 and last cap-cap//2 with a ``[... N turns elided ...]``
-        marker between them.
+        ``(span_begins, first_models)`` in event order.
     """
-    if len(lines) <= cap:
-        return lines
-    head, tail = cap // 2, cap - cap // 2
-    elided = len(lines) - head - tail
-    return [*lines[:head], f"[... {elided} turns elided ...]", *lines[-tail:]]
+    first_models, utility_ids = _span_details(main)
+    by_id = {e.id: e for e in transcript.events if e.event == "span_begin"}
+    ancestors: set[str] = set()
+    parent = getattr(by_id.get(main.id), "parent_id", None)
+    while parent is not None and parent not in ancestors:
+        ancestors.add(parent)
+        parent = getattr(by_id.get(parent), "parent_id", None)
+    begins = [
+        e
+        for e in transcript.events
+        if e.event == "span_begin"
+        and getattr(e, "type", None) == "agent"
+        and e.id != main.id
+        and e.id not in ancestors
+        and e.id not in utility_ids
+    ]
+    return begins, first_models
+
+
+def _span_details(main: TimelineSpan) -> tuple[dict[str, Any], set[str]]:
+    """Each descendant span's first model event with output, and the ids
+    of utility spans, from the tree below ``main``."""
+    first_models: dict[str, Any] = {}
+    utility_ids: set[str] = set()
+
+    def _walk(span: TimelineSpan) -> None:
+        for item in span.content:
+            if not isinstance(item, TimelineSpan):
+                continue
+            if item.utility:
+                utility_ids.add(item.id)
+            for sub in item.content:
+                if (
+                    isinstance(sub, TimelineEvent)
+                    and isinstance(sub.event, ModelEvent)
+                    and sub.event.output
+                ):
+                    first_models.setdefault(item.id, sub.event)
+                    break
+            _walk(item)
+
+    _walk(main)
+    return first_models, utility_ids
 
 
 def nearest_agent_span(spans: dict[str, Any], span_id: str | None) -> Any | None:
@@ -126,25 +265,6 @@ def nearest_agent_span(spans: dict[str, Any], span_id: str | None) -> Any | None
             return span
         current = getattr(span, "parent_id", None)
     return None
-
-
-def strip_subagent_scaffold(prompt: str) -> str:
-    """Drop a spawn prompt's leading OpenClaw scaffold lines."""
-    lines = prompt.splitlines()
-    start = 0
-    for i, line in enumerate(lines):
-        stripped = line.strip().lower()
-        if (
-            not stripped
-            or stripped.startswith(_OPENCLAW_SPAWN_CONTEXT_PREFIX)
-            or stripped == _OPENCLAW_SPAWN_TASK_MARKER
-            or _OPENCLAW_SPAWN_ROLE_PHRASE in stripped
-        ):
-            start = i + 1
-            continue
-        break
-    kept = " ".join(" ".join(lines[start:]).split())
-    return kept or " ".join(prompt.split())
 
 
 def span_task_text(span: Any, model_event: Any) -> tuple[str, str]:
@@ -179,124 +299,89 @@ def span_task_text(span: Any, model_event: Any) -> tuple[str, str]:
     return "", "span_name_only"
 
 
-def main_lane_id(transcript: Any) -> str | None:
-    """The main lane's span id, or None when it cannot be resolved.
+def strip_subagent_scaffold(prompt: str) -> str:
+    """Drop a spawn prompt's leading OpenClaw scaffold lines."""
+    lines = prompt.splitlines()
+    start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip().lower()
+        if (
+            not stripped
+            or stripped.startswith(_OPENCLAW_SPAWN_CONTEXT_PREFIX)
+            or stripped == _OPENCLAW_SPAWN_TASK_MARKER
+            or _OPENCLAW_SPAWN_ROLE_PHRASE in stripped
+        ):
+            start = i + 1
+            continue
+        break
+    kept = " ".join(" ".join(lines[start:]).split())
+    return kept or " ".join(prompt.split())
+
+
+def span_activity(lanes: Lanes, span_id: str) -> SpanActivity:
+    """Collect one sub-agent span's recorded activity (`Lanes.sub_agent_of`
+    attribution: nested tool spans roll up)."""
+    activity = SpanActivity()
+    for event in lanes.events:
+        if isinstance(event, ModelEvent) and event.output:
+            sub = lanes.sub_agent_of(event)
+            if sub is not None and sub.id == span_id:
+                message = event.output.message
+                text = getattr(message, "text", None) if message else None
+                if isinstance(text, str) and text.strip():
+                    activity.turn_texts.append(" ".join(text.split()))
+        elif getattr(event, "event", None) == "tool":
+            sub = lanes.sub_agent_of(event)
+            if sub is not None and sub.id == span_id:
+                name = str(getattr(event, "function", None) or "tool")
+                activity.tool_counts[name] = activity.tool_counts.get(name, 0) + 1
+    return activity
+
+
+def message_reasoning(message: Any) -> str:
+    """Join a message's reasoning-block text, in block order.
+
+    A redacted block falls back to its summary, as does a block whose
+    provider reports only a summary; blocks with neither readable field
+    are skipped. "" for a plain-string message or one without
+    reasoning blocks. (``ContentReasoning.text`` is not used: it wraps
+    the text in replay-oriented ``<think>`` tags and drops a
+    summary-only unredacted block.)
 
     Args:
-        transcript: The transcript whose main lane is resolved.
+        message: An assistant chat message (or None).
 
     Returns:
-        The main span's id, or None.
+        The whitespace-flattened reasoning text, or "".
     """
-    try:
-        return main_span(transcript).id
-    except Exception:
-        return None
+    content = getattr(message, "content", None)
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, ContentReasoning):
+            continue
+        text = block.reasoning if not block.redacted else ""
+        text = text.strip() or (block.summary or "").strip()
+        if text:
+            parts.append(" ".join(text.split()))
+    return " ".join(parts)
 
 
-def main_span(transcript: Any) -> TimelineSpan:
-    """Resolve the main lane's timeline span.
-
-    Uses the transcript's stored timeline when present, else builds one
-    in place - Scout 0.4.45 only auto-builds timelines on the .eval
-    path, so importer/database sources arrive with ``timelines`` empty.
-
-    ``timeline_build`` gives an agent-centric tree: OpenClaw root-lane
-    orchestrators become a synthetic "main" root holding their events;
-    .eval logs get init/solvers/scorers partitioning with the solver
-    agent as root. When the root holds no model events of its own and
-    has exactly one non-utility agent child (a solo agent wrapped in a
-    bare span, no phase spans), that child is the main lane.
+def capped_lines(lines: list[str], cap: int) -> list[str]:
+    """Bound a line list: head+tail with an elision marker.
 
     Args:
-        transcript: The transcript whose timeline is resolved.
+        lines: The rendered lines.
+        cap: Maximum lines kept (marker excluded).
 
     Returns:
-        The ``TimelineSpan`` whose direct content is the main lane.
+        The lines unchanged when under the cap; otherwise the first
+        cap//2 and last cap-cap//2 with a ``[... N turns elided ...]``
+        marker between them.
     """
-    timelines = getattr(transcript, "timelines", None)
-    timeline = timelines[0] if timelines else timeline_build(transcript.events)
-    span = timeline.root
-    while True:
-        has_models = any(
-            isinstance(item, TimelineEvent) and isinstance(item.event, ModelEvent)
-            for item in span.content
-        )
-        if has_models:
-            return span
-        children = [
-            item
-            for item in span.content
-            if isinstance(item, TimelineSpan)
-            and item.span_type == "agent"
-            and not item.utility
-        ]
-        if len(children) != 1:
-            return span
-        span = children[0]
-
-
-def subagent_span_begins(
-    transcript: Any, main: TimelineSpan
-) -> tuple[list[Any], dict[str, Any]]:
-    """Sub-agent span_begin events + each span's first model event.
-
-    The shared definition of "sub-agent" (decision_phases and the
-    agent_spans loader must agree): an agent-type span_begin that is
-    neither the main lane's own span nor a timeline utility span
-    (auto-classified helper calls). Discovery stays span_begin-based -
-    metadata-only spawn spans are pruned from the timeline tree, so the
-    tree cannot own it; the tree supplies the utility exclusion and the
-    first model event per surviving span (``span_task_text``'s handoff
-    fallback).
-
-    Args:
-        transcript: The transcript whose events are scanned.
-        main: The main lane's span (see ``main_span``).
-
-    Returns:
-        ``(span_begins, first_models)`` in event order.
-    """
-    first_models, utility_ids = _span_details(main)
-    begins = [
-        e
-        for e in transcript.events
-        if e.event == "span_begin"
-        and getattr(e, "type", None) == "agent"
-        and e.id != main.id
-        and e.id not in utility_ids
-    ]
-    return begins, first_models
-
-
-def _span_details(main: TimelineSpan) -> tuple[dict[str, Any], set[str]]:
-    """Collect per-span details from the tree below the main span.
-
-    Args:
-        main: The main lane's timeline span.
-
-    Returns:
-        ``(first_models, utility_ids)`` - each descendant span's first
-        model event, and the ids of utility spans.
-    """
-    first_models: dict[str, Any] = {}
-    utility_ids: set[str] = set()
-
-    def _walk(span: TimelineSpan) -> None:
-        for item in span.content:
-            if not isinstance(item, TimelineSpan):
-                continue
-            if item.utility:
-                utility_ids.add(item.id)
-            for sub in item.content:
-                if (
-                    isinstance(sub, TimelineEvent)
-                    and isinstance(sub.event, ModelEvent)
-                    and sub.event.output
-                ):
-                    first_models.setdefault(item.id, sub.event)
-                    break
-            _walk(item)
-
-    _walk(main)
-    return first_models, utility_ids
+    if len(lines) <= cap:
+        return lines
+    head, tail = cap // 2, cap - cap // 2
+    elided = len(lines) - head - tail
+    return [*lines[:head], f"[... {elided} turns elided ...]", *lines[-tail:]]

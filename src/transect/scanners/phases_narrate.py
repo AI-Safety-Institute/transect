@@ -7,18 +7,16 @@ from inspect_ai.model import CachePolicy, Model
 from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
-from transect.scanners.helpers import capped_lines
 from transect.scanners.phases_common import (
-    EVIDENCE_LINES,
     Digest,
     NarrationGroupStatus,
     StitchedPhase,
     TurnGroup,
     call_judge,
     context_blocks,
-    digest_line,
     gather_judge_calls,
     humanise_phase,
+    phase_evidence,
 )
 from transect.spec import Spec
 
@@ -44,7 +42,7 @@ _NARRATE_HEAD = (
 class _PhaseNarrative(BaseModel):
     """One phase's narrative.
 
-    JUDGE-FACING: the Field descriptions render in the answer() tool."""
+    Judge-facing: the Field descriptions render in the answer() tool."""
 
     phase_index: int = Field(description="The phase index being narrated, as shown.")
     headline: str = Field(description="One sentence (<=16 words): what the agent did.")
@@ -76,9 +74,7 @@ async def narrate_phases(
     phases: list[StitchedPhase],
     cache: bool | CachePolicy,
 ) -> NarratorAudit:
-    """Narrate the phases: headline + summary + turn groups, in place.
-
-    Mutates ``phases`` in place.
+    """Narrate the phases in place: headline + summary + turn groups.
 
     Args:
         judge: The judge model.
@@ -139,7 +135,7 @@ async def narrate_phases(
     return audit
 
 
-def narrate_system_prompt(spec: Spec, task_prompt: str = "") -> str:
+def narrate_system_prompt(spec: Spec, task_prompt: str) -> str:
     """Render the narrator system prompt.
 
     Head + the two standard context blocks + the answer contract.
@@ -245,15 +241,7 @@ def _narrate_user_prompt(
     blocks = []
     for k in ids:
         p = phases[k]
-        members = capped_lines(
-            [
-                digest_line(by_turn[turn])
-                for turn in range(p.turn_start, p.turn_end + 1)
-                if turn in by_turn
-            ],
-            EVIDENCE_LINES,
-        )
         blocks.append(
-            f"PHASE {k} [{p.phase}, {p.n_turns} turns]:\n" + "\n".join(members)
+            f"PHASE {k} [{p.phase}, {p.n_turns} turns]:\n{phase_evidence(p, by_turn)}"
         )
     return "Narrate these phases:\n\n" + "\n\n".join(blocks)

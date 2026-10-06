@@ -240,7 +240,7 @@ means "not judged", never "fine"; absence is stated, never faked.
 | Charts render blank | the report's charts are CDN-loaded - it is an online document; check network |
 | Scanner change has no effect | `load()` reads saved results; call `transect()` for a new scan, and check the separate model-response cache when judging |
 | Label definitions expandable says the definitions are not recorded in the store | the rubric is embedded at scan time - run a new scan to record it and retain the old store |
-| OpenClaw run: no score/success, task name looks like a filename, spans drawn as ticks, sub-agent spend "no data" | expected source gaps (the telemetry never records them), stated honestly in the report - not bugs |
+| OpenClaw run: no score/success, task name looks like a filename, sub-agent spend "no data", spans drawn as ticks rather than boxes when the export carries no timestamps | expected source gaps (the telemetry never records them), stated honestly in the report - not bugs |
 | Viewer link dead after a run in a coding agent | expected on a TTY (viewer dies with the process); without a TTY it detaches - use the printed URL |
 | Run died part-way (OOM kill, Ctrl+C, provider outage) | rerun the same call unchanged with the same `INSPECT_CACHE_DIR`: completed judge calls replay from the response cache, only in-flight and unstarted calls are paid; the old store loads as incomplete and holds nothing for a judged scanner that did not finish |
 
@@ -271,8 +271,12 @@ too, but nothing here requires it.)
   filled only when judged.
 - Two column gotchas: `phases.n_turns` counts the reasoning turns the
   judge saw, judged and filled (fewer than the `turn_start..turn_end`
-  width - content-free tool-only and sub-agent turns in range are not
-  counted); `new_work` sums are new-content tokens, not billable cost.
+  width - content-free tool-only turns in range are not counted; the
+  axis itself holds orchestrator turns only, so a sub-agent's turns are
+  never in a range); `new_work` sums are new-content tokens, not
+  billable cost, and `phases.new_work_tokens` is orchestrator spend
+  while `delegated_new_work_tokens` is the spend of sub-agents spawned
+  in the phase.
 - `flushes` preserves compaction `role`, full `metadata`, `strategy`,
   `messages_before`, `messages_after`, and `trigger`. For Inspect `.eval`
   logs it also carries `compaction_prompt` (the summarization prompt as
