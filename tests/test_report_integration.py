@@ -324,6 +324,7 @@ def test_flush_line_counts_the_sub_agent_lane_flushes_it_does_not_list():
     assert "sub-agent lanes" not in sections.flush_line(flushes, n_off_axis=0)
     only_sub = sections.flush_line(flushes.iloc[:0], n_off_axis=1)
     assert "0 context flush(es)" in only_sub and "dashed lines" not in only_sub
+    assert "Token counts are" not in only_sub
 
 
 def empty_flushes() -> pd.DataFrame:
