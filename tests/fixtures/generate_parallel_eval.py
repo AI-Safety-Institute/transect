@@ -9,19 +9,13 @@ Writes one .eval into tests/fixtures/parallel_logs/ (committed): a mockllm
 sub-agents in the background in its first turn, keeps working for two
 turns, waits for them, then submits. Inspect appends the sub-agents'
 events as they happen, so their model turns interleave with the
-orchestrator's in the event stream - the concurrent shape the demo log
-(sequential handoffs) never shows.
-
-mockllm answers instantly, so wall-clock is rewritten afterwards to a
-deterministic schedule: orchestrator calls start 100 s apart, each
-sub-agent starts shortly after its spawn and runs across orchestrator
-turns 0 to 3, and the two overlap each other. The pinned expectations
-in tests/test_turn_axis.py are hand-derived from that schedule.
+orchestrator's in the event stream.
 """
 
-import shutil
 from datetime import timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from typing import Any, cast
 
 from inspect_ai import Task, eval as inspect_eval, task
@@ -43,6 +37,15 @@ PROMPTS = {
     "scout_a": "You are scout_a. Survey the repository layout.",
     "scout_b": "You are scout_b. Check that the build runs.",
 }
+
+# the deterministic schedule (seconds): orchestrator model calls start
+# ORCH_PITCH apart; sub-agent events start SUB_OFFSET after the spawn
+# call, SUB_PITCH apart, with scout_b lagging scout_a by SUB_LAG
+ORCH_PITCH = 100
+ORCH_DURATION = 30
+SUB_OFFSET = 20
+SUB_PITCH = 40
+SUB_LAG = 15
 
 
 @tool
@@ -131,16 +134,6 @@ def parallel_subagents() -> Task:
     )
 
 
-# the deterministic schedule (seconds): orchestrator model calls start
-# ORCH_PITCH apart; sub-agent events start SUB_OFFSET after the spawn
-# call, SUB_PITCH apart, with scout_b lagging scout_a by SUB_LAG
-ORCH_PITCH = 100
-ORCH_DURATION = 30
-SUB_OFFSET = 20
-SUB_PITCH = 40
-SUB_LAG = 15
-
-
 def stretch_wallclock(log: EvalLog) -> None:
     """Rewrite event timestamps so the two sub-agents overlap in wall
     clock while the orchestrator keeps turning.
@@ -155,12 +148,11 @@ def stretch_wallclock(log: EvalLog) -> None:
     sample = log.samples[0]
     events = cast("list[Any]", sample.events)
     spans = {e.id: e for e in events if e.event == "span_begin"}
-    main = main_span(_Transcript(events))
+    main = main_span(SimpleNamespace(events=events, timelines=[]))
     clock = events[0].timestamp
     lane_elapsed: dict[str, float] = {}
     orchestrator_elapsed = 0.0
     spawn_at = 0.0
-    lane_order: list[str] = []
     for event in events:
         agent = nearest_agent_span(spans, getattr(event, "span_id", None))
         if event.event == "span_begin" and getattr(event, "type", None) == "agent":
@@ -172,11 +164,8 @@ def stretch_wallclock(log: EvalLog) -> None:
                 spawn_at = spawn_at or orchestrator_elapsed
             elapsed = orchestrator_elapsed
         else:
-            if lane not in lane_order:
-                lane_order.append(lane)
-                lane_elapsed[lane] = (
-                    spawn_at + SUB_OFFSET + SUB_LAG * lane_order.index(lane)
-                )
+            if lane not in lane_elapsed:
+                lane_elapsed[lane] = spawn_at + SUB_OFFSET + SUB_LAG * len(lane_elapsed)
             else:
                 lane_elapsed[lane] += SUB_PITCH
             elapsed = lane_elapsed[lane]
@@ -191,24 +180,22 @@ def stretch_wallclock(log: EvalLog) -> None:
     log.stats.completed_at = (clock + timedelta(seconds=total)).isoformat()
 
 
-class _Transcript:
-    """The duck-typed shape `main_span` needs."""
-
-    def __init__(self, events):
-        self.events = events
-        self.timelines = []
+def write_fixture(path: Path = FIXTURE) -> None:
+    """Run the mock eval in a scratch log dir, stretch its clock, and
+    write the result to ``path``."""
+    with TemporaryDirectory() as scratch:
+        (written,) = inspect_eval(
+            parallel_subagents(), model=MOCK, log_dir=scratch, display="plain"
+        )
+        log = read_eval_log(
+            written.location.removeprefix("file://"), resolve_attachments=True
+        )
+    assert log.status == "success", log.status
+    stretch_wallclock(log)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_eval_log(log, str(path))
+    print(f"wrote {path}")
 
 
 if __name__ == "__main__":
-    scratch = LOG_DIR / "_parallel_build"
-    scratch.mkdir(parents=True, exist_ok=True)
-    logs = inspect_eval(
-        parallel_subagents(), model=MOCK, log_dir=str(scratch), display="plain"
-    )
-    written = Path(logs[0].location.removeprefix("file://"))
-    log = read_eval_log(str(written), resolve_attachments=True)
-    assert log.status == "success", log.status
-    stretch_wallclock(log)
-    write_eval_log(log, str(FIXTURE))
-    shutil.rmtree(scratch)
-    print(f"wrote {FIXTURE}")
+    write_fixture()
