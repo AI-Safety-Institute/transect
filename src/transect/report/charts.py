@@ -757,15 +757,14 @@ def phase_runs(
     of one phase whose ``basis`` differs only among judged kinds merge
     into one run, since nothing in the tooltip distinguishes them.
 
-    One deliberate exception: a turn with no phase index (the scanner's
-    projection assigns none to a tool-only turn that follows an
-    unjudged digest turn) or a dangling one (naming no row of
-    ``phases``, malformed input) is reported with the turn's own raw
-    basis, so refused turns and the attributed turns after them come
-    back as two runs, each tooltip naming its own reason, and two
-    adjacent dangling turns whose bases differ do the same even though
-    `phase_band` renders them identically. Staying a faithful report of
-    the per-turn record is worth an invisible seam.
+    One deliberate exception: a turn with no resolvable phase (the
+    projection assigned none, or the index names no row of ``phases``)
+    keeps its own raw basis as the run key. Refused turns and the
+    attributed turns after them therefore come back as separate runs,
+    each tooltip naming its own reason; two adjacent dangling turns
+    with different bases split the same way even though `phase_band`
+    paints them identically. A faithful report of the per-turn record
+    is worth an invisible seam.
     """
     runs: list[list] = []
     previous_key = None
