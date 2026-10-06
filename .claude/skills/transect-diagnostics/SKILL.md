@@ -51,6 +51,10 @@ Use [procedures.md](references/procedures.md) for dataframe recipes. The sibling
 3. Form a concrete hypothesis. If changing a label definition, state which source
    distinction the new wording should capture. If changing models or settings,
    preserve the other conditions and verify the effective runtime configuration.
+   After a rubric edit, read the context and all label descriptions together,
+   even when only one description changed. Resolve contradictions and unclear
+   overlaps before rerunning. Follow the full
+   [spec review](../using-transect/SKILL.md#authoring-and-revising-a-spec) checklist.
 4. Use development cases for calibration. Keep a ledger of cases seen while
    tuning; freeze the revision before evaluating appropriately selected untouched
    cases. Agreement or better fit on selected disagreements is not generalization.
