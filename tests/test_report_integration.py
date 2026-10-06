@@ -120,7 +120,7 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     else:
         assert "Compaction nudge" not in html
     if name == "parallel-subagents":  # the only flush is subagent_a's
-        assert "0 context flush(es)" in html and "1 more in sub-agent lanes" in html
+        assert "0 context flush(es)" in html and "subagent_a lane" in html
     assert "Traceback" not in html
     # the other Inspect logs record a compaction threshold (row + toggle)
     assert ("compaction threshold</span>" in html) == recorded
@@ -305,26 +305,32 @@ def test_interventions_chart_budgets_its_previews_not_a_generic_two_line_row():
     assert len(charts._preview("x" * 100)) == charts._PREVIEW_CHARS + 1
 
 
-def test_flush_line_counts_the_sub_agent_lane_flushes_it_does_not_list():
-    """The flush list says how many compactions happened in sub-agent
-    lanes (off the turn axis, so neither listed nor charted) instead of
-    presenting the orchestrator's count as the run's total."""
+def test_flush_line_separates_the_main_lane_from_each_sub_agent_lane():
+    """The flush list keeps the orchestrator's compactions (the ones the
+    charts mark) in a main-lane list and each sub-agent lane's in its
+    own headed list, placed by lane turn and the main-lane turn they
+    precede; the chart explainer belongs to the main-lane list."""
     flushes = pd.DataFrame(
         {
-            "turn": [3],
-            "type": ["summary"],
-            "source": ["recorded"],
-            "tokens_before": [1000],
-            "tokens_after": [400],
-            "tokens_after_inferred": [False],
+            "turn": [3, 2],
+            "agent_span_id": [None, "S1"],
+            "lane_turn": [3, 2],
+            "type": ["summary", "summary"],
+            "source": ["recorded", "inspect"],
+            "tokens_before": [1000, 1958],
+            "tokens_after": [400, 215],
+            "tokens_after_inferred": [False, False],
         }
     )
-    html = sections.flush_line(flushes, n_off_axis=2)
-    assert "1 context flush(es)" in html and "2 more in sub-agent lanes" in html
-    assert "sub-agent lanes" not in sections.flush_line(flushes, n_off_axis=0)
-    only_sub = sections.flush_line(flushes.iloc[:0], n_off_axis=1)
+    html = sections.flush_line(flushes, {"S1": "subagent_a"})
+    assert "1 context flush(es)" in html and "dashed lines" in html
+    assert "1 in sub-agent lanes (off the main-lane turn axis)" in html
+    assert "Main lane" in html and "subagent_a lane" in html
+    assert "its turn 2 (before main-lane turn 2)" in html and "1,958 → 215" in html
+    only_sub = sections.flush_line(flushes[flushes.agent_span_id.notna()], {})
     assert "0 context flush(es)" in only_sub and "dashed lines" not in only_sub
-    assert "Token counts are" not in only_sub
+    assert "Main lane" not in only_sub and "Token counts are" not in only_sub
+    assert "unnamed lane" in only_sub
 
 
 def empty_flushes() -> pd.DataFrame:

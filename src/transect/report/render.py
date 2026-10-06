@@ -262,9 +262,13 @@ def render_report(
                     derived, flushes=bool(flush_turns), threshold=drawn_threshold
                 )
             )
-        if len(all_flushes):  # a sub-agent lane's flushes still get counted
+        if len(all_flushes):  # a sub-agent lane's flushes are listed too
+            spans = results.subagents
             token_blocks.append(
-                sections.flush_line(my_flushes, len(all_flushes) - len(my_flushes))
+                sections.flush_line(
+                    all_flushes,
+                    dict(zip(spans.agent_span_id, spans.agent_lane, strict=True)),
+                )
             )
         add(("token_telemetry", sections.section("Token telemetry", token_blocks)))
         # 4. sub-agent activity (the votes slice is shared with the
