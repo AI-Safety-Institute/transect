@@ -326,7 +326,8 @@ def test_flush_line_separates_the_main_lane_from_each_sub_agent_lane():
     assert "1 context flush(es)" in html and "dashed lines" in html
     assert "1 in sub-agent lanes (off the main-lane turn axis)" in html
     assert "Main lane" in html and "subagent_a lane" in html
-    assert "its turn 2 (before main-lane turn 2)" in html and "1,958 → 215" in html
+    assert "before sub-agent lane turn 2 (before main-lane turn 2)" in html
+    assert "1,958 → 215" in html
     only_sub = sections.flush_line(flushes[flushes.agent_span_id.notna()], {})
     assert "0 context flush(es)" in only_sub and "dashed lines" not in only_sub
     assert "Main lane" not in only_sub and "Token counts are" not in only_sub
