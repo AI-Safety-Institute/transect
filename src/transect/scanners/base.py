@@ -8,7 +8,7 @@ from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
 from transect.scanners.compaction import compaction_texts
-from transect.scanners.helpers import Lanes, all_model_turns
+from transect.scanners.helpers import Lanes, all_model_turns, is_model_turn
 
 # inspect-ai ModelUsage attribute names, used verbatim as dataframe columns
 _USAGE_FIELDS = (
@@ -185,7 +185,7 @@ def context_flush() -> Scanner[Transcript]:
         lanes = Lanes(transcript)
         lane_counts: dict[str, int] = {}
         for turn, event in lanes.events_before_turn():
-            if event.event == "model" and event.output:
+            if is_model_turn(event):
                 sub = lanes.sub_agent_of(event)
                 if sub is not None:
                     lane_counts[sub.id] = lane_counts.get(sub.id, 0) + 1
@@ -291,7 +291,7 @@ def human_intervention() -> Scanner[Transcript]:
         sub_outputs = {
             event.output.message.id
             for _, event in lanes.events_before_turn()
-            if event.event == "model" and event.output and event.output.message.id
+            if is_model_turn(event) and event.output.message.id
         }
         for turn, event, _calls in lanes.turns():
             output_id = event.output.message.id

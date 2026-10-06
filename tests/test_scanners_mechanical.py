@@ -178,11 +178,12 @@ def test_lane_activity_excludes_the_main_lane_and_folded_spawn_calls():
 
 
 def test_context_flush_records_compaction_events_at_their_turn():
-    """A compaction event lands with the count of orchestrator turns before it
-    and the event's own type/source/token fields."""
+    """A compaction event lands with the count of orchestrator turns before it,
+    a failed generate's placeholder turn included, and the event's own
+    type/source/token fields."""
     events = [
         model_turn("a"),
-        model_turn("b"),
+        model_turn("", error="boom"),
         CompactionEvent(
             type="summary", source="inspect", tokens_before=900, tokens_after=200
         ),

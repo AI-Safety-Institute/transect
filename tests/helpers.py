@@ -44,7 +44,7 @@ class StubTranscript:
         self.source_uri = None
 
 
-def model_turn(text, span_id=None, input=(), usage=None):
+def model_turn(text, span_id=None, input=(), usage=None, error=None):
     output = ModelOutput.from_content(MODEL, text)
     if usage is not None:
         output.usage = usage
@@ -56,6 +56,7 @@ def model_turn(text, span_id=None, input=(), usage=None):
         config=GenerateConfig(),
         output=output,
         span_id=span_id,
+        error=error,
     )
 
 
