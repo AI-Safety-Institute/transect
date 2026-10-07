@@ -63,12 +63,10 @@ Constraints ledger (detail sits on each named function or constant):
   option and blanks the chart** (`_RESERVED_TIP_CHANNELS`).
 
 `inspect_viz` tracks every `Data` object in a module-global registry
-that only grows, and `to_html` inlines every registry entry rather than
-scoping to the component tree it was handed. Repeated `render_report`
-calls in one process therefore accumulate: a later epoch's report file
-carries earlier epochs' tables, and each section's iframe inlines every
-other section's tables. Fixing it needs an upstream fragment-embed API;
-not done here.
+that only grows, and its `to_html` inlines every registry entry rather
+than scoping to the component tree it was handed. `embed._document`
+scopes each section's document to the tables it reads until the upstream
+fix (meridianlabs-ai/inspect_viz#40) is released.
 """
 
 from typing import Any

@@ -9,10 +9,10 @@ imports this layer, never the reverse.
 """
 
 import html as html_escape
+import json
 
-from inspect_viz import Component
+from inspect_viz import Component, Data
 from inspect_viz.layout import vconcat
-from inspect_viz.plot import to_html
 
 
 def embed_section(components: list[Component], height_px: int, extra_head: str) -> str:
@@ -33,16 +33,15 @@ def embed_section(components: list[Component], height_px: int, extra_head: str) 
 def _embed(component: Component, height_px: int, extra_head: str) -> str:
     """One chart section's component tree -> one iframe.
 
-    inspect_viz `to_html()` always returns a complete document (its
-    dependencies flag is a no-op), so every embedded chart is a whole
-    srcdoc document.
+    `_document` returns a complete document (inspect_viz's `to_html`
+    shape), so every embedded chart is a whole srcdoc document.
 
     `_TIP_POINTER_CSS` and `_TIP_CLAMP_HEAD` are spliced in
     unconditionally (hovering does not work without the first, tooltips
     render clipped without the second), followed by the caller's
     ``extra_head``. All three go into the document's ``<head>`` before
     escaping, as a plain string replace against the one ``</head>``
-    `to_html()` emits - safe because we control the document's shape.
+    `_document` emits - safe because we control the document's shape.
 
     The iframe is wrapped in a ``<div style="overflow-x:auto">`` so a
     wide chart scrolls inside its own box instead of forcing the outer
@@ -61,7 +60,7 @@ def _embed(component: Component, height_px: int, extra_head: str) -> str:
     marks stay colour-coded, `sections`' legend carries the same
     label/swatch pairs, and nothing is hidden at the unscrolled position.
     """
-    doc = to_html(component)
+    doc = _document(component)
     dropdown_cap = (
         "<style>.ts-dropdown .ts-dropdown-content "
         f"{{ max-height: {max(80, height_px - _DROPDOWN_OFFSET)}px !important; }}"
@@ -76,6 +75,51 @@ def _embed(component: Component, height_px: int, extra_head: str) -> str:
         f'srcdoc="{html_escape.escape(doc, quote=True)}"></iframe>'
     )
     return f'<div class="{CHART_SCROLL_CLASS}" style="overflow-x:auto">{iframe}</div>'
+
+
+def _document(component: Component) -> str:
+    """The component as a complete HTML document, with only the tables it
+    reads.
+
+    inspect_viz's `to_html` inlines every tracked `Data`, so a section's
+    document would carry every other section's tables and, across renders
+    in one process, earlier renders' tables (meridianlabs-ai/inspect_viz#39).
+    This mirrors `to_html` without that sweep; replace with `to_html` once
+    meridianlabs-ai/inspect_viz#40 is released.
+    """
+    if not component.spec:
+        component.spec = component._create_spec()
+    referenced = _referenced_tables(component.spec)
+    tables = {
+        data.table: data._data
+        for data in Data._get_all()
+        if data._data and data.table in referenced
+    }
+    snippet = component._quarto_html(tables_override=tables)
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"></head>'
+        f"<body>{snippet}</body></html>"
+    )
+
+
+def _referenced_tables(spec: str) -> set[str]:
+    """Names of the tables a spec reads from: its ``from`` values, the only
+    key inspect_viz writes a table name into."""
+    tables: set[str] = set()
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            source = node.get("from")
+            if isinstance(source, str):
+                tables.add(source)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(json.loads(spec))
+    return tables
 
 
 def _widest_plot(config: object) -> int:
