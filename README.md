@@ -637,12 +637,14 @@ AI](https://inspect.aisi.org.uk/) (eval framework and logs),
 ### BibTeX
 
 ```bibtex
-@software{transect_2026,
+@misc{transect_2026,
   author = {Pilditch, Toby D. and Voudouris, Konstantinos and Abbas, Alexandra and Ududec, Cozmin},
   title = {Transect: Retaining Observability for Long-Horizon {LLM} Agent Evaluations},
-  date = {2026-09},
-  url = {https://github.com/AI-Safety-Institute/transect},
-  langid = {en}
+  year = {2026},
+  eprint = {2610.08364},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.AI},
+  url = {https://arxiv.org/abs/2610.08364}
 }
 ```
 
@@ -652,7 +654,4 @@ For attribution, please cite this work as:
 
 Pilditch, Toby D., Konstantinos Voudouris, Alexandra Abbas, and Cozmin Ududec. 2026.
 *Transect: Retaining Observability for Long-Horizon LLM Agent Evaluations*.
-Released September. <https://github.com/AI-Safety-Institute/transect>.
-
-A paper describing the package is forthcoming; this entry will be updated with
-its reference when it is published.
+arXiv preprint arXiv:2610.08364. <https://arxiv.org/abs/2610.08364>.
