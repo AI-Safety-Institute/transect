@@ -5,8 +5,8 @@ description = "Transect: transcript analysis for agent evals, built on inspect-s
 license-files = ["LICENSE", "LICENSES/*.txt"]
 requires-python = ">=3.12"
 dependencies = [
-    "inspect-ai>=0.3.268",
-    "inspect-scout>=0.5.3",
+    "inspect-ai>=0.3.277",
+    "inspect-scout>=0.5.4",
     "pandas>=3.0.5",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
