@@ -634,4 +634,24 @@ AI](https://inspect.aisi.org.uk/) (eval framework and logs),
 
 ## Citation
 
-A paper describing the method is forthcoming.
+### BibTeX
+
+```bibtex
+@misc{transect_2026,
+  author = {Pilditch, Toby D. and Voudouris, Konstantinos and Abbas, Alexandra and Ududec, Cozmin},
+  title = {Transect: Retaining Observability for Long-Horizon {LLM} Agent Evaluations},
+  year = {2026},
+  eprint = {2610.08364},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.AI},
+  url = {https://arxiv.org/abs/2610.08364}
+}
+```
+
+### Attribution format
+
+For attribution, please cite this work as:
+
+Pilditch, Toby D., Konstantinos Voudouris, Alexandra Abbas, and Cozmin Ududec. 2026.
+*Transect: Retaining Observability for Long-Horizon LLM Agent Evaluations*.
+arXiv preprint arXiv:2610.08364. <https://arxiv.org/abs/2610.08364>.
