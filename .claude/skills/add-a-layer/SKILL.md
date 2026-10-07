@@ -124,13 +124,9 @@ The pieces, and the rules that make them work:
   Batching is also the memory lever. A per-turn layer holds one
   result row per item in memory until the loader finishes a
   transcript, and each row stores that item's scan events (the judge
-  calls with their full prompts). inspect-scout releases up to 0.5.3
-  additionally copy every earlier item's events onto each later row
-  (fixed upstream, see transect issue #9), so on those versions a
-  long run's memory and scan store grow with the square of the item
-  count: several hundred items per transcript reached gigabytes per
-  scanner in our measurements, and past roughly 400 items the scan
-  aborts at record time. `batch=N` divides the item count by N.
+  calls with their full prompts), so a long run's memory and scan
+  store grow with the item count. `batch=N` divides the item count
+  by N.
 
   Batching is unit-neutral. A custom loader batches by doing
   exactly three things per yielded item:
