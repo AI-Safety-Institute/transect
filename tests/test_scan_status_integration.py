@@ -7,11 +7,11 @@ from xml.etree import ElementTree
 
 import pytest
 from inspect_ai.model import ChatMessageUser, Model, ModelOutput, get_model
-from inspect_scout import Loader, Transcript, loader, scanner
+from inspect_scout import Loader, Transcript, loader, scan_results_df, scanner
 
 import transect
 import transect.api as api
-from transect.scanners import helpers
+from transect.scanners import base, helpers
 from transect.scanners.cohort import batch_item_content
 
 
@@ -90,6 +90,39 @@ def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
         open_report=False,
     )
     assert _status_text(empty.report_paths[0]) == text
+
+
+def test_failed_eval_setup_surfaces_its_recorded_error_on_run_and_reload(
+    demo_log, tmp_path, monkeypatch
+):
+    """A persisted setup failure reaches both API callers before frame projection."""
+
+    def fail_header(uri):
+        raise RuntimeError("recorded setup failure")
+
+    monkeypatch.setattr(base, "_eval_header", fail_header)
+    scans = tmp_path / "scans"
+    with pytest.raises(RuntimeError) as initial:
+        transect.transect(
+            str(demo_log),
+            transect.Spec(),
+            scans_dir=str(scans),
+            viewer=False,
+            open_report=False,
+        )
+
+    location = next(scans.glob("scan_id=*"))
+    raw = scan_results_df(str(location))
+    (error,) = raw.errors
+    assert error.scanner == "eval_setup"
+    assert raw.scanners["eval_setup"].value.isna().all()
+    assert raw.summary.scanners["eval_setup"].results == 0
+    assert "eval_setup" in str(initial.value)
+    assert error.transcript_id in str(initial.value)
+    assert error.error in str(initial.value)
+    with pytest.raises(RuntimeError) as restored:
+        transect.load(str(location))
+    assert str(restored.value) == str(initial.value)
 
 
 @loader(messages="all")
