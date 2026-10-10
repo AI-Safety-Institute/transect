@@ -110,8 +110,13 @@ provenance and the source evidence.
 
 ## Label-name sensitivity
 
-`transect.diagnostics.scramble_spec` renames labels, keeps definition order fixed and preserves
-text. Text can contain label-name references, so first inspect prompt coherence.
+`transect.diagnostics.scramble_spec` renames non-reserved labels, keeps definition
+order fixed and preserves text and ops flags. The phase name `ops` and the
+`none_of_the_above` fallback stay unchanged (including fallback spellings that
+normalize to that sub-agent key). A custom-named ops phase can be renamed while
+keeping its role. Declared reserved labels map to themselves, so the effective
+category set does not grow. Text can contain label-name references, so first
+inspect prompt coherence.
 Compare any renamed condition with unchanged-setup fresh-response repeats; account
 for ordering and label prevalence. One comparison cannot distinguish definition
 reading from name anchoring. There is no universal `1 / number_of_labels` chance
