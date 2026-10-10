@@ -1104,9 +1104,9 @@ def phase_cards(
         spend = p.new_work_tokens if pd.notna(p.new_work_tokens) else 0
         tags = [
             f"turns {int(p.turn_start)}–{int(p.turn_end)}",
-            # n_turns counts the phase's reasoning-bearing (digest) turns,
-            # which can be fewer than the range width (tool-only turns)
-            f"{int(p.n_turns)} reasoning turn(s)",
+            # n_turns counts the phase's digest turns, which can be fewer
+            # than the range width (turns the judge never saw)
+            f"{int(p.n_turns)} turn(s) shown to the judge",
             f"{int(spend):,} orchestrator new-work tokens",
         ]
         n_tools = (
@@ -1317,11 +1317,12 @@ def reliability_audit(
                 "value": _turns_summary(phase_turns),
                 "definition": "Orchestrator turns of this transcript, split by "
                 "how each turn's label was decided: judged (labelled directly); "
-                "filled (a reasoning turn no judge answer covered, inheriting "
-                "the previous label at low confidence); attributed (content-free "
-                "tool-call-only or failed turns the judge never saw, taking the "
-                "surrounding phase); unjudged (refusal / no_answer / "
-                "missing_turn); or unattributed (tool-only turns after an "
+                "filled (a turn shown to the judge that no judge answer "
+                "covered, inheriting the previous label at low confidence); "
+                "attributed (turns the judge never saw - failed or empty "
+                "turns, and tool-call-only turns when tool_only_turns is off - "
+                "taking the surrounding phase); unjudged (refusal / no_answer "
+                "/ missing_turn); or unattributed (unseen turns after an "
                 "unjudged turn, with no phase to take - greyed in the band).",
             },
             {

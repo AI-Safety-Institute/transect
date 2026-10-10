@@ -17,7 +17,14 @@ from helpers import (
     seg_answer,
     verify_answer,
 )
-from inspect_ai.model import ContentReasoning, ContentText, get_model
+from inspect_ai.event import ModelEvent
+from inspect_ai.model import (
+    ContentReasoning,
+    ContentText,
+    GenerateConfig,
+    ModelOutput,
+    get_model,
+)
 
 from transect.scanners.phases import (
     decision_phases,
@@ -28,6 +35,7 @@ from transect.scanners.phases import (
 from transect.scanners.phases_common import (
     DigestJudgement,
     StitchedPhase,
+    clip,
     digest_line,
     is_labelled,
 )
@@ -113,6 +121,53 @@ def test_reasoning_blocks_enter_the_digest_and_its_prompt_line():
     assert thinking_only.reasoning == "try a different split"
     assert (plain.reasoning, plain.text) == ("", "plain text turn")
     assert digest_line(plain) == "2: plain text turn"
+
+
+@pytest.mark.parametrize(
+    ("text", "cap", "expected"),
+    [
+        ("short", 10, "short"),
+        ("abcdefghij", 4, "ab [... 6 chars ...] ij"),
+        ("abcdefghij", 5, "ab [... 5 chars ...] hij"),
+        ("abc", 0, ""),
+        ("ab cd ef gh", 6, "ab [... 5 chars ...] gh"),
+    ],
+    ids=["within-cap", "even-cap", "odd-cap", "zero-cap", "cut-at-spaces"],
+)
+def test_clip_keeps_the_start_and_the_end(text, cap, expected):
+    """A string over its cap keeps its first and last characters around
+    an elision marker that counts what was cut."""
+    assert clip(text, cap) == expected
+
+
+def test_the_final_text_turn_keeps_its_text_up_to_final_text_chars():
+    """Earlier turns are clipped at both ends; the last turn with text
+    keeps it whole, even when a tool-call-only turn follows; a
+    final_text_chars below snippet_chars caps it like any other turn."""
+    report = "Update for the lead: " + "details " * 40 + "2 tests still fail."
+    tool_only = ModelEvent(
+        model="m",
+        input=[],
+        tools=[],
+        tool_choice="none",
+        config=GenerateConfig(),
+        output=ModelOutput.for_tool_call(MODEL, "bash", {}, content=""),
+    )
+    events = [model_turn(report), model_turn(report), tool_only]
+    first, final, _ = turn_digests(StubTranscript(events), snippet_chars=60)
+    assert first.text.startswith("Update for the lead:")
+    assert first.text.endswith("2 tests still fail.")
+    assert "chars ...]" in first.text
+    assert final.text == report
+    capped = turn_digests(StubTranscript(events), snippet_chars=60, final_text_chars=0)
+    assert capped[1].text == first.text
+
+
+def test_negative_digest_caps_are_rejected_at_build_time():
+    """A negative snippet_chars or final_text_chars raises before any scan."""
+    for option in ("snippet_chars", "final_text_chars"):
+        with pytest.raises(ValueError, match=option):
+            decision_phases(PHASES_SPEC, scripted_judge(), **{option: -1})
 
 
 @pytest.mark.parametrize(

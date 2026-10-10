@@ -275,7 +275,7 @@ def build_flags(
                 "Flagged whenever this count is above zero: these units carry "
                 "no judgement at all (refusal, empty answer, or never reached), "
                 "so their grey rendering means unmeasured, not absent "
-                "activity. Units unjudged by design (tool-only turns, "
+                "activity. Units unjudged by design (turns the judge never saw, "
                 "unrequested classifications) are not counted here."
                 + (
                     f" Red at or above {UNJUDGED_SHARE_SERIOUS:.0%}: a large "

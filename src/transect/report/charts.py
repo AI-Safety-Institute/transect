@@ -444,7 +444,7 @@ def phase_band(
         "phase": "phase_index",
         "phase label": "phase_label",
         "turns": "turns_range",
-        "reasoning turns": "reasoning_turns_range",
+        "turns shown to the judge": "reasoning_turns_range",
         "confidence": "confidence",
     }
     band = plot(
@@ -848,14 +848,15 @@ _STRIP_MARGIN = 1
 # the basis definitions in `transect.scanners.phases`' scan docstring; a new
 # basis value falls through unmapped rather than lying.
 _STRIP_BASIS_WHY = {
-    "judged": "judged: reasoning turn scored by the judge(s)",
+    "judged": "judged: turn scored by the judge(s)",
     "filled": "not judged: inherits the previous label",
     "attributed": (
-        "not judged: content-free tool-only or failed turn; takes the surrounding label"
+        "not judged: a turn the judge never saw (failed, empty, or tool-only "
+        "with tool_only_turns off); takes the surrounding label"
     ),
     "unattributed": (
-        "not judged: content-free tool-only or failed turn after an unjudged "
-        "turn; no phase to take"
+        "not judged: a turn the judge never saw, after an unjudged turn; no "
+        "phase to take"
     ),
     "refusal": "not judged: the judge refused",
     "no_answer": "not judged: no valid judge answer",

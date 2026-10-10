@@ -25,9 +25,23 @@ from transect.scanners.helpers import capped_lines
 from transect.spec import Phase, Spec
 
 SNIPPET_CHARS = 300  # per-digest cap on text, reasoning, and each delegation
+FINAL_TEXT_CHARS = 4000  # cap on the text of the orchestrator's final turn
+TOOL_CALL_CHARS = 200  # per-call cap on the JSON arguments shown
+TOOL_RESULT_CHARS = 200  # per-call cap on the recorded output shown
+USER_CHARS = 300  # per-message cap on a user message the turn received
 
 # per-phase evidence cap (digest lines shown to a judge)
 EVIDENCE_LINES = 200
+
+# every prompt that shows digest lines states what their markers mean
+DIGEST_MARKERS = (
+    "Each turn line may carry: [USER] a message the agent received just "
+    "before that turn, from its user or its scaffold (context, NOT the "
+    "agent's own words or activity); [THINKING] the agent's reasoning; "
+    "the agent's own text; [CALL] a tool call with its arguments and "
+    "[RESULT] or [ERROR] the call's recorded output (both truncated); "
+    "[DELEGATES] a task handed to a sub-agent.\n"
+)
 
 _CONTEXT_GUARD = (
     "Use it to recognise phases; do NOT invent moves the turns do not show."
@@ -64,13 +78,23 @@ NarrationGroupStatus = Literal[
 ]
 
 
+class ToolDigest(BaseModel):
+    """One tool call of a digest turn, as shown to the judge."""
+
+    function: str
+    arguments: str = ""  # capped JSON arguments; "" when not shown
+    result: str = ""  # capped output or error message; "" when not shown
+    error: bool = False  # the call recorded an error (only when output is shown)
+
+
 class Digest(BaseModel):
-    """One reasoning-bearing turn, as shown to the judge."""
+    """One orchestrator turn, as shown to the judge."""
 
     turn: int
+    user: list[str] = []  # user messages this turn's input carried first
     text: str = ""
     reasoning: str = ""  # the turn's reasoning-block text, when recorded
-    tools: list[str] = []
+    calls: list[ToolDigest] = []
     delegations: list[str] = []
     event_id: str | None = None  # source model event uuid (viewer anchor)
 
@@ -121,8 +145,7 @@ class StitchedPhase(BaseModel):
     turn_start: int = Field(description="First digest turn of the phase (inclusive).")
     turn_end: int = Field(description="Last digest turn of the phase (inclusive).")
     n_turns: int = Field(
-        description="Number of digest turns in the phase (the "
-        "reasoning-bearing turns the judge saw)."
+        description="Number of digest turns in the phase (the turns the judge saw)."
     )
     confidence: float = Field(
         description="Mean over member judgements (fills included, at 0.3)."
@@ -417,17 +440,56 @@ async def call_judge(
     return None, "no_answer"
 
 
+def clip(text: str, cap: int) -> str:
+    """Bound a string to ``cap`` characters, keeping its start and its
+    end around a ``[... N chars ...]`` marker (marker excluded from the
+    cap): a message's closing lines often carry its conclusion.
+
+    Args:
+        text: The string to bound.
+        cap: Maximum characters kept.
+
+    Returns:
+        The text unchanged when within the cap; otherwise its first
+        ``cap // 2`` and last ``cap - cap // 2`` characters with the
+        elision marker between them ("" for a cap of 0).
+    """
+    if len(text) <= cap:
+        return text
+    if cap <= 0:
+        return ""
+    head, tail = cap // 2, cap - cap // 2
+    elided = len(text) - head - tail
+    return f"{text[:head].rstrip()} [... {elided} chars ...] {text[-tail:].lstrip()}"
+
+
+def check_digest_caps(**caps: int) -> None:
+    """Reject a negative digest character cap, naming it."""
+    for name, value in caps.items():
+        if value < 0:
+            raise ValueError(f"{name} must be >= 0, got {value}")
+
+
 def digest_line(d: Digest) -> str:
-    """Render one digest as a single prompt line: index, reasoning
-    behind a [THINKING] marker, text, tool names, then each delegation
-    behind a [DELEGATES] marker."""
+    """Render one digest as a single prompt line: index, each user
+    message behind a [USER] marker, reasoning behind a [THINKING]
+    marker, text, the tool calls, then each delegation behind a
+    [DELEGATES] marker.
+
+    Tool calls render as ``[CALL] name(arguments)`` followed by
+    ``[RESULT]`` or ``[ERROR]`` output when the digest carries
+    arguments or output, otherwise as the bare ``(tools: ...)`` names."""
     parts = [f"{d.turn}:"]
+    for message in d.user:
+        parts.append(f"[USER] {message}".replace("\n", " "))
     if d.reasoning:
         parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
     if d.text:
         parts.append(d.text.replace("\n", " "))
-    if d.tools:
-        parts.append(f"(tools: {', '.join(d.tools)})")
+    if any(c.arguments or c.result or c.error for c in d.calls):
+        parts.extend(_call_part(c) for c in d.calls)
+    elif d.calls:
+        parts.append(f"(tools: {', '.join(c.function for c in d.calls)})")
     for goal in d.delegations:
         parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
     return " ".join(parts)
@@ -447,3 +509,13 @@ def phase_evidence(phase: StitchedPhase, by_turn: Mapping[int, Digest]) -> str:
 def humanise_phase(label: str) -> str:
     """A phase label as a human title: ``initial_recon`` -> ``Initial recon``."""
     return str(label).replace("_", " ").capitalize()
+
+
+def _call_part(call: ToolDigest) -> str:
+    """One tool call's part of a digest line."""
+    part = f"[CALL] {call.function}"
+    if call.arguments:
+        part += f"({call.arguments})"
+    if call.result or call.error:
+        part += f" [{'ERROR' if call.error else 'RESULT'}] {call.result}".rstrip()
+    return part.replace("\n", " ")
