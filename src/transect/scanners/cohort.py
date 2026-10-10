@@ -284,7 +284,7 @@ def cohort_llm_scanner(
             ``metadata={"items": [...]}``. The facts (e.g.
             ``{"turn": 4}``) merge into that unit's result entry.
             `transect.reasoning_turns` with ``batch=N`` yields this shape
-            for reasoning turns, with ids matching its unbatched items.
+            for digest turns, with ids matching its unbatched items.
 
     Raises:
         TypeError: On a free-string (non-list) answer spec.

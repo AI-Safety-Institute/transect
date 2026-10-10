@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model
 from transect.scanners.cohort import _SPOT_DEFAULT, LOWCONF, Trigger, VerifierReview
 from transect.scanners.phases_cohort import ConsensusJudgement
 from transect.scanners.phases_common import (
+    DIGEST_MARKERS,
     Digest,
     PhaseReview,
     StitchedPhase,
@@ -243,7 +244,7 @@ def verify_system_prompt(spec: Spec, task_prompt: str) -> str:
     """
     phase_defs, _ = resolve_phases(spec)
     labels_line = ", ".join(p.label for p in phase_defs)
-    prompt = _VERIFY_HEAD + vocab_lines(phase_defs)
+    prompt = _VERIFY_HEAD + vocab_lines(phase_defs) + "\n\n" + DIGEST_MARKERS
     prompt += context_blocks(spec, task_prompt)
     prompt += (
         "\nReport your verdicts by calling the answer() tool: 'verdicts' "

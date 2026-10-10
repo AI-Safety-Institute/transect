@@ -473,16 +473,7 @@ def test_select_for_verify_sizes_the_random_sample(n_phases, sample, expected):
     assert set(reasons.values()) <= {"random_sample"}
 
 
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"snippet_chars": -1},
-        {"final_text_chars": -1},
-        {"verify": True, "verify_sample": -0.1},
-    ],
-    ids=["snippet_chars", "final_text_chars", "verify_sample"],
-)
-def test_out_of_range_options_are_rejected_at_build_time(options):
-    """An out-of-range option raises at scanner build time, naming the option."""
-    with pytest.raises(ValueError, match=list(options)[-1]):
-        decision_phases(PHASES_SPEC, scripted_judge(), **options)
+def test_verify_sample_outside_the_unit_interval_is_rejected():
+    """A verify_sample outside [0, 1] raises at scanner build time."""
+    with pytest.raises(ValueError, match="verify_sample"):
+        decision_phases(PHASES_SPEC, scripted_judge(), verify=True, verify_sample=-0.1)

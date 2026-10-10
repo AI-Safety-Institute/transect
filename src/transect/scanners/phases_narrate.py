@@ -8,6 +8,7 @@ from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
 from transect.scanners.phases_common import (
+    DIGEST_MARKERS,
     Digest,
     NarrationGroupStatus,
     StitchedPhase,
@@ -36,6 +37,10 @@ _NARRATE_HEAD = (
     "CONTIGUOUS sub-sections partitioning the phase's turns, each a "
     "short title + one-line gist, in order, together covering ALL the "
     "phase's turns.\n"
+    + DIGEST_MARKERS
+    + "When a headline or summary repeats a claim made in a [USER] line, "
+    "attribute it to the user; NEVER present it as the agent's own "
+    "finding.\n"
 )
 
 
