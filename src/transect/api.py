@@ -113,6 +113,8 @@ def transect(
         sample: The sample id to scan, a run scans one sample.
             Optional for a single-sample log; required (the error
             lists the available ids) when the log carries several.
+            Each selected sample/epoch must identify one input transcript;
+            multiple runs or repeated inputs raise with their source paths.
         epochs: Epoch selection for a multi-epoch ``.eval`` log
             (1-based); ``"all"`` scans every epoch (the report
             splits into one file per epoch); ``None`` = auto - the
