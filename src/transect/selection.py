@@ -38,6 +38,12 @@ def select_transcripts(
     Returns:
         The ``Selection``; ``transcript_ids`` preserves the index
         order and is None when nothing filtered.
+
+    Raises:
+        ValueError: When a selected sample/epoch has multiple physical
+            inputs or repeated transcript identities. Explicit sample and
+            epoch filters apply before this check; automatic epoch choice
+            never resolves a collision by taking the first input.
     """
     if not infos:
         raise ValueError("the log contains no transcripts")
@@ -60,26 +66,9 @@ def select_transcripts(
         kept = [i for i in infos if i.task_id == sample]
         narrowed_sample = len(kept) != len(infos)
 
-    # the same (sample, epoch) from several task_sets is not an epoch
-    # choice - refuse instead of silently keeping one run
-    by_run: dict[tuple[str, int], set[str]] = {}
-    for info in kept:
-        key = (info.task_id or "", _epoch(info))
-        by_run.setdefault(key, set()).add(info.task_set or "")
-    duplicated = {key: sets for key, sets in by_run.items() if len(sets) > 1}
-    if duplicated:
-        (sample_id, epoch_n), task_sets = next(iter(duplicated.items()))
-        raise ValueError(
-            f"sample {sample_id!r} (epoch {epoch_n}) appears in "
-            f"{len(task_sets)} task_sets {sorted(task_sets)} - a Transect "
-            "run scans one run of one sample; point logs at a single "
-            "task_set's log file"
-        )
-
     notes: list[str] = []
-    if epochs == "all":
-        narrowed_epochs = False
-    elif epochs is not None:
+    narrowed_epochs = False
+    if epochs is not None and epochs != "all":
         wanted = [epochs] if isinstance(epochs, int) else list(epochs)
         present = sorted({_epoch(i) for i in kept})
         missing = [e for e in wanted if e not in present]
@@ -90,7 +79,9 @@ def select_transcripts(
             )
         kept = [i for i in kept if _epoch(i) in wanted]
         narrowed_epochs = True
-    else:
+
+    _validate_unique_runs(kept)
+    if epochs is None:
         kept, notes, narrowed_epochs = _auto_epoch(kept)
 
     if not narrowed_sample and not narrowed_epochs:
@@ -109,6 +100,46 @@ async def read_index(transcripts: Transcripts) -> list[TranscriptInfo]:
 
 def _epoch(info: TranscriptInfo) -> int:
     return info.task_repeat if info.task_repeat is not None else 1
+
+
+def _validate_unique_runs(infos: list[TranscriptInfo]) -> None:
+    """Require one physical input per selected sample/epoch before auto selection.
+
+    A task_set names a task family, not a run. Missing source IDs do not
+    establish independent runs; distinct transcript IDs still make selection
+    ambiguous. Repeated identities are reported rather than deduplicated from
+    metadata, which cannot establish that their contents are identical.
+    """
+    groups: dict[tuple[str, int], list[TranscriptInfo]] = {}
+    for info in infos:
+        groups.setdefault((info.task_id or "", _epoch(info)), []).append(info)
+    for (sample_id, epoch_n), group in groups.items():
+        if len(group) < 2:
+            continue
+        task_sets = {info.task_set or "" for info in group}
+        sources = {
+            source for info in group if (source := getattr(info, "source_id", None))
+        }
+        transcripts = {info.transcript_id for info in group}
+        if len(task_sets) > 1:
+            reason = f"{len(task_sets)} task_sets {sorted(task_sets)}"
+        elif len(sources) > 1:
+            reason = f"{len(sources)} sources {sorted(sources)}"
+        elif len(transcripts) > 1:
+            reason = "multiple transcript identities"
+        else:
+            reason = "repeated input for the same transcript identity"
+        origins = "; ".join(
+            f"{info.transcript_id!r} "
+            f"(source_id={getattr(info, 'source_id', None)!r}, "
+            f"source_uri={getattr(info, 'source_uri', None)!r})"
+            for info in group
+        )
+        raise ValueError(
+            f"sample {sample_id!r} (epoch {epoch_n}) has {reason}: {origins}. "
+            "A Transect run scans one run of one sample; narrow logs to one "
+            "input per epoch and remove repeated inputs."
+        )
 
 
 def _auto_epoch(
