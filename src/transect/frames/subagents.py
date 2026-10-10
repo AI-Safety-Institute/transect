@@ -83,6 +83,7 @@ from transect.frames.common import (
     verifier_review,
     with_schema,
 )
+from transect.scanners._labels import normalize_label, normalize_vocabulary
 
 # the structural columns
 _SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
@@ -189,7 +190,9 @@ def _vocabulary(results: pd.DataFrame) -> list[str]:
     out: list[str] = []
     for _, r in results.iterrows():
         value = result_value(r.get("value"))
-        for entry in value.get("label_vocab") or []:
+        for entry in normalize_vocabulary(
+            value.get("label_vocab") or [], allow_duplicates=True
+        ):
             name = entry.get("label")
             if name and name not in out:
                 out.append(name)
@@ -305,7 +308,7 @@ def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:
         raw = r.get("label")
         label = None
         if not has_error and isinstance(raw, str) and raw.strip():
-            label = "_".join(raw.strip().lower().split())
+            label = normalize_label(raw)
         confidence = value.get("confidence")
         label_source = value.get("label_source")
         agreement = n_voting = n_members = confidence_pm = None
