@@ -187,7 +187,10 @@ The pieces, and the rules that make them work:
   `get_model(name, config=GenerateConfig(...))` as `judge_models`.
 - **Frame fn inputs**: a frame fn receives the raw results table only.
 - **Vocabulary**: `answer` is the closed label list the judge picks
-  from; `vocabulary` records the rubric in the scan store as
+  from. Answer and vocabulary keys are lowercased, with whitespace
+  replaced by underscores; blank or colliding names fail before judging.
+  Use those keys when writing label-specific rules in `question`.
+  `vocabulary` records the rubric in the scan store as
   `label_vocab` provenance (never shown to the judge - put rubric
   text the judge should see in `question`). It accepts a mapping
   (label -> description), a list of dicts, or bare label strings.

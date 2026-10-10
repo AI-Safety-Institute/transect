@@ -4,7 +4,9 @@ their definitions. One row per (surface, label).
 Columns (identity prefix explained in common.py):
 
 - surface: "phases" / "subagents", or a custom layer's name.
-- label: the resolved label.
+- label: the resolved label. Sub-agent keys are lowercased with whitespace
+  replaced by underscores, including on older stores. Phase and custom-layer
+  keys stay as recorded; new cohort scanners record normalized custom keys.
 - description: the rubric text the judge saw.
 - ops: the operational-bucket flag (phases only).
 - reserved: scanner-added rather than spec-declared.
@@ -14,6 +16,7 @@ Columns (identity prefix explained in common.py):
 import pandas as pd
 
 from transect.frames.common import IDENTITY_COLS, identity, result_value, with_schema
+from transect.scanners._labels import normalize_vocabulary
 
 
 def label_definitions_df(
@@ -44,9 +47,12 @@ def _surface_rows(raw: pd.DataFrame, surface: str, key: str) -> list[dict]:
         identity_cols = identity(r)
         if identity_cols["transcript_id"] in done:
             continue
-        vocab = result_value(r.get("value")).get(key) or []
+        value = result_value(r.get("value"))
+        vocab = value.get(key) or []
         if not vocab:
             continue
+        if surface == "subagents":
+            vocab = normalize_vocabulary(vocab, allow_duplicates=True)
         done.add(identity_cols["transcript_id"])
         seen: set[str] = set()
         for entry in vocab:

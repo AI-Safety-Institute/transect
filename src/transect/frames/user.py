@@ -18,6 +18,7 @@ from transect.frames.common import (
     result_value,
     verifier_review,
 )
+from transect.scanners._labels import normalize_label
 
 
 def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
@@ -168,11 +169,7 @@ def _item_row(r, value: dict) -> dict:
     projection when the scanner stamped a judge block."""
     row = {"item": input_id(r), **item_metadata(r)}
     raw = r.get("answer")
-    label = (
-        "_".join(raw.strip().lower().split())
-        if isinstance(raw, str) and raw.strip()
-        else None
-    )
+    label = normalize_label(raw)
     row["label"] = label
     if "judge" not in value:
         row.update(value)

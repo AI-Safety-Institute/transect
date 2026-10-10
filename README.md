@@ -188,6 +188,16 @@ subagent_labels:
 `none_of_the_above` and an operational bucket are always
 available to the judges.
 
+Sub-agent labels and custom `cohort_llm_scanner` label keys are lowercased
+with whitespace replaced by underscores (`Result Review` becomes
+`result_review`). Blank keys and names that collide after normalization
+raise before judging. The input `Spec` is unchanged. Older sub-agent rubrics
+use the same keys on `load()` without rewriting the store or judging again;
+ambiguous aliases raise rather than merging definitions. Phase names and old
+custom-layer rubrics retain their recorded spelling for custom-frame compatibility.
+New cohort scans record normalized custom keys; older custom stores may need
+an explicit user mapping or a re-scan to align their definitions.
+
 > [!TIP]
 > The shipped skills help here (see [Installation](#installation)):
 > `using-transect` walks this with you: it asks what the eval is,
