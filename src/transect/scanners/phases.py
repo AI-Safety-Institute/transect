@@ -32,12 +32,14 @@ from transect.scanners.phases_cohort import (
     vote_turns,
 )
 from transect.scanners.phases_common import (
+    FINAL_TEXT_CHARS,
     SNIPPET_CHARS,
     Digest,
     DigestJudgement,
     StitchedPhase,
     TurnBasis,
     call_judge,
+    clip,
     context_blocks,
     digest_line,
     gather_judge_calls,
@@ -124,6 +126,7 @@ def decision_phases(
     k_rolls: int = 1,
     chunk: int = 40,
     snippet_chars: int = SNIPPET_CHARS,
+    final_text_chars: int = FINAL_TEXT_CHARS,
     cache: bool | CachePolicy = True,
     verify: bool | None = None,
     verify_chunk: int = 8,
@@ -151,7 +154,12 @@ def decision_phases(
             multi-model list.
         chunk: Digests per segmentation call.
         snippet_chars: Per-digest cap on turn text, reasoning, and
-            each delegation shown to the judge.
+            each delegation shown to the judge; a longer string keeps
+            its start and its end (`phases_common.clip`).
+        final_text_chars: Cap on the text of the orchestrator's last
+            turn with text, which is usually its report of the work;
+            never below ``snippet_chars``, so 0 caps it like any
+            other turn.
         cache: Judge-call caching. The default ``True`` is inspect's
             standard on-disk response cache; ``False`` always hits
             the API.
@@ -303,6 +311,10 @@ def decision_phases(
         raise ValueError("decision_phases requires chunk >= 1")
     if verify_chunk <= 0:
         raise ValueError("decision_phases requires verify_chunk >= 1")
+    if snippet_chars < 0 or final_text_chars < 0:
+        raise ValueError(
+            "decision_phases requires snippet_chars >= 0 and final_text_chars >= 0"
+        )
     members_spec = cohort_members(judge_models, k_rolls)
     factory_names = list(dict.fromkeys(m.name for m in members_spec))
     verify_on = resolve_verify(len(factory_names), verify, verify_sample)
@@ -339,7 +351,11 @@ def decision_phases(
         judges = [(member, member.resolve()) for member in members_spec]
         member_keys = [member.key for member in members_spec]
         n_members = len(members_spec)
-        digests = turn_digests(transcript, snippet_chars=snippet_chars)
+        digests = turn_digests(
+            transcript,
+            snippet_chars=snippet_chars,
+            final_text_chars=final_text_chars,
+        )
         n_turns = sum(1 for _ in orchestrator_turns(transcript))
         task_prompt = agent_task_prompt(transcript)
         system = system_prompt(spec, task_prompt=task_prompt)
@@ -485,6 +501,7 @@ def decision_phases(
 def turn_digests(
     transcript: Any,
     snippet_chars: int = SNIPPET_CHARS,
+    final_text_chars: int = FINAL_TEXT_CHARS,
 ) -> list[Digest]:
     """Build one digest per reasoning-bearing orchestrator turn.
 
@@ -495,11 +512,16 @@ def turn_digests(
     child spans and is represented only by delegation lines, folded in
     at the last eligible turn preceding each span_begin.
 
+    A string over its cap keeps its start and its end (`clip`). The
+    last digest turn with text keeps up to ``final_text_chars`` of it.
+
     Args:
         transcript: The transcript to digest (Scout ``Transcript`` or
             any object with compatible ``events``/``messages``).
         snippet_chars: Per-digest cap on turn text, on reasoning, and
             on each delegation string.
+        final_text_chars: Cap on the text of the last digest turn with
+            text; never below ``snippet_chars``.
 
     Returns:
         ``Digest`` records in turn order.
@@ -513,6 +535,7 @@ def turn_digests(
         return by_turn[turn]
 
     eligible_turns: list[int] = []  # orchestrator, non-failed: anchor targets
+    final: tuple[int, str] | None = None  # last digest turn with text, uncapped
     for turn, ev, calls in lanes.turns():
         event: Any = ev
         if _is_failed_turn(event):
@@ -530,12 +553,14 @@ def turn_digests(
                     label = arguments.get("label") or arguments.get("description")
                     task_text = strip_subagent_scaffold(str(task))
                     goal = (f"[{label}] " if label else "") + task_text
-                    delegations.append(goal[:snippet_chars])
+                    delegations.append(clip(goal, snippet_chars))
         if not text and not reasoning and not delegations:
             continue  # content-free tool-call-only turn: nothing classifiable
         digest = _digest(turn)
-        digest.text = text[:snippet_chars]
-        digest.reasoning = reasoning[:snippet_chars]
+        digest.text = clip(text, snippet_chars)
+        digest.reasoning = clip(reasoning, snippet_chars)
+        if text:
+            final = (turn, text)
         digest.tools = [c.function for c in calls]
         digest.delegations.extend(delegations)
         digest.event_id = getattr(event, "uuid", None)
@@ -549,8 +574,11 @@ def turn_digests(
         anchor = eligible_turns[position] if position >= 0 else eligible_turns[0]
         text = span_task_text(span, lanes.first_models.get(span.id))[0]
         goal = text.splitlines()[0].strip() if text else str(span.name)
-        _digest(anchor).delegations.append(goal[:snippet_chars])
+        _digest(anchor).delegations.append(clip(goal, snippet_chars))
 
+    if final is not None:
+        turn, text = final
+        by_turn[turn].text = clip(text, max(final_text_chars, snippet_chars))
     return [by_turn[turn] for turn in sorted(by_turn)]
 
 
