@@ -220,6 +220,11 @@ vote, with a verifier re-checking doubtful judgements), writes the
 results to `scans_dir`, renders the HTML report, and starts the
 viewer.
 
+Each selected sample/epoch must identify one input transcript. Multiple runs
+of the same task or repeated copies raise with their source paths; narrow
+`logs` to the intended inputs. Explicit sample and epoch filters are applied
+before checking this ambiguity.
+
 `load(scans_dir)` re-reads a stored scan without rescanning (and without API
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.

@@ -235,6 +235,7 @@ means "not judged", never "fine"; absence is stated, never faked.
 | No phases / sub-agent sections in the report | the Phase timeline section states the reason in place: no judge configured (`judge_models=None`, the console warning names the declared vocabularies), or the judge ran and produced no phases - then inspect `scan_status` for failed or missing requested work |
 | No agreement strip under the phase band | a solo judge (one model, `k_rolls=1`) has no per-turn agreement to show; the caption in its place says so - `k_rolls` > 1 or a cohort brings the strip back |
 | `sample= required` error | multi-sample log; the error lists the available ids |
+| Selected sample/epoch has multiple sources, transcripts or repeated input | narrow `logs` to one input per selected epoch and remove repeated copies; source paths and recorded identities are listed in the error. Explicit sample/epoch filters apply before this check |
 | "values outside the declared vocabulary ... coerced to NaN" warning on `load()` | the store's recorded values do not match the current scanner schema - run a new scan, retain the old one, and account for any fresh judge calls |
 | Loud "none joined this transcript's lanes" warning in the report | span identity mismatch between scan and render - treat as a bug, not cosmetics |
 | Charts render blank | the report's charts are CDN-loaded - it is an online document; check network |
