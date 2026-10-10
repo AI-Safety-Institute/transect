@@ -41,6 +41,7 @@ from transect.frames import (
     subagent_votes_df,
     subagents_df,
     token_timeline_df,
+    transcript_info_df,
     turn_groups_df,
 )
 from transect.frames.common import SCHEMA_VERSION
@@ -325,6 +326,39 @@ def test_lane_activity_frame_anchors_tool_activity_to_orchestrator_turns(
     pd.testing.assert_frame_equal(
         got[expected.columns].reset_index(drop=True), expected, check_dtype=False
     )
+
+
+@pytest.mark.parametrize("preceding_success", [False, True])
+def test_transcript_info_surfaces_recorded_setup_errors(preceding_success):
+    """Failed setup rows name their transcript and cause, even in a partial scan."""
+    rows = [{"value": {"compaction_prompt": None}}] if preceding_success else []
+    rows.append(
+        {
+            "transcript_id": "failed-transcript",
+            "value": None,
+            "scan_error": "stored timeline could not be resolved",
+        }
+    )
+    with pytest.raises(RuntimeError) as caught:
+        transcript_info_df(pd.DataFrame(rows))
+    assert "eval_setup" in str(caught.value)
+    assert "failed-transcript" in str(caught.value)
+    assert "stored timeline could not be resolved" in str(caught.value)
+
+
+@pytest.mark.parametrize("error", [None, pd.NA, float("nan"), ""])
+def test_transcript_info_preserves_unrecorded_setup_facts(error):
+    """A successful setup with no recorded prompt is still a valid result."""
+    frame = transcript_info_df(
+        pd.DataFrame([{"value": {"compaction_prompt": None}, "scan_error": error}])
+    )
+    assert len(frame) == 1 and frame.compaction_prompt.iloc[0] is None
+
+
+def test_transcript_info_does_not_hide_a_successful_result_schema_breach():
+    """Missing required fields without a recorded scan error still fail loudly."""
+    with pytest.raises(KeyError, match="compaction_prompt"):
+        transcript_info_df(pd.DataFrame([{"value": {}, "scan_error": None}]))
 
 
 def test_transcript_info_describes_the_run(demo_results):
