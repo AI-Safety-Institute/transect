@@ -133,6 +133,18 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
 - **Scanners**: per-transcript extractors, run by Scout. Structural
   scanners are free and always on; judged scanners run when
   `judge_models` is set and the Spec declares their vocabulary.
+- **Turn digests**: what the phase judge, its verifier and the
+  narrator read - one line per orchestrator turn with the user
+  messages the turn received (`[USER]`), its reasoning (`[THINKING]`)
+  and text, each tool call with its arguments and recorded output
+  (`[CALL]`, `[RESULT]` / `[ERROR]`), and sub-agent tasks
+  (`[DELEGATES]`). Each part is capped in characters, and a longer
+  part keeps its start and its end: 300 for text, reasoning,
+  delegations and user messages, 200 for each call's arguments and
+  for its output, and 4000 for the text of the agent's last turn,
+  usually its report. The caps and `tool_only_turns` are arguments
+  of `decision_phases()` and `reasoning_turns()`; `transect()` uses
+  the defaults.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.
@@ -564,7 +576,10 @@ Structural extraction is free (no LLM calls): without
 structural scanners run and the whole scan costs nothing. Custom
 scanners can make their own provider calls regardless of those
 switches. Judged surfaces cost roughly (turns + sub-agents) x judges
-x rolls calls per transcript; the demo example costs cents.
+x rolls calls per transcript; the demo example costs cents. On
+tool-heavy runs, tool output is the largest part of a phase judge's
+prompt: `decision_phases(tool_result_chars=...)` trades that evidence
+for cost (0 leaves outputs out).
 
 Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
 with `cohort_llm_scanner(batch=True)` judges N units per call,

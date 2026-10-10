@@ -154,13 +154,13 @@ def test_the_final_text_turn_keeps_its_text_up_to_final_text_chars():
         output=ModelOutput.for_tool_call(MODEL, "bash", {}, content=""),
     )
     events = [model_turn(report), model_turn(report), tool_only]
-    first, final = turn_digests(StubTranscript(events), snippet_chars=60)
+    first, final, _ = turn_digests(StubTranscript(events), snippet_chars=60)
     assert first.text.startswith("Update for the lead:")
     assert first.text.endswith("2 tests still fail.")
     assert "chars ...]" in first.text
     assert final.text == report
     capped = turn_digests(StubTranscript(events), snippet_chars=60, final_text_chars=0)
-    assert capped[-1].text == first.text
+    assert capped[1].text == first.text
 
 
 def test_negative_digest_caps_are_rejected_at_build_time():

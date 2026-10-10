@@ -90,9 +90,13 @@ The pieces, and the rules that make them work:
 
 - **Loader**: the loader is how you choose the unit of judgement,
   not a requirement. `transect.reasoning_turns()` yields one item per
-  main-lane reasoning turn (reasoning blocks inlined behind a
-  `[THINKING]` marker when the source records them, sub-agent spawn
-  tasks behind a `[DELEGATES]` marker) - the right unit for a second
+  main-lane turn as `decision_phases` shows it to its judge: user
+  messages the turn received behind `[USER]`, reasoning blocks behind
+  `[THINKING]` when the source records them, the turn's text, each
+  tool call with its arguments and recorded output behind `[CALL]`
+  and `[RESULT]` / `[ERROR]`, and sub-agent spawn tasks behind
+  `[DELEGATES]`; its character caps and `tool_only_turns` take the
+  same arguments as `decision_phases` - the right unit for a second
   per-turn facet, already numbered on the orchestrator turn axis. For
   another unit shape, write your own `@loader`; whatever metadata you
   put on each yielded item (e.g. `{"turn": n}`) rides into the frame

@@ -109,8 +109,10 @@ armed (the Sub-agent activity summary line does the same).
   (mean)" when a vote decided, "(verifier)" after an overturn, bare
   for a single judge), the decided label source, and the turn's basis
   (how it got its label): `judged` directly; `filled` (inherits the
-  previous label); `attributed` (content-free tool-only/failed turn);
-  `unattributed` (one after an unjudged turn, with no phase to take);
+  previous label); `attributed` (a failed or empty turn, or a
+  tool-call-only turn when `tool_only_turns` is off - the judge never
+  saw it); `unattributed` (one after an unjudged turn, with no phase
+  to take);
   `refusal` /
   `no_answer` / `missing_turn` (unjudged). On a turn whose phase the
   verifier re-labelled, agreement reads "n/a (verifier re-label)" -
@@ -122,8 +124,8 @@ armed (the Sub-agent activity summary line does the same).
   coverage, not disagreement. Confirm in the audit's Member coverage
   row (votes produced vs asked, longest missed stretch) before
   reading anything into the labels there. Grey strip runs can also
-  legitimately cross phase boundaries (leading/trailing content-free
-  tool-only turns belong to a phase without being judged).
+  legitimately cross phase boundaries (leading/trailing turns the
+  judge never saw belong to a phase without being judged).
 - Legend chips count phases/turns per label. Reserved buckets (ops,
   none_of_the_above) chip even at zero - an unused escape hatch is
   information.
@@ -270,12 +272,12 @@ only lanes carry no usage) the report says so instead of drawing a
 zero.
 
 Computing new-work tokens per turn from frames: `phases.n_turns` counts only
-reasoning-bearing turns (judged and filled), while `new_work_tokens` sums
-every orchestrator turn in the range, tool-only turns included - so
-`new_work_tokens / n_turns` overstates per-reasoning-turn spend. Sub-agent
+digest turns (judged and filled), while `new_work_tokens` sums every
+orchestrator turn in the range, unseen turns included - so
+`new_work_tokens / n_turns` overstates per-judged-turn spend. Sub-agent
 spend is never in it: that is `delegated_new_work_tokens` (spans whose
 `spawn_turn` falls in the phase). For the phase's own reasoning, group
-`phase_turns` by phase and `basis` (reasoning-bearing vs attributed)
+`phase_turns` by phase and `basis` (judged and filled vs attributed)
 instead of dividing by `n_turns`.
 
 ## 6. Phase cards
@@ -288,7 +290,7 @@ turns, or no narration was available). This is separate from classification warn
 output - descriptive, not a verdict), the class-box (the judge's
 classification + mean confidence in one container - neutral when
 healthy, red with a warning glyph and the issue text when a
-reliability issue fired), tag line (turn range, reasoning turns,
+reliability issue fired), tag line (turn range, turns shown to the judge,
 spend, tool calls, sub-agents, compaction/intervention-during-phase),
 per-member judge ballots with support, turn-group excerpts from the
 transcript (a turn's recorded reasoning renders as a muted italic
