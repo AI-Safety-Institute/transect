@@ -25,6 +25,7 @@ from transect.scanners.helpers import capped_lines
 from transect.spec import Phase, Spec
 
 SNIPPET_CHARS = 300  # per-digest cap on text, reasoning, and each delegation
+FINAL_TEXT_CHARS = 4000  # cap on the text of the orchestrator's final turn
 
 # per-phase evidence cap (digest lines shown to a judge)
 EVIDENCE_LINES = 200
@@ -415,6 +416,29 @@ async def call_judge(
         if payload and all(payload.values()):
             return value, "ok"
     return None, "no_answer"
+
+
+def clip(text: str, cap: int) -> str:
+    """Bound a string to ``cap`` characters, keeping its start and its
+    end around a ``[... N chars ...]`` marker (marker excluded from the
+    cap): a message's closing lines often carry its conclusion.
+
+    Args:
+        text: The string to bound.
+        cap: Maximum characters kept.
+
+    Returns:
+        The text unchanged when within the cap; otherwise its first
+        ``cap // 2`` and last ``cap - cap // 2`` characters with the
+        elision marker between them ("" for a cap of 0).
+    """
+    if len(text) <= cap:
+        return text
+    if cap <= 0:
+        return ""
+    head, tail = cap // 2, cap - cap // 2
+    elided = len(text) - head - tail
+    return f"{text[:head].rstrip()} [... {elided} chars ...] {text[-tail:].lstrip()}"
 
 
 def digest_line(d: Digest) -> str:
