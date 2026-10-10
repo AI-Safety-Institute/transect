@@ -17,6 +17,7 @@ from collections.abc import AsyncIterator, Sequence
 from inspect_ai.model import ChatMessage, ChatMessageUser, Model
 from inspect_scout import Loader, Result, Scanner, Transcript, loader, scanner
 
+from transect.scanners._labels import normalize_vocabulary
 from transect.scanners.cohort import cohort_llm_scanner
 from transect.scanners.helpers import (
     Lanes,
@@ -116,10 +117,12 @@ def subagent_classification(
     """
     if not spec.subagent_labels:
         raise ValueError("subagent_classification requires ``spec.subagent_labels``.")
-    vocabulary = [
-        {"label": entry.label, "description": entry.description, "reserved": False}
-        for entry in spec.subagent_labels
-    ]
+    vocabulary = normalize_vocabulary(
+        [
+            {"label": entry.label, "description": entry.description, "reserved": False}
+            for entry in spec.subagent_labels
+        ]
+    )
     if all(entry["label"] != NONE_OF_THE_ABOVE for entry in vocabulary):
         vocabulary.append(
             {
@@ -130,9 +133,9 @@ def subagent_classification(
         )
     labels = [str(entry["label"]) for entry in vocabulary]
     definitions = [
-        f"- {entry.label}: {entry.description}"
-        for entry in spec.subagent_labels
-        if entry.description
+        f"- {entry['label']}: {entry['description']}"
+        for entry in vocabulary
+        if not entry["reserved"] and entry["description"]
     ]
     question = _ACTIVITY_QUESTION if activity else _SPAWN_QUESTION
     if definitions:

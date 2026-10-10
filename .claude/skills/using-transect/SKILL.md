@@ -107,6 +107,12 @@ results = transect.transect(
 
 Key arguments and what they mean:
 
+Sub-agent label keys are lowercased with whitespace replaced by underscores
+in judge requests, stored rubrics and frames. Blank or colliding keys fail
+before judging; phase names keep their declared spelling. `load()` applies
+the same keys to unambiguous older sub-agent rubrics without changing the store.
+Old custom-layer vocabulary keys stay recorded as-is for custom-frame compatibility.
+
 | Argument | Meaning |
 |---|---|
 | `logs` | Inspect `.eval` log(s) read natively; OpenClaw `.jsonl` is imported into a transcript database first |

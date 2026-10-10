@@ -29,6 +29,12 @@ from inspect_scout import (
 )
 from pydantic import BaseModel, Field, JsonValue, create_model
 
+from transect.scanners._labels import (
+    normalize_label,
+    normalize_labels,
+    normalize_vocabulary,
+)
+
 logger = logging.getLogger(__name__)
 
 # every verifier selection trigger
@@ -254,7 +260,9 @@ def cohort_llm_scanner(
 
     Args:
         question: The llm_scanner question.
-        answer: The closed label list.
+        answer: The closed label list. Keys are lowercased and whitespace
+            becomes underscores, in requests, votes and the recorded rubric.
+            Blank labels or normalization collisions raise before judging.
         models: One model (solo) or several (cohort regime).
             ``None`` = llm_scanner's default model, solo only.
         k_rolls: Rolls of one model (k-roll regime); mutually
@@ -275,7 +283,8 @@ def cohort_llm_scanner(
             per-item draw, not an exact fraction.
         cache: Base cache setting; later rolls get ``{"roll": r}``
             scopes on top.
-        vocabulary: The rubric to record.
+        vocabulary: The rubric to record, with the same normalized keys.
+            Descriptions are preserved verbatim.
         batch: Judge several units per call, any unit shape. The
             loader is responsible for yielding batch-shaped items:
             each packs its units as ``[ITEM n]``-marked content
@@ -291,7 +300,7 @@ def cohort_llm_scanner(
         ValueError: On invalid models/k_rolls (see
             ``cohort_members``), incl. ``k_rolls != 1`` with
             ``models=None``; on ``verify=True`` with a multi-model
-            cohort (verifier XOR cohort).
+            cohort (verifier XOR cohort); on blank or colliding label keys.
     """
     if isinstance(answer, str):
         raise TypeError(
@@ -299,7 +308,7 @@ def cohort_llm_scanner(
             "answer spec - voting over open-vocab free strings is not "
             "defined"
         )
-    labels = list(answer)
+    labels = normalize_labels(answer)
     vocabulary = _vocabulary_entries(vocabulary)
     if models is None and k_rolls != 1:
         raise ValueError(
@@ -714,7 +723,7 @@ def _member_batch_answers(
         if not isinstance(entry, dict):
             continue
         n = entry.get("item")
-        label = _normalize_label(entry.get("label"))
+        label = normalize_label(entry.get("label"))
         if not isinstance(n, int) or n not in expected or n in answers:
             continue
         if label is None:
@@ -850,14 +859,16 @@ def _vocabulary_entries(
     if vocabulary is None:
         return None
     if isinstance(vocabulary, Mapping):
-        return [
+        entries = [
             {"label": label, "description": description}
             for label, description in vocabulary.items()
         ]
-    return [
-        entry if isinstance(entry, dict) else {"label": str(entry)}
-        for entry in vocabulary
-    ]
+    else:
+        entries = [
+            entry if isinstance(entry, dict) else {"label": str(entry)}
+            for entry in vocabulary
+        ]
+    return normalize_vocabulary(entries)
 
 
 def _spot_check(item: Transcript, verify_sample: float) -> bool:
@@ -1073,13 +1084,6 @@ def _structured_answer(labels: list[str]) -> AnswerStructured:
     return AnswerStructured(type=answer_model)
 
 
-def _normalize_label(raw: object) -> str | None:
-    """snake_case label normalization."""
-    if not (isinstance(raw, str) and raw.strip()):
-        return None
-    return "_".join(raw.strip().lower().split())
-
-
 def _call_failure(outcome: list | BaseException) -> tuple[CallStatus, str | None]:
     """A failed judge call's (status, error)."""
     if isinstance(outcome, RefusalError):
@@ -1092,7 +1096,7 @@ def _call_failure(outcome: list | BaseException) -> tuple[CallStatus, str | None
 def _answer_fields(outcome: Result) -> tuple[str | None, float | None, str | None]:
     """A Result's (label, confidence, explanation), the label
     normalized snake_case."""
-    label = _normalize_label(outcome.label)
+    label = normalize_label(outcome.label)
     if label is None:
         return None, None, None
     value = outcome.value if isinstance(outcome.value, dict) else {}

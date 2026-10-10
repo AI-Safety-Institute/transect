@@ -30,7 +30,11 @@ class SubagentLabel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    """The role name the judge answers with."""
+    """The declared role name, retained verbatim in the spec.
+
+    Scanners lowercase it and replace whitespace with underscores for
+    their closed answer vocabulary and result keys.
+    """
 
     description: str = ""
     """What this role does, in the author's own words - rendered into
