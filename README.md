@@ -223,6 +223,8 @@ viewer.
 `load(scans_dir)` re-reads a stored scan without rescanning (and without API
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
+If `eval_setup` failed, loading raises with the affected transcript ID and
+the recorded scan error instead of trying to build setup facts from that row.
 
 ## Reading the report
 
