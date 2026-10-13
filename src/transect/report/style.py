@@ -53,6 +53,9 @@ h3 {{ font-size: var(--transect-font-size-small); font-weight: 600; }}
    the audit's heading hierarchy reads top-down */
 h4 {{ font-size: var(--transect-font-size-smaller); font-weight: 600; }}
 .phase-cards {{ overflow-wrap: anywhere; }}
+/* a chart iframe before its document is loaded */
+iframe.transect-lazy {{ background: repeating-linear-gradient(135deg,
+  #fafafa, #fafafa 12px, #f2f2f4 12px, #f2f2f4 24px); }}
 .meta {{ color: var(--transect-color-muted); font-size: 0.85rem; }}
 /* chart how-to-read lines: one step below .meta, so explainers cede
    visual space to the charts they explain */

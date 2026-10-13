@@ -34,7 +34,10 @@ def _embed(component: Component, height_px: int, extra_head: str) -> str:
     """One chart section's component tree -> one iframe.
 
     `_document` returns a complete document (inspect_viz's `to_html`
-    shape), so every embedded chart is a whole srcdoc document.
+    shape), so every embedded chart is a whole srcdoc document - loaded
+    lazily: the page script moves ``data-transect-srcdoc`` into
+    ``srcdoc`` when the iframe nears the viewport and evicts it when it
+    leaves, keeping the number of live chart runtimes bounded.
 
     `_TIP_POINTER_CSS` and `_TIP_CLAMP_HEAD` are spliced in
     unconditionally (hovering does not work without the first, tooltips
@@ -70,9 +73,10 @@ def _embed(component: Component, height_px: int, extra_head: str) -> str:
     doc = doc.replace("</head>", f"{head}</head>", 1)
     width = _widest_plot(component.config)
     width_css = f"{width}px" if width else "100%"
+    escaped = html_escape.escape(doc, quote=True)
     iframe = (
         f'<iframe height="{height_px}" style="width:{width_css};border:none" '
-        f'srcdoc="{html_escape.escape(doc, quote=True)}"></iframe>'
+        f'class="transect-lazy" data-transect-srcdoc="{escaped}"></iframe>'
     )
     return f'<div class="{CHART_SCROLL_CLASS}" style="overflow-x:auto">{iframe}</div>'
 

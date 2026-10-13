@@ -37,6 +37,51 @@
     screen. -#}
 <button id="transect-back-top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Back to the top of the page">&uarr; Back to top</button>
 <script>
+// Chart iframes load lazily: each carries its document in
+// data-transect-srcdoc; it is copied into srcdoc when the iframe comes
+// within the observer margin of the viewport and removed again once the
+// iframe is far away, so at most _LAZY_LIVE + 1 chart runtimes
+// exist at a time.
+var _LAZY_LIVE = 6;
+var _transectVisibleFrames = new Set();
+var _transectLiveFrames = [];
+// The page's first chart iframe is loaded at once, not when it scrolls
+// near, and is never evicted while others are live.
+var _transectOwnerFrame = null;
+function _transectLoadFrame(frame) {
+  if (frame.getAttribute("srcdoc")) return;
+  frame.setAttribute("srcdoc", frame.getAttribute("data-transect-srcdoc"));
+  frame.classList.remove("transect-lazy");
+  if (_transectOwnerFrame === null) _transectOwnerFrame = frame;
+  _transectLiveFrames.push(frame);
+  while (_transectLiveFrames.length > _LAZY_LIVE + 1) {
+    var idle = _transectLiveFrames.findIndex(function(f) {
+      return f !== _transectOwnerFrame && !_transectVisibleFrames.has(f);
+    });
+    if (idle < 0) break;
+    var old = _transectLiveFrames.splice(idle, 1)[0];
+    old.removeAttribute("srcdoc");
+    old.classList.add("transect-lazy");
+  }
+}
+function _transectWatchFrames() {
+  var frames = document.querySelectorAll("iframe[data-transect-srcdoc]");
+  if (frames.length) _transectLoadFrame(frames[0]);
+  if (!("IntersectionObserver" in window)) {
+    frames.forEach(_transectLoadFrame);
+    return;
+  }
+  var io = new IntersectionObserver(function(entries) {
+    entries.forEach(function(e) {
+      if (e.isIntersecting) { _transectVisibleFrames.add(e.target); _transectLoadFrame(e.target); }
+      else { _transectVisibleFrames.delete(e.target); }
+    });
+    _transectQueueFit();
+  }, {rootMargin: "600px 0px"});
+  frames.forEach(function(f) { io.observe(f); });
+}
+document.addEventListener("DOMContentLoaded", _transectWatchFrames);
+
 // Band chunks link to their phase card (href target="_parent", ids
 // transcript-scoped "#phase-<idx>-<n>"). Fragment navigation scrolls;
 // this additionally opens the target <details> (native auto-open is
