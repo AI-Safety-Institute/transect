@@ -26,8 +26,10 @@ from transect.scanners.phases import (
     turn_digests,
 )
 from transect.scanners.phases_common import (
+    FINAL_TEXT_CHARS,
     DigestJudgement,
     StitchedPhase,
+    clip,
     digest_line,
     is_labelled,
 )
@@ -113,6 +115,40 @@ def test_reasoning_blocks_enter_the_digest_and_its_prompt_line():
     assert thinking_only.reasoning == "try a different split"
     assert (plain.reasoning, plain.text) == ("", "plain text turn")
     assert digest_line(plain) == "2: plain text turn"
+
+
+@pytest.mark.parametrize(
+    ("text", "cap", "expected"),
+    [
+        ("abcdefghij", 10, "abcdefghij"),
+        ("abcdefghijk", 10, "abcdefghijk"),
+        ("abcdefghijklmnopqrstuvwxyz0123", 5, "ab [... 25 chars ...] 123"),
+        ("abc", 0, ""),
+        ("ab cd ef gh ij kl mn op qr st", 6, "ab [... 25 chars ...] st"),
+    ],
+    ids=["at-cap", "cut-would-not-shorten", "odd-cap", "zero-cap", "cut-at-spaces"],
+)
+def test_clip_keeps_the_start_and_the_end(text, cap, expected):
+    """A string over its cap keeps its start and end around a marker
+    that counts what was cut."""
+    assert clip(text, cap) == expected
+
+
+@pytest.mark.parametrize(
+    ("final_text_chars", "keeps_whole"),
+    [(FINAL_TEXT_CHARS, True), (0, False)],
+    ids=["default", "below-snippet-cap"],
+)
+def test_the_last_text_turn_keeps_up_to_final_text_chars(final_text_chars, keeps_whole):
+    """Earlier turns are clipped at both ends while the last turn with
+    text keeps up to final_text_chars of it."""
+    report = "Update for the lead: " + "details " * 40 + "2 tests still fail."
+    events = [model_turn(report), model_turn(report), model_turn("")]
+    first, final = turn_digests(
+        StubTranscript(events), snippet_chars=60, final_text_chars=final_text_chars
+    )
+    assert first.text == clip(report, 60)
+    assert final.text == (report if keeps_whole else clip(report, 60))
 
 
 @pytest.mark.parametrize(
@@ -437,7 +473,16 @@ def test_select_for_verify_sizes_the_random_sample(n_phases, sample, expected):
     assert set(reasons.values()) <= {"random_sample"}
 
 
-def test_verify_sample_outside_the_unit_interval_is_rejected():
-    """A verify_sample outside [0, 1] raises at scanner build time."""
-    with pytest.raises(ValueError, match="verify_sample"):
-        decision_phases(PHASES_SPEC, scripted_judge(), verify=True, verify_sample=-0.1)
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"snippet_chars": -1},
+        {"final_text_chars": -1},
+        {"verify": True, "verify_sample": -0.1},
+    ],
+    ids=["snippet_chars", "final_text_chars", "verify_sample"],
+)
+def test_out_of_range_options_are_rejected_at_build_time(options):
+    """An out-of-range option raises at scanner build time, naming the option."""
+    with pytest.raises(ValueError, match=list(options)[-1]):
+        decision_phases(PHASES_SPEC, scripted_judge(), **options)
