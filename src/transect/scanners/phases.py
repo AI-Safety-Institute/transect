@@ -311,10 +311,10 @@ def decision_phases(
         raise ValueError("decision_phases requires chunk >= 1")
     if verify_chunk <= 0:
         raise ValueError("decision_phases requires verify_chunk >= 1")
-    if snippet_chars < 0 or final_text_chars < 0:
-        raise ValueError(
-            "decision_phases requires snippet_chars >= 0 and final_text_chars >= 0"
-        )
+    if snippet_chars < 0:
+        raise ValueError("decision_phases requires snippet_chars >= 0")
+    if final_text_chars < 0:
+        raise ValueError("decision_phases requires final_text_chars >= 0")
     members_spec = cohort_members(judge_models, k_rolls)
     factory_names = list(dict.fromkeys(m.name for m in members_spec))
     verify_on = resolve_verify(len(factory_names), verify, verify_sample)

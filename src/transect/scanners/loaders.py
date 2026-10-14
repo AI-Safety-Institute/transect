@@ -27,8 +27,11 @@ def reasoning_turns(batch: int = 1) -> Loader[Transcript]:
 
     Each item's message is the turn's digest - the turn's reasoning
     (when the source records reasoning blocks), its own text, its
-    tool names, and each sub-agent spawn task. The item's metadata
-    carries ``{"turn": n}``.
+    tool names, and each sub-agent spawn task, built with the
+    `turn_digests` defaults: each part over its cap keeps its start
+    and its end, and the last turn with text keeps up to
+    ``FINAL_TEXT_CHARS`` of it. The item's metadata carries
+    ``{"turn": n}``.
 
     Args:
         batch: With ``batch=N``, one item per window of up to N
