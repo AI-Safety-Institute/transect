@@ -68,55 +68,6 @@ class Digest(BaseModel):
     event_id: str | None = None  # source model event uuid (viewer anchor)
 
 
-def clip(text: str, cap: int) -> str:
-    """Bound a string to ``cap`` characters, keeping its start and its
-    end around a ``[... N chars ...]`` marker: a message's closing lines
-    often carry its conclusion.
-
-    Args:
-        text: The string to bound.
-        cap: Maximum characters kept, marker excluded.
-
-    Returns:
-        The text unchanged when within the cap, or when the clipped form
-        would be no shorter; otherwise its first ``cap // 2`` and last
-        ``cap - cap // 2`` characters, whitespace at the cut dropped,
-        with a marker between them counting every character they do not
-        cover ("" for a cap of 0).
-    """
-    if len(text) <= cap:
-        return text
-    if cap <= 0:
-        return ""
-    head = text[: cap // 2].rstrip()
-    tail = text[len(text) - (cap - cap // 2) :].lstrip()
-    marker = f"[... {len(text) - len(head) - len(tail)} chars ...]"
-    clipped = " ".join(part for part in (head, marker, tail) if part)
-    return clipped if len(clipped) < len(text) else text
-
-
-def digest_line(d: Digest) -> str:
-    """Render one digest as a single prompt line: index, reasoning
-    behind a [THINKING] marker, text, the tool calls, then each
-    delegation behind a [DELEGATES] marker.
-
-    Tool calls render as ``[CALL] name(arguments)`` followed by
-    ``[RESULT]`` or ``[ERROR]`` output when the digest carries
-    arguments or output, otherwise as the bare ``(tools: ...)`` names."""
-    parts = [f"{d.turn}:"]
-    if d.reasoning:
-        parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
-    if d.text:
-        parts.append(d.text.replace("\n", " "))
-    if any(c.arguments or c.result or c.error for c in d.tool_calls):
-        parts.extend(_call_part(c) for c in d.tool_calls)
-    elif d.tool_calls:
-        parts.append(f"(tools: {', '.join(c.function for c in d.tool_calls)})")
-    for goal in d.delegations:
-        parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
-    return " ".join(parts)
-
-
 def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[Digest]:
     """Build one digest per orchestrator turn that has content to judge.
 
@@ -194,15 +145,53 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     return [by_turn[turn] for turn in sorted(by_turn)]
 
 
-def _span_anchors(lanes: Lanes) -> list[tuple[Any, int]]:
-    """Each sub-agent span_begin with its raw anchor: the last
-    orchestrator turn preceding it in event order (0 when none does, as
-    `token_timeline`'s ``spawn_turn``)."""
-    return [
-        (event, max(before - 1, 0))
-        for before, event in lanes.events_before_turn()
-        if event.event == "span_begin" and event.id in lanes.sub_ids
-    ]
+def digest_line(d: Digest) -> str:
+    """Render one digest as a single prompt line: index, reasoning
+    behind a [THINKING] marker, text, the tool calls, then each
+    delegation behind a [DELEGATES] marker.
+
+    Tool calls render as ``[CALL] name(arguments)`` followed by
+    ``[RESULT]`` or ``[ERROR]`` output when the digest carries
+    arguments or output, otherwise as the bare ``(tools: ...)`` names."""
+    parts = [f"{d.turn}:"]
+    if d.reasoning:
+        parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
+    if d.text:
+        parts.append(d.text.replace("\n", " "))
+    if any(c.arguments or c.result or c.error for c in d.tool_calls):
+        parts.extend(_call_part(c) for c in d.tool_calls)
+    elif d.tool_calls:
+        parts.append(f"(tools: {', '.join(c.function for c in d.tool_calls)})")
+    for goal in d.delegations:
+        parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
+    return " ".join(parts)
+
+
+def clip(text: str, cap: int) -> str:
+    """Bound a string to ``cap`` characters, keeping its start and its
+    end around a ``[... N chars ...]`` marker: a message's closing lines
+    often carry its conclusion.
+
+    Args:
+        text: The string to bound.
+        cap: Maximum characters kept, marker excluded.
+
+    Returns:
+        The text unchanged when within the cap, or when the clipped form
+        would be no shorter; otherwise its first ``cap // 2`` and last
+        ``cap - cap // 2`` characters, whitespace at the cut dropped,
+        with a marker between them counting every character they do not
+        cover ("" for a cap of 0).
+    """
+    if len(text) <= cap:
+        return text
+    if cap <= 0:
+        return ""
+    head = text[: cap // 2].rstrip()
+    tail = text[len(text) - (cap - cap // 2) :].lstrip()
+    marker = f"[... {len(text) - len(head) - len(tail)} chars ...]"
+    clipped = " ".join(part for part in (head, marker, tail) if part)
+    return clipped if len(clipped) < len(text) else text
 
 
 def _is_failed_turn(event: Any) -> bool:
@@ -293,11 +282,6 @@ def _tool_output(
     return messages.get(call_id, ("", False))
 
 
-def _flat(text: str) -> str:
-    """Whitespace-flattened text."""
-    return " ".join(text.split())
-
-
 def _result_text(result: Any) -> str:
     """A tool event's result as text: strings as recorded, the text of
     content blocks, other scalars by ``str``; non-text blocks are left out."""
@@ -311,6 +295,22 @@ def _result_text(result: Any) -> str:
     if isinstance(text, str):
         return text
     return "" if result is None else str(result)
+
+
+def _flat(text: str) -> str:
+    """Whitespace-flattened text."""
+    return " ".join(text.split())
+
+
+def _span_anchors(lanes: Lanes) -> list[tuple[Any, int]]:
+    """Each sub-agent span_begin with its raw anchor: the last
+    orchestrator turn preceding it in event order (0 when none does, as
+    `token_timeline`'s ``spawn_turn``)."""
+    return [
+        (event, max(before - 1, 0))
+        for before, event in lanes.events_before_turn()
+        if event.event == "span_begin" and event.id in lanes.sub_ids
+    ]
 
 
 def _call_part(call: ToolDigest) -> str:
