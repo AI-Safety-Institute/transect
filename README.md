@@ -133,17 +133,10 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
 - **Scanners**: per-transcript extractors, run by Scout. Structural
   scanners are free and always on; judged scanners run when
   `judge_models` is set and the Spec declares their vocabulary.
-- **Turn digests**: what the phase judge, its verifier and the
-  narrator read - one line per orchestrator turn with content, with
-  its reasoning (`[THINKING]`) and text, each tool call with its
-  arguments (`[CALL]`) and, when switched on, its recorded output
-  (`[RESULT]` / `[ERROR]`), and sub-agent tasks (`[DELEGATES]`).
-  `DigestSettings` caps each part in characters (a longer part keeps
-  its start and its end; the agent's last turn with text, usually its
-  report, gets a larger cap) and decides whether turns whose only
-  content is tool calls are judged. Pass it as `digest=` to `transect()`,
-  `decision_phases()` or `digest_turns()`; Scout records it with
-  the scan.
+- **Turn digests**: what the phase judges read - one line per
+  orchestrator turn with its reasoning, text, tool calls and sub-agent
+  tasks, each part capped by a `DigestSettings` passed as `digest=`
+  to `transect()`.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.
