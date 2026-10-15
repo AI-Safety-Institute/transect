@@ -36,11 +36,7 @@ _NARRATE_HEAD = (
     "3. GROUPS: a small number (2-5; just 1 if the phase is tiny) of "
     "CONTIGUOUS sub-sections partitioning the phase's turns, each a "
     "short title + one-line gist, in order, together covering ALL the "
-    "phase's turns.\n"
-    + DIGEST_MARKERS
-    + "When a headline or summary repeats a claim made in a [USER] line, "
-    "attribute it to the user; NEVER present it as the agent's own "
-    "finding.\n"
+    "phase's turns.\n" + DIGEST_MARKERS
 )
 
 

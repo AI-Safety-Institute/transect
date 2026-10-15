@@ -61,12 +61,15 @@ def model_turn(text, span_id=None, input=(), usage=None, error=None):
     )
 
 
-def tool_event(id, function="bash", span_id=None, agent_span_id=None):
+def tool_event(
+    id, function="bash", span_id=None, agent_span_id=None, result="", error=None
+):
     return ToolEvent(
         id=id,
         function=function,
         arguments={},
-        result="",
+        result=result,
+        error=error,
         span_id=span_id,
         agent_span_id=agent_span_id,
     )

@@ -26,8 +26,8 @@ from transect.scanners.phases import (
     turn_digests,
 )
 from transect.scanners.phases_common import (
-    FINAL_TEXT_CHARS,
     DigestJudgement,
+    DigestSettings,
     StitchedPhase,
     clip,
     digest_line,
@@ -136,7 +136,7 @@ def test_clip_keeps_the_start_and_the_end(text, cap, expected):
 
 @pytest.mark.parametrize(
     ("final_text_chars", "keeps_whole"),
-    [(FINAL_TEXT_CHARS, True), (0, False)],
+    [(DigestSettings().final_text_chars, True), (0, False)],
     ids=["default", "below-snippet-cap"],
 )
 def test_the_last_text_turn_keeps_up_to_final_text_chars(final_text_chars, keeps_whole):
@@ -145,7 +145,8 @@ def test_the_last_text_turn_keeps_up_to_final_text_chars(final_text_chars, keeps
     report = "Update for the lead: " + "details " * 40 + "2 tests still fail."
     events = [model_turn(report), model_turn(report), model_turn("")]
     first, final = turn_digests(
-        StubTranscript(events), snippet_chars=60, final_text_chars=final_text_chars
+        StubTranscript(events),
+        DigestSettings(text_chars=60, final_text_chars=final_text_chars),
     )
     assert first.text == clip(report, 60)
     assert final.text == (report if keeps_whole else clip(report, 60))

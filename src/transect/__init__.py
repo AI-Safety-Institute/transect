@@ -10,11 +10,14 @@ from transect.frames.user import member_ballots, turns_frame
 from transect.layers import Layer
 from transect.scanners.cohort import cohort_llm_scanner
 from transect.scanners.loaders import reasoning_turns
+from transect.scanners.phases_common import DIGEST_MARKERS, DigestSettings
 from transect.spec import Spec, load_spec
 
 __version__ = _version("transect")
 
 __all__ = [
+    "DIGEST_MARKERS",
+    "DigestSettings",
     "Layer",
     "Spec",
     "TransectResults",

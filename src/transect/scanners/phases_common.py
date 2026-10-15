@@ -24,23 +24,15 @@ from transect.scanners.cohort import (
 from transect.scanners.helpers import capped_lines
 from transect.spec import Phase, Spec
 
-SNIPPET_CHARS = 300  # per-digest cap on text, reasoning, and each delegation
-FINAL_TEXT_CHARS = 4000  # cap on the text of the last digest turn with text
-TOOL_CALL_CHARS = 200  # per-call cap on the JSON arguments shown
-TOOL_RESULT_CHARS = 200  # per-call cap on the recorded output shown
-USER_CHARS = 300  # per-message cap on a user message the turn received
-
 # per-phase evidence cap (digest lines shown to a judge)
 EVIDENCE_LINES = 200
 
 # every prompt that shows digest lines states what their markers mean
 DIGEST_MARKERS = (
-    "Each turn line may carry: [USER] a message the agent received just "
-    "before that turn, from its user or its scaffold (context, NOT the "
-    "agent's own words or activity); [THINKING] the agent's reasoning; "
-    "the agent's own text; [CALL] a tool call with its arguments and "
-    "[RESULT] or [ERROR] the call's recorded output (both truncated); "
-    "[DELEGATES] a task handed to a sub-agent.\n"
+    "Each turn line may carry: [THINKING] the agent's reasoning; the "
+    "agent's own text; [CALL] a tool call with its arguments and, when "
+    "shown, [RESULT] or [ERROR] the call's recorded output (both "
+    "truncated); [DELEGATES] a task handed to a sub-agent.\n"
 )
 
 _CONTEXT_GUARD = (
@@ -78,6 +70,28 @@ NarrationGroupStatus = Literal[
 ]
 
 
+class DigestSettings(BaseModel, frozen=True):
+    """What every judge reads per orchestrator turn: the character cap
+    of each digest part and whether turns whose only content is tool
+    calls are judged. The phase judge, its verifier, the narrator and
+    the `reasoning_turns` loader share one object, so every reader sees
+    the same lines; Scout records it with the scanner's arguments. A
+    part over its cap keeps its start and its end (`clip`); a cap of 0
+    leaves the part out.
+
+    The text caps were sized on coding-agent final reports (nearly all
+    fit 4000 characters); calls on and output off come from a k-roll
+    comparison on a 900-turn OpenClaw run and the demo log, where
+    showing calls raised judge agreement and output lowered it again.
+    """
+
+    text_chars: int = Field(default=300, ge=0)  # turn text, reasoning, each delegation
+    final_text_chars: int = Field(default=4000, ge=0)  # the last digest turn with text
+    tool_call_chars: int = Field(default=200, ge=0)  # each call's JSON arguments
+    tool_result_chars: int = Field(default=0, ge=0)  # each call's recorded output
+    tool_only_turns: bool = True  # judge turns whose only content is tool calls
+
+
 class ToolDigest(BaseModel):
     """One tool call of a digest turn, as shown to the judge."""
 
@@ -91,10 +105,9 @@ class Digest(BaseModel):
     """One orchestrator turn, as shown to the judge."""
 
     turn: int
-    user: list[str] = []  # user messages this turn's input carried first
     text: str = ""
     reasoning: str = ""  # the turn's reasoning-block text, when recorded
-    calls: list[ToolDigest] = []
+    tool_calls: list[ToolDigest] = []
     delegations: list[str] = []
     event_id: str | None = None  # source model event uuid (viewer anchor)
 
@@ -467,33 +480,23 @@ def clip(text: str, cap: int) -> str:
     return clipped if len(clipped) < len(text) else text
 
 
-def check_digest_caps(**caps: int) -> None:
-    """Reject a negative digest character cap, naming it."""
-    for name, value in caps.items():
-        if value < 0:
-            raise ValueError(f"{name} must be >= 0, got {value}")
-
-
 def digest_line(d: Digest) -> str:
-    """Render one digest as a single prompt line: index, each user
-    message behind a [USER] marker, reasoning behind a [THINKING]
-    marker, text, the tool calls, then each delegation behind a
-    [DELEGATES] marker.
+    """Render one digest as a single prompt line: index, reasoning
+    behind a [THINKING] marker, text, the tool calls, then each
+    delegation behind a [DELEGATES] marker.
 
     Tool calls render as ``[CALL] name(arguments)`` followed by
     ``[RESULT]`` or ``[ERROR]`` output when the digest carries
     arguments or output, otherwise as the bare ``(tools: ...)`` names."""
     parts = [f"{d.turn}:"]
-    for message in d.user:
-        parts.append(f"[USER] {message}".replace("\n", " "))
     if d.reasoning:
         parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
     if d.text:
         parts.append(d.text.replace("\n", " "))
-    if any(c.arguments or c.result or c.error for c in d.calls):
-        parts.extend(_call_part(c) for c in d.calls)
-    elif d.calls:
-        parts.append(f"(tools: {', '.join(c.function for c in d.calls)})")
+    if any(c.arguments or c.result or c.error for c in d.tool_calls):
+        parts.extend(_call_part(c) for c in d.tool_calls)
+    elif d.tool_calls:
+        parts.append(f"(tools: {', '.join(c.function for c in d.tool_calls)})")
     for goal in d.delegations:
         parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
     return " ".join(parts)

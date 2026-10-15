@@ -34,18 +34,13 @@ from transect.scanners.phases_cohort import (
     vote_turns,
 )
 from transect.scanners.phases_common import (
-    FINAL_TEXT_CHARS,
-    SNIPPET_CHARS,
-    TOOL_CALL_CHARS,
-    TOOL_RESULT_CHARS,
-    USER_CHARS,
     Digest,
     DigestJudgement,
+    DigestSettings,
     StitchedPhase,
     ToolDigest,
     TurnBasis,
     call_judge,
-    check_digest_caps,
     clip,
     context_blocks,
     digest_line,
@@ -65,11 +60,19 @@ TASK_PROMPT_CHARS = 2400  # agent-task-prompt context cap
 
 _OPENCLAW_FAILED_TURN_PREFIX = "[assistant turn failed"  # placeholder assistant turn
 _OPENCLAW_SCAFFOLD_USER_MESSAGES = ("[openclaw heartbeat poll]",)  # exact matches
+# inspect_ai's handoff tools answer with this boilerplate, not with output
+_HANDOFF_RESULT_PREFIX = "Successfully transferred to"
+
+# recorded tool outputs: tool events by call id with their event position,
+# and tool messages by call id (see _tool_outputs)
+_ToolOutputs = tuple[
+    dict[str, list[tuple[int, str, bool]]], dict[str, tuple[str, bool]]
+]
 
 _SYSTEM_HEAD = (
     "You are segmenting an autonomous agent's turns (its [THINKING] "
-    "reasoning, its own text, its [CALL] tool calls with their outputs, "
-    "AND the [DELEGATES] tasks it hands to sub-agents) into CONTIGUOUS "
+    "reasoning, its own text, its [CALL] tool calls, AND the "
+    "[DELEGATES] tasks it hands to sub-agents) into CONTIGUOUS "
     "PHASES of the task it is working on. Each phase is a run of "
     "consecutive turns doing ONE activity. Label each phase with the "
     "single best-fitting phase name:\n"
@@ -89,11 +92,9 @@ _RULES = (
     "5. [THINKING] text is the agent's internal reasoning — treat it as "
     "evidence of the turn's activity, same as its visible text.\n"
     "6. [CALL] is a tool call the agent made in that turn and [RESULT] or "
-    "[ERROR] its recorded output — treat them as evidence of the turn's "
+    "[ERROR] its recorded output - treat them as evidence of the turn's "
     "activity, same as its visible text.\n"
-    "7. [USER] is a message the agent received just before that turn — "
-    "context for the turn, NOT the agent's own activity.\n"
-    "8. confidence is your 0.0-1.0 certainty in BOTH the boundary and the "
+    "7. confidence is your 0.0-1.0 certainty in BOTH the boundary and the "
     "label of the phase.\n"
 )
 
@@ -138,12 +139,7 @@ def decision_phases(
     judge_models: str | Model | Sequence[str | Model],
     k_rolls: int = 1,
     chunk: int = 40,
-    snippet_chars: int = SNIPPET_CHARS,
-    final_text_chars: int = FINAL_TEXT_CHARS,
-    tool_call_chars: int = TOOL_CALL_CHARS,
-    tool_result_chars: int = TOOL_RESULT_CHARS,
-    user_chars: int = USER_CHARS,
-    tool_only_turns: bool = True,
+    digest: DigestSettings | None = None,
     cache: bool | CachePolicy = True,
     verify: bool | None = None,
     verify_chunk: int = 8,
@@ -154,11 +150,8 @@ def decision_phases(
     """Segment a run into decision phases over the orchestrator's turns.
 
     The judge, the verifier and the narrator read the same digest
-    lines (`turn_digests`), so the digest settings (``snippet_chars``,
-    ``final_text_chars``, ``tool_call_chars``, ``tool_result_chars``,
-    ``user_chars``, ``tool_only_turns``) apply to all three and change
-    the judge requests, and with them the cache keys. A part over its
-    cap keeps its start and its end (`phases_common.clip`).
+    lines (`turn_digests`), so ``digest`` applies to all three and
+    changes the judge requests, and with them the cache keys.
 
     Three regimes (mutually exclusive):
 
@@ -177,21 +170,9 @@ def decision_phases(
         k_rolls: Rolls of one model; mutually exclusive with a
             multi-model list.
         chunk: Digests per segmentation call.
-        snippet_chars: Per-digest cap on turn text, reasoning, and
-            each delegation shown to the judge.
-        final_text_chars: Cap on the text of the orchestrator's last
-            turn with text, which is usually its report of the work;
-            never below ``snippet_chars``, so 0 caps it like any
-            other turn.
-        tool_call_chars: Per-call cap on the JSON arguments shown with
-            each tool call; 0 shows tool names only.
-        tool_result_chars: Per-call cap on each tool call's recorded
-            output or error message; 0 leaves outputs out.
-        user_chars: Per-message cap on the user messages a turn
-            received; 0 leaves them out.
-        tool_only_turns: Judge turns whose only content is tool calls.
-            ``False`` leaves them out of the digests, so they take
-            their label by attribution.
+        digest: What each judge reads per turn (`DigestSettings`: the
+            character caps and whether tool-call-only turns are
+            judged); ``None`` is the defaults.
         cache: Judge-call caching. The default ``True`` is inspect's
             standard on-disk response cache; ``False`` always hits
             the API.
@@ -267,7 +248,7 @@ def decision_phases(
             - "filled": digest turn no judge covered; inherits the
               previous (consensus) label at low confidence.
             - "attributed": no digest - a failed turn, a turn with
-              no content, or (``tool_only_turns=False``) a
+              no content, or (``digest.tool_only_turns`` off) a
               tool-call-only turn; the judge never saw it, so by
               projection it takes the phase whose turn range
               contains it (or the nearest preceding phase, for
@@ -344,13 +325,7 @@ def decision_phases(
         raise ValueError("decision_phases requires chunk >= 1")
     if verify_chunk <= 0:
         raise ValueError("decision_phases requires verify_chunk >= 1")
-    check_digest_caps(
-        snippet_chars=snippet_chars,
-        final_text_chars=final_text_chars,
-        tool_call_chars=tool_call_chars,
-        tool_result_chars=tool_result_chars,
-        user_chars=user_chars,
-    )
+    digest = digest or DigestSettings()
     members_spec = cohort_members(judge_models, k_rolls)
     factory_names = list(dict.fromkeys(m.name for m in members_spec))
     verify_on = resolve_verify(len(factory_names), verify, verify_sample)
@@ -387,15 +362,7 @@ def decision_phases(
         judges = [(member, member.resolve()) for member in members_spec]
         member_keys = [member.key for member in members_spec]
         n_members = len(members_spec)
-        digests = turn_digests(
-            transcript,
-            snippet_chars=snippet_chars,
-            final_text_chars=final_text_chars,
-            tool_call_chars=tool_call_chars,
-            tool_result_chars=tool_result_chars,
-            user_chars=user_chars,
-            tool_only_turns=tool_only_turns,
-        )
+        digests = turn_digests(transcript, digest)
         n_turns = sum(1 for _ in orchestrator_turns(transcript))
         task_prompt = agent_task_prompt(transcript)
         system = system_prompt(spec, task_prompt=task_prompt)
@@ -538,33 +505,23 @@ def decision_phases(
     return execute
 
 
-def turn_digests(
-    transcript: Any,
-    snippet_chars: int = SNIPPET_CHARS,
-    final_text_chars: int = FINAL_TEXT_CHARS,
-    tool_call_chars: int = TOOL_CALL_CHARS,
-    tool_result_chars: int = TOOL_RESULT_CHARS,
-    user_chars: int = USER_CHARS,
-    tool_only_turns: bool = True,
-) -> list[Digest]:
+def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[Digest]:
     """Build one digest per orchestrator turn that has content to judge.
 
     Digests are a sparse selection over the orchestrator's turns
     (`helpers.orchestrator_turns`, the turn axis): a turn is eligible
     when it carries visible text, reasoning-block content (when the
-    source records it), a delegation, a user message, or (with
-    ``tool_only_turns``) a tool call. Provider-failure placeholder
-    turns never are. Sub-agent activity lives in child spans and is
-    represented only by delegation lines, folded in at the last
-    eligible turn preceding each span_begin.
+    source records it), a delegation, or (with
+    ``digest.tool_only_turns``) a tool call. Provider-failure
+    placeholder turns never are. Sub-agent activity lives in child
+    spans and is represented only by delegation lines, folded in at
+    the last eligible turn preceding each span_begin.
 
-    A user message belongs to the first orchestrator turn whose input
-    carries it. The first turn's input is the task, which the judge
-    prompts already carry, so it is not repeated, nor is a later copy
-    of it; compaction summaries and OpenClaw scaffold polls are not
-    user messages. A tool call's output is its tool event's result or
-    error, else the tool message that answered the call; a call whose
-    arguments already appear as a delegation line shows no arguments.
+    A tool call's output is the first tool event with its id after the
+    turn, else the tool message that answered the call (sources
+    without tool events). A spawning call, one whose arguments carry
+    the ``task``/``prompt`` a delegation line shows, and a handoff
+    call, whose output is transfer boilerplate, render as bare names.
 
     A part over its cap keeps its start and its end (`clip`). The last
     digest turn with text keeps up to ``final_text_chars`` of it.
@@ -572,30 +529,16 @@ def turn_digests(
     Args:
         transcript: The transcript to digest (Scout ``Transcript`` or
             any object with compatible ``events``/``messages``).
-        snippet_chars: Per-digest cap on turn text, on reasoning, and
-            on each delegation string.
-        final_text_chars: Cap on the text of the last digest turn with
-            text; never below ``snippet_chars``.
-        tool_call_chars: Per-call cap on the JSON arguments; 0 shows
-            tool names only.
-        tool_result_chars: Per-call cap on the recorded output or
-            error message; 0 leaves outputs out.
-        user_chars: Per-message cap on user messages; 0 leaves them out.
-        tool_only_turns: Keep turns whose only content is tool calls.
+        digest: The caps and the tool-only-turn switch
+            (`DigestSettings`); ``None`` is the defaults.
 
     Returns:
         ``Digest`` records in turn order.
     """
-    check_digest_caps(
-        snippet_chars=snippet_chars,
-        final_text_chars=final_text_chars,
-        tool_call_chars=tool_call_chars,
-        tool_result_chars=tool_result_chars,
-        user_chars=user_chars,
-    )
+    settings = digest or DigestSettings()
+    text_chars = settings.text_chars
     lanes = Lanes(transcript)
-    outputs = _tool_outputs(transcript) if tool_result_chars else {}
-    user_by_turn = _user_messages_by_turn(lanes) if user_chars else {}
+    outputs = _tool_outputs(transcript) if settings.tool_result_chars else None
     by_turn: dict[int, Digest] = {}
 
     def _digest(turn: int) -> Digest:
@@ -613,39 +556,27 @@ def turn_digests(
         message = event.output.message
         text = (message.text or "").strip() if message else ""
         reasoning = message_reasoning(message)
-        user = [clip(m, user_chars) for m in user_by_turn.get(turn, [])]
         delegations: list[str] = []
-        delegating: set[str] = set()  # call ids already shown as delegations
         if not lanes.begins:  # span-less sources: delegations ride tool-call args
             for call in calls:
-                arguments = call.arguments if isinstance(call.arguments, dict) else {}
-                task = arguments.get("task") or arguments.get("prompt")
-                if task:
-                    label = arguments.get("label") or arguments.get("description")
-                    task_text = strip_subagent_scaffold(str(task))
-                    goal = (f"[{label}] " if label else "") + task_text
-                    delegations.append(clip(goal, snippet_chars))
-                    delegating.add(call.id)
-        has_content = text or reasoning or delegations or user
-        if not has_content and not (calls and tool_only_turns):
+                goal = _spawn_goal(call)
+                if goal:
+                    delegations.append(clip(goal, text_chars))
+        if not (text or reasoning or delegations) and not (
+            calls and settings.tool_only_turns
+        ):
             continue  # nothing classifiable in this turn
-        digest = _digest(turn)
-        digest.user = user
-        digest.text = clip(text, snippet_chars)
-        digest.reasoning = clip(reasoning, snippet_chars)
+        record = _digest(turn)
+        record.text = clip(text, text_chars)
+        record.reasoning = clip(reasoning, text_chars)
         if text:
             final = (turn, text)
-        digest.calls = [
-            _tool_digest(
-                call,
-                outputs,
-                tool_call_chars=0 if call.id in delegating else tool_call_chars,
-                tool_result_chars=tool_result_chars,
-            )
+        record.tool_calls = [
+            _tool_digest(call, outputs, lanes.position(event), settings)
             for call in calls
         ]
-        digest.delegations.extend(delegations)
-        digest.event_id = getattr(event, "uuid", None)
+        record.delegations.extend(delegations)
+        record.event_id = getattr(event, "uuid", None)
 
     # Sub-agent-span delegations, snapped to the nearest digest-eligible
     # orchestrator turn at or before the span_begin.
@@ -656,11 +587,11 @@ def turn_digests(
         anchor = eligible_turns[position] if position >= 0 else eligible_turns[0]
         text = span_task_text(span, lanes.first_models.get(span.id))[0]
         goal = text.splitlines()[0].strip() if text else str(span.name)
-        _digest(anchor).delegations.append(clip(goal, snippet_chars))
+        _digest(anchor).delegations.append(clip(goal, text_chars))
 
     if final is not None:
         turn, text = final
-        by_turn[turn].text = clip(text, max(final_text_chars, snippet_chars))
+        by_turn[turn].text = clip(text, max(settings.final_text_chars, text_chars))
     return [by_turn[turn] for turn in sorted(by_turn)]
 
 
@@ -994,47 +925,88 @@ def _is_failed_turn(event: Any) -> bool:
     return text.startswith(_OPENCLAW_FAILED_TURN_PREFIX)
 
 
+def _spawn_goal(call: ToolCall) -> str:
+    """The delegation a spawning call carries: its ``task``/``prompt``
+    argument behind its label, scaffold stripped; "" for other calls."""
+    arguments = call.arguments if isinstance(call.arguments, dict) else {}
+    task = arguments.get("task") or arguments.get("prompt")
+    if not task:
+        return ""
+    label = arguments.get("label") or arguments.get("description")
+    return (f"[{label}] " if label else "") + strip_subagent_scaffold(str(task))
+
+
 def _tool_digest(
     call: ToolCall,
-    outputs: dict[str, tuple[str, bool]],
-    tool_call_chars: int,
-    tool_result_chars: int,
+    outputs: _ToolOutputs | None,
+    position: int,
+    settings: DigestSettings,
 ) -> ToolDigest:
-    """One tool call as a digest shows it, within the per-call caps."""
+    """One tool call as a digest shows it, within the per-call caps.
+    ``position`` is the calling model event's index in the event list;
+    ``outputs`` is None when output is switched off."""
+    spawning = bool(_spawn_goal(call))
     arguments = ""
-    if tool_call_chars and call.arguments:
+    if settings.tool_call_chars and call.arguments and not spawning:
         arguments = json.dumps(call.arguments, ensure_ascii=False, default=str)
     result, error = ("", False)
-    if tool_result_chars:
-        result, error = outputs.get(call.id, ("", False))
+    if outputs is not None and not spawning:
+        result, error = _tool_output(outputs, call.id, position)
+        if result.startswith(_HANDOFF_RESULT_PREFIX):
+            result = ""
     return ToolDigest(
         function=call.function,
-        arguments=clip(arguments, tool_call_chars),
-        result=clip(result, tool_result_chars),
+        arguments=clip(arguments, settings.tool_call_chars),
+        result=clip(result, settings.tool_result_chars),
         error=error,
     )
 
 
-def _tool_outputs(transcript: Any) -> dict[str, tuple[str, bool]]:
-    """Each tool call's recorded output, keyed by call id: ``(text,
-    is_error)``, whitespace-flattened. The tool event wins over the tool
-    message that answered the call; the message covers sources without
-    tool events."""
-    outputs: dict[str, tuple[str, bool]] = {}
+def _tool_outputs(transcript: Any) -> _ToolOutputs:
+    """The transcript's recorded tool outputs: tool events keyed by call
+    id with their event position, and tool messages keyed by call id as
+    the fallback for sources without tool events (``(text, is_error)``,
+    whitespace-flattened)."""
+    events: dict[str, list[tuple[int, str, bool]]] = {}
+    messages: dict[str, tuple[str, bool]] = {}
     for message in transcript.messages or []:
         call_id = getattr(message, "tool_call_id", None)
         if getattr(message, "role", None) != "tool" or not call_id:
             continue
         error = getattr(message, "error", None)
         text = error.message if error is not None else (message.text or "")
-        outputs[call_id] = (" ".join(text.split()), error is not None)
-    for event in transcript.events:
+        messages.setdefault(call_id, (_flat(text), error is not None))
+    for position, event in enumerate(transcript.events):
         if getattr(event, "event", None) != "tool" or not event.id:
             continue
         error = event.error
         text = error.message if error is not None else _result_text(event.result)
-        outputs[event.id] = (" ".join(text.split()), error is not None)
-    return outputs
+        events.setdefault(event.id, []).append(
+            (position, _flat(text), error is not None)
+        )
+    return events, messages
+
+
+def _tool_output(
+    outputs: _ToolOutputs, call_id: str | None, position: int
+) -> tuple[str, bool]:
+    """The output of the call ``call_id`` made at event ``position``: the
+    first tool event with that id after the turn, so a reused id
+    (OpenClaw sessions concatenated into one lane) resolves to its own
+    event; else the answering tool message; a call without an id gets
+    none."""
+    if not call_id:
+        return "", False
+    events, messages = outputs
+    for event_position, text, error in events.get(call_id, []):
+        if event_position > position:
+            return text, error
+    return messages.get(call_id, ("", False))
+
+
+def _flat(text: str) -> str:
+    """Whitespace-flattened text."""
+    return " ".join(text.split())
 
 
 def _result_text(result: Any) -> str:
@@ -1050,39 +1022,3 @@ def _result_text(result: Any) -> str:
     if isinstance(text, str):
         return text
     return "" if result is None else str(result)
-
-
-def _user_messages_by_turn(lanes: Lanes) -> dict[int, list[str]]:
-    """User-message texts keyed by the orchestrator turn whose input
-    carried them first, whitespace-flattened. The first non-failed turn's
-    input is the task and yields nothing, and a later message repeating
-    one of its texts (a compaction re-inserting the task) is skipped. A
-    failed turn records nothing, so its new messages go to the next
-    turn. A merged message (``combined_from``) counts only when one of
-    its parts is new."""
-    seen: set[str] = set()
-    task_texts: set[str] = set()
-    by_turn: dict[int, list[str]] = {}
-    task_read = False
-    for turn, event, _calls in lanes.turns():
-        if _is_failed_turn(event):
-            continue
-        for message in event.input:
-            key = message.id or f"{message.role}:{message.text}"
-            parts = (message.metadata or {}).get("combined_from") or []
-            new = key not in seen and (not parts or any(p not in seen for p in parts))
-            seen.update([key, *parts])
-            if not new or message.role != "user":
-                continue
-            text = " ".join((message.text or "").split())
-            if not task_read:
-                task_texts.add(text)
-                continue
-            if (message.metadata or {}).get("summary"):
-                continue  # a compaction summary, not a message from the user
-            if text in task_texts or text.lower() in _OPENCLAW_SCAFFOLD_USER_MESSAGES:
-                continue
-            if text:
-                by_turn.setdefault(turn, []).append(text)
-        task_read = True
-    return by_turn

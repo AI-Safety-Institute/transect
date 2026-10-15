@@ -134,17 +134,17 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
   scanners are free and always on; judged scanners run when
   `judge_models` is set and the Spec declares their vocabulary.
 - **Turn digests**: what the phase judge, its verifier and the
-  narrator read - one line per orchestrator turn with the user
-  messages the turn received (`[USER]`), its reasoning (`[THINKING]`)
-  and text, each tool call with its arguments and recorded output
-  (`[CALL]`, `[RESULT]` / `[ERROR]`), and sub-agent tasks
-  (`[DELEGATES]`). Each part is capped in characters, and a longer
-  part keeps its start and its end: 300 for text, reasoning,
-  delegations and user messages, 200 for each call's arguments and
-  for its output, and 4000 for the text of the agent's last turn,
-  usually its report. The caps and `tool_only_turns` are arguments
-  of `decision_phases()` and `reasoning_turns()`; `transect()` uses
-  the defaults.
+  narrator read - one line per orchestrator turn with content, with
+  its reasoning (`[THINKING]`) and text, each tool call with its
+  arguments (`[CALL]`) and, when switched on, its recorded output
+  (`[RESULT]` / `[ERROR]`), and sub-agent tasks (`[DELEGATES]`).
+  `DigestSettings` caps each part in characters (a longer part keeps
+  its start and its end; the agent's last turn with text, usually its
+  report, gets a larger cap) and decides whether turns whose only
+  content is tool calls are judged; its docstring states the defaults
+  and their basis. Pass it as `digest=` to `transect()`,
+  `decision_phases()` or `reasoning_turns()`; Scout records it with
+  the scan.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.
@@ -503,13 +503,15 @@ worked example is `examples/transect_custom_layer.py`; the shape:
 
 ```python
 from inspect_scout import scanner
-from transect import Layer, cohort_llm_scanner, reasoning_turns, transect, turns_frame
+from transect import (
+    DIGEST_MARKERS, Layer, cohort_llm_scanner, reasoning_turns, transect, turns_frame,
+)
 from transect.report import Markdown, TurnBand
 
-@scanner(loader=reasoning_turns())  # the units to judge: one item per reasoning turn
+@scanner(loader=reasoning_turns())  # the units to judge: one item per digest turn
 def research_skills(spec, judge_models=None):
     skills = spec.extra["research_skills"]  # the rubric lives in the spec
-    question = "Label this reasoning turn with the best-fitting category:\n" + "\n".join(
+    question = DIGEST_MARKERS + "Label this turn with the best-fitting category:\n" + "\n".join(
         f"- {label}: {text}" for label, text in skills.items()
     )
     return cohort_llm_scanner(
@@ -539,7 +541,7 @@ results = transect(
             audit=("turn", "label"),
             # the layer's own report section
             section=[
-                Markdown("#### One skill label per reasoning turn"),
+                Markdown("#### One skill label per turn"),
                 TurnBand(label="label"),
             ],
         )
@@ -576,10 +578,9 @@ Structural extraction is free (no LLM calls): without
 structural scanners run and the whole scan costs nothing. Custom
 scanners can make their own provider calls regardless of those
 switches. Judged surfaces cost roughly (turns + sub-agents) x judges
-x rolls calls per transcript; the demo example costs cents. On
-tool-heavy runs, tool output is the largest part of a phase judge's
-prompt: `decision_phases(tool_result_chars=...)` trades that evidence
-for cost (0 leaves outputs out).
+x rolls calls per transcript; the demo example costs cents. What
+each phase-judge call reads per turn, and so its size, is set by
+`DigestSettings` (see Concepts).
 
 Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
 with `cohort_llm_scanner(batch=True)` judges N units per call,
