@@ -31,14 +31,16 @@ _GREYED_BASES = (*_UNJUDGED_BASES, "unattributed")
 _AGREEMENT_TEAL = "#0b5e60"
 
 
-def _phase_colors(phases: pd.DataFrame) -> dict[str, tuple[str, str | None]]:
-    """label -> (hex, hatch) for the whole report, by aggregate turn share.
+def _phase_colors(phase_turns: pd.DataFrame) -> dict[str, tuple[str, str | None]]:
+    """label -> (hex, hatch) for the whole report, by aggregate turn share
+    (orchestrator turns per label over ``phase_turns``, attributed turns
+    included).
 
     Fixed assignment across transcripts (color follows the entity);
     hatch marks the reuse tier past the palette's 12 slots."""
-    if not len(phases):
+    if not len(phase_turns):
         return {}
-    order = phases.groupby("phase").n_turns.sum().sort_values(ascending=False).index
+    order = phase_turns.groupby("phase").size().sort_values(ascending=False).index
     return {
         label: (
             _PHASE_SLOTS[i % len(_PHASE_SLOTS)],

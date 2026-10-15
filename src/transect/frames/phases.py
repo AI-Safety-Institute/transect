@@ -6,10 +6,10 @@ Columns (identity prefix explained in common.py):
   join key for phase_turns_df / turn_groups_df / phase_turn_votes_df.
 - phase: the label.
 - turn_start / turn_end: inclusive orchestrator turn range (0-based).
-- n_turns: digest turns inside the phase - the turns the judge
-  actually saw, judged and filled (failed and empty turns, and
-  tool-call-only turns when tool_only_turns is off, are not counted;
-  sub-agent turns are not on the axis).
+- n_digest_turns: digest turns inside the phase - the turns the judge
+  saw, judged and filled. Unseen turns in the range (failed or empty,
+  or tool-call-only with tool_only_turns off) are not counted; the
+  phase's full size is its rows in phase_turns_df.
 - confidence: mean of the phase's per-turn confidences (filled
   turns included, at 0.3).
 - min_confidence: minimum per-turn confidence in the phase.
@@ -161,7 +161,7 @@ def phases_df(
         "phase",
         "turn_start",
         "turn_end",
-        "n_turns",
+        "n_digest_turns",
         "confidence",
         "min_confidence",
         "min_agreement",

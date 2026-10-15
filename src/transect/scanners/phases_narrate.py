@@ -121,12 +121,12 @@ async def narrate_phases(
         if narrative is None:
             p.narration_group_status = "no_narrative"
             audit.n_fallback += 1
-            p.headline = f"{default_title} ({p.n_turns} turns)"
+            p.headline = f"{default_title} ({p.n_digest_turns} turns)"
             p.summary = ""
             p.turn_groups = validate_turn_groups([], p, default_title)
             continue
         p.headline = narrative.headline.strip() or (
-            f"{default_title} ({p.n_turns} turns)"
+            f"{default_title} ({p.n_digest_turns} turns)"
         )
         p.summary = narrative.summary.strip()
         p.turn_groups, p.narration_group_status = _validated_groups(
@@ -242,6 +242,7 @@ def _narrate_user_prompt(
     for k in ids:
         p = phases[k]
         blocks.append(
-            f"PHASE {k} [{p.phase}, {p.n_turns} turns]:\n{phase_evidence(p, by_turn)}"
+            f"PHASE {k} [{p.phase}, {p.n_digest_turns} turns]:\n"
+            + phase_evidence(p, by_turn)
         )
     return "Narrate these phases:\n\n" + "\n\n".join(blocks)

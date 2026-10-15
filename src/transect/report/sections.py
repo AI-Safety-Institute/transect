@@ -418,16 +418,20 @@ def _verifier_name(entity: pd.DataFrame) -> str | None:
 
 def phase_chips(
     phases: pd.DataFrame,
+    phase_turns: pd.DataFrame,
     colors: dict[str, tuple[str, str | None]],
     definitions: pd.DataFrame | None = None,
 ) -> Markup:
     """The band's own legend: the hue-reuse caveat (if any) and the
-    per-phase chips, rendered directly under the chart. The
+    per-phase chips, rendered directly under the chart. A chip counts
+    the label's phases and the orchestrator turns those phases hold
+    (``phase_turns`` rows, attributed turns included). The
     counts/judge/cohort/verifier detail lives on `phase_meta_line`, next
     to the phase cards.
     """
-    one = phases.sort_values("phase_index")
-    counts = one.groupby("phase").agg(n=("phase", "size"), turns=("n_turns", "sum"))
+    counts = phases.groupby("phase").agg(n=("phase", "size"))
+    sizes = phase_turns.groupby("phase").size()
+    counts["turns"] = sizes.reindex(counts.index, fill_value=0)
     chips = []
     n_reused = 0
     for label, (color, hatch) in colors.items():
@@ -1104,9 +1108,7 @@ def phase_cards(
         spend = p.new_work_tokens if pd.notna(p.new_work_tokens) else 0
         tags = [
             f"turns {int(p.turn_start)}–{int(p.turn_end)}",
-            # n_turns counts the phase's digest turns, which can be fewer
-            # than the range width (turns the judge never saw)
-            f"{int(p.n_turns)} turn(s) shown to the judge",
+            f"{int(p.n_digest_turns)} turn(s) shown to the judge",
             f"{int(spend):,} orchestrator new-work tokens",
         ]
         n_tools = (

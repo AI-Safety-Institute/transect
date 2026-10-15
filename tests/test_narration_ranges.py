@@ -35,7 +35,7 @@ def phase(end=9, count=10):
         phase="setup",
         turn_start=0,
         turn_end=end,
-        n_turns=count,
+        n_digest_turns=count,
         confidence=0.9,
         min_confidence=0.9,
         explanation="Synthetic phase",

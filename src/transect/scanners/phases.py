@@ -203,8 +203,8 @@ def decision_phases(
 
           - ``phase``: the label.
           - ``turn_start`` / ``turn_end``: inclusive digest-turn range.
-          - ``n_turns``: digest turns in the phase (the turns the
-            judge saw).
+          - ``n_digest_turns``: digest turns in the phase (the turns
+            the judge saw, judged and filled).
           - ``confidence``: mean of the phase's per-turn confidences
             (filled turns included, at 0.3).
           - ``min_confidence``: minimum - the verifier's selection signal.

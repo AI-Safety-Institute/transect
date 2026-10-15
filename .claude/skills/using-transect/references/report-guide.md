@@ -272,14 +272,12 @@ sub-agent role. When sub-agent spend cannot be computed (tool-events-
 only lanes carry no usage) the report says so instead of drawing a
 zero.
 
-Computing new-work tokens per turn from frames: `phases.n_turns` counts only
-digest turns (judged and filled), while `new_work_tokens` sums every
-orchestrator turn in the range, unseen turns included - so
-`new_work_tokens / n_turns` overstates per-judged-turn spend. Sub-agent
-spend is never in it: that is `delegated_new_work_tokens` (spans whose
-`spawn_turn` falls in the phase). For the phase's own reasoning, group
-`phase_turns` by phase and `basis` (judged and filled vs attributed)
-instead of dividing by `n_turns`.
+Computing new-work tokens per turn from frames: `new_work_tokens` sums
+every orchestrator turn the phase holds, so divide it by the phase's
+rows in `phase_turns`, not by `n_digest_turns` (the turns the judge
+saw). Sub-agent spend is never in it: that is
+`delegated_new_work_tokens` (spans whose `spawn_turn` falls in the
+phase).
 
 ## 6. Phase cards
 

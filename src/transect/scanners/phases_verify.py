@@ -114,7 +114,7 @@ def select_for_verify(
         prev_l = phases[k - 1].phase if k > 0 else None
         next_l = phases[k + 1].phase if k + 1 < len(phases) else None
         if (
-            p.n_turns <= 2
+            p.n_digest_turns <= 2
             and prev_l == next_l
             and prev_l is not None
             and prev_l != p.phase

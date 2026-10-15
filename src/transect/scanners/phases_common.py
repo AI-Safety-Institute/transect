@@ -149,8 +149,9 @@ class StitchedPhase(BaseModel):
     phase: str = Field(description="The label shared by the merged judgements.")
     turn_start: int = Field(description="First digest turn of the phase (inclusive).")
     turn_end: int = Field(description="Last digest turn of the phase (inclusive).")
-    n_turns: int = Field(
-        description="Number of digest turns in the phase (the turns the judge saw)."
+    n_digest_turns: int = Field(
+        description="Digest turns in the phase: the turns the judge saw, judged "
+        "and filled. Unseen turns inside the range are not counted."
     )
     confidence: float = Field(
         description="Mean over member judgements (fills included, at 0.3)."
@@ -300,7 +301,7 @@ def stitch_phases(
                 phase=members[0].phase or "",
                 turn_start=members[0].turn,
                 turn_end=members[-1].turn,
-                n_turns=len(members),
+                n_digest_turns=len(members),
                 confidence=round(sum(confidences) / len(confidences), 3),
                 min_confidence=round(min(confidences), 3),
                 min_agreement=round(min(agreements), 3) if agreements else None,

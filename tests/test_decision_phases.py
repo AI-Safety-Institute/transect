@@ -462,7 +462,7 @@ def test_select_for_verify_sizes_the_random_sample(n_phases, sample, expected):
             phase=f"p{k % 3}",
             turn_start=k * 5,
             turn_end=k * 5 + 4,
-            n_turns=5,
+            n_digest_turns=5,
             confidence=0.9,
             min_confidence=0.9,
             explanation="scripted",
