@@ -124,19 +124,7 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     (`helpers.orchestrator_turns`, the turn axis): a turn is eligible
     when it carries visible text, reasoning-block content (when the
     source records it), a delegation, or (with
-    ``digest.tool_only_turns``) a tool call. Provider-failure
-    placeholder turns never are. Sub-agent activity lives in child
-    spans and is represented only by delegation lines, folded in at
-    the last eligible turn preceding each span_begin.
-
-    A tool call's output is the first tool event with its id after the
-    turn, else the tool message that answered the call (sources
-    without tool events). A spawning call, one whose arguments carry
-    the ``task``/``prompt`` a delegation line shows, and a handoff
-    call, whose output is transfer boilerplate, render as bare names.
-
-    A part over its cap keeps its start and its end (`clip`). The last
-    digest turn with text keeps up to ``final_text_chars`` of it.
+    ``digest.tool_only_turns``) a tool call.
 
     Args:
         transcript: The transcript to digest (Scout ``Transcript`` or
