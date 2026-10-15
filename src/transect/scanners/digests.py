@@ -127,8 +127,7 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     ``digest.tool_only_turns``) a tool call.
 
     Args:
-        transcript: The transcript to digest (Scout ``Transcript`` or
-            any object with compatible ``events``/``messages``).
+        transcript: The transcript to digest.
         digest: The caps and the tool-only-turn switch
             (`DigestSettings`); ``None`` is the defaults.
 
