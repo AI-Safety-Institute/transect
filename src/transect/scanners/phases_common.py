@@ -21,6 +21,7 @@ from transect.scanners.cohort import (
     ci_half_width,
     scoped_cache,
 )
+from transect.scanners.digests import Digest, digest_line
 from transect.scanners.helpers import capped_lines
 from transect.spec import Phase, Spec
 
@@ -60,48 +61,6 @@ TurnBasis = Literal[
 NarrationGroupStatus = Literal[
     "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
 ]
-
-
-class DigestSettings(BaseModel, frozen=True):
-    """What every judge reads per orchestrator turn: the character cap
-    of each digest part and whether turns whose only content is tool
-    calls are judged. The phase judge, its verifier, the narrator and
-    the `digest_turns` loader share one object, so every reader sees
-    the same lines; Scout records it with the scanner's arguments. A
-    part over its cap keeps its start and its end (`clip`); a cap of 0
-    leaves the part out.
-
-    The text caps were sized on coding-agent final reports (nearly all
-    fit 4000 characters); calls on and output off come from a k-roll
-    comparison on a 900-turn OpenClaw run and the demo log, where
-    showing calls raised judge agreement and output lowered it again.
-    """
-
-    text_chars: int = Field(default=300, ge=0)  # turn text, reasoning, each delegation
-    final_text_chars: int = Field(default=4000, ge=0)  # the last digest turn with text
-    tool_call_chars: int = Field(default=200, ge=0)  # each call's JSON arguments
-    tool_result_chars: int = Field(default=0, ge=0)  # each call's recorded output
-    tool_only_turns: bool = True  # judge turns whose only content is tool calls
-
-
-class ToolDigest(BaseModel):
-    """One tool call of a digest turn, as shown to the judge."""
-
-    function: str
-    arguments: str = ""  # capped JSON arguments; "" when not shown
-    result: str = ""  # capped output or error message; "" when not shown
-    error: bool = False  # the call recorded an error (only when output is shown)
-
-
-class Digest(BaseModel):
-    """One orchestrator turn, as shown to the judge."""
-
-    turn: int
-    text: str = ""
-    reasoning: str = ""  # the turn's reasoning-block text, when recorded
-    tool_calls: list[ToolDigest] = []
-    delegations: list[str] = []
-    event_id: str | None = None  # source model event uuid (viewer anchor)
 
 
 class DigestJudgement(BaseModel):
@@ -446,55 +405,6 @@ async def call_judge(
     return None, "no_answer"
 
 
-def clip(text: str, cap: int) -> str:
-    """Bound a string to ``cap`` characters, keeping its start and its
-    end around a ``[... N chars ...]`` marker: a message's closing lines
-    often carry its conclusion.
-
-    Args:
-        text: The string to bound.
-        cap: Maximum characters kept, marker excluded.
-
-    Returns:
-        The text unchanged when within the cap, or when the clipped form
-        would be no shorter; otherwise its first ``cap // 2`` and last
-        ``cap - cap // 2`` characters, whitespace at the cut dropped,
-        with a marker between them counting every character they do not
-        cover ("" for a cap of 0).
-    """
-    if len(text) <= cap:
-        return text
-    if cap <= 0:
-        return ""
-    head = text[: cap // 2].rstrip()
-    tail = text[len(text) - (cap - cap // 2) :].lstrip()
-    marker = f"[... {len(text) - len(head) - len(tail)} chars ...]"
-    clipped = " ".join(part for part in (head, marker, tail) if part)
-    return clipped if len(clipped) < len(text) else text
-
-
-def digest_line(d: Digest) -> str:
-    """Render one digest as a single prompt line: index, reasoning
-    behind a [THINKING] marker, text, the tool calls, then each
-    delegation behind a [DELEGATES] marker.
-
-    Tool calls render as ``[CALL] name(arguments)`` followed by
-    ``[RESULT]`` or ``[ERROR]`` output when the digest carries
-    arguments or output, otherwise as the bare ``(tools: ...)`` names."""
-    parts = [f"{d.turn}:"]
-    if d.reasoning:
-        parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
-    if d.text:
-        parts.append(d.text.replace("\n", " "))
-    if any(c.arguments or c.result or c.error for c in d.tool_calls):
-        parts.extend(_call_part(c) for c in d.tool_calls)
-    elif d.tool_calls:
-        parts.append(f"(tools: {', '.join(c.function for c in d.tool_calls)})")
-    for goal in d.delegations:
-        parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
-    return " ".join(parts)
-
-
 def phase_evidence(phase: StitchedPhase, by_turn: Mapping[int, Digest]) -> str:
     """One phase's evidence block for a judge prompt: its digest lines,
     capped at ``EVIDENCE_LINES``."""
@@ -509,13 +419,3 @@ def phase_evidence(phase: StitchedPhase, by_turn: Mapping[int, Digest]) -> str:
 def humanise_phase(label: str) -> str:
     """A phase label as a human title: ``initial_recon`` -> ``Initial recon``."""
     return str(label).replace("_", " ").capitalize()
-
-
-def _call_part(call: ToolDigest) -> str:
-    """One tool call's part of a digest line."""
-    part = f"[CALL] {call.function}"
-    if call.arguments:
-        part += f"({call.arguments})"
-    if call.result or call.error:
-        part += f" [{'ERROR' if call.error else 'RESULT'}] {call.result}".rstrip()
-    return part.replace("\n", " ")

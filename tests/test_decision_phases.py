@@ -19,20 +19,9 @@ from helpers import (
 )
 from inspect_ai.model import ContentReasoning, ContentText, get_model
 
-from transect.scanners.phases import (
-    decision_phases,
-    project_phase_turns,
-    system_prompt,
-    turn_digests,
-)
-from transect.scanners.phases_common import (
-    DigestJudgement,
-    DigestSettings,
-    StitchedPhase,
-    clip,
-    digest_line,
-    is_labelled,
-)
+from transect.scanners.digests import DigestSettings, clip, digest_line, turn_digests
+from transect.scanners.phases import decision_phases, project_phase_turns, system_prompt
+from transect.scanners.phases_common import DigestJudgement, StitchedPhase, is_labelled
 from transect.scanners.phases_verify import select_for_verify
 from transect.spec import Spec
 

@@ -13,8 +13,7 @@ from inspect_ai.model import ChatMessageUser
 from inspect_scout import Loader, Transcript, TranscriptContent, loader
 
 from transect.scanners.cohort import batch_item_content
-from transect.scanners.phases import turn_digests
-from transect.scanners.phases_common import DigestSettings, digest_line
+from transect.scanners.digests import DigestSettings, digest_line, turn_digests
 
 
 @loader(

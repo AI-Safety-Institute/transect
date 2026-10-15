@@ -22,8 +22,8 @@ from inspect_ai.model import ChatMessageTool, ContentText, GenerateConfig, Model
 from inspect_ai.tool import ToolCallError
 
 from transect import DigestSettings, digest_turns
-from transect.scanners.phases import decision_phases, turn_digests
-from transect.scanners.phases_common import digest_line
+from transect.scanners.digests import digest_line, turn_digests
+from transect.scanners.phases import decision_phases
 
 RESULTS_ON = DigestSettings(tool_result_chars=200)
 COMMAND = "cd repo && pytest -q tests"

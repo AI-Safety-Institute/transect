@@ -62,8 +62,8 @@ from transect.scanners.base import (
     human_intervention,
     token_timeline,
 )
+from transect.scanners.digests import DigestSettings
 from transect.scanners.phases import decision_phases
-from transect.scanners.phases_common import DigestSettings
 from transect.scanners.subagents import subagent_classification
 from transect.selection import read_index, select_transcripts
 from transect.spec import Spec, load_spec

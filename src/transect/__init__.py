@@ -9,8 +9,8 @@ from transect.frames.common import judge_identity
 from transect.frames.user import member_ballots, turns_frame
 from transect.layers import Layer
 from transect.scanners.cohort import cohort_llm_scanner
+from transect.scanners.digests import DigestSettings
 from transect.scanners.loaders import digest_turns
-from transect.scanners.phases_common import DigestSettings
 from transect.spec import Spec, load_spec
 
 __version__ = _version("transect")

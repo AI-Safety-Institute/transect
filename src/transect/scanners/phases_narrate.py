@@ -7,8 +7,8 @@ from inspect_ai.model import CachePolicy, Model
 from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
+from transect.scanners.digests import Digest
 from transect.scanners.phases_common import (
-    Digest,
     NarrationGroupStatus,
     StitchedPhase,
     TurnGroup,

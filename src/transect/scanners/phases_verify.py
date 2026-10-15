@@ -9,9 +9,9 @@ from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
 from transect.scanners.cohort import _SPOT_DEFAULT, LOWCONF, Trigger, VerifierReview
+from transect.scanners.digests import Digest
 from transect.scanners.phases_cohort import ConsensusJudgement
 from transect.scanners.phases_common import (
-    Digest,
     PhaseReview,
     StitchedPhase,
     call_judge,

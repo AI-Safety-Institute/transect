@@ -120,7 +120,7 @@ scanner change take effect; run a new scan and retain both results for compariso
   the same helper. The main lane
   is the span Scout would scan at depth 1; a transcript with model turns
   but no single orchestrator agent raises rather than guessing.
-- **Judge digests.** `scanners.phases.turn_digests` is the one builder
+- **Judge digests.** `scanners.digests.turn_digests` is the one builder
   of what the phase judge, its verifier, the narrator and the
   `digest_turns` loader read per orchestrator turn, and one
   `DigestSettings` (passed as `digest=` through `transect()`) governs
