@@ -13,7 +13,12 @@ from inspect_ai.model import ChatMessageUser
 from inspect_scout import Loader, Transcript, TranscriptContent, loader
 
 from transect.scanners.cohort import batch_item_content
-from transect.scanners.digests import DigestSettings, digest_line, turn_digests
+from transect.scanners.digests import (
+    DigestSettings,
+    digest_line,
+    resolve_digest,
+    turn_digests,
+)
 
 
 @loader(
@@ -47,6 +52,7 @@ def digest_turns(
     """
     if batch < 1:
         raise ValueError(f"batch must be >= 1, got {batch}")
+    digest = resolve_digest(digest)
 
     async def load(transcript: Transcript) -> AsyncIterator[Transcript]:
         digests = turn_digests(transcript, digest)

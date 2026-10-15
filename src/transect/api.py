@@ -62,7 +62,7 @@ from transect.scanners.base import (
     human_intervention,
     token_timeline,
 )
-from transect.scanners.digests import DigestSettings
+from transect.scanners.digests import DigestSettings, resolve_digest
 from transect.scanners.phases import decision_phases
 from transect.scanners.subagents import subagent_classification
 from transect.selection import read_index, select_transcripts
@@ -471,6 +471,7 @@ def _run(
     # validate before resolving: a malformed layer must be refused before
     # its factory runs (and constructs judge models)
     validate_layers(list(extra_layers or []), builtin_frame_names())
+    digest = resolve_digest(digest)
     extra_layers = resolve_scanner_factories(
         list(extra_layers or []),
         {
@@ -479,7 +480,6 @@ def _run(
             "verify": verify,
             "verifier_model": verifier_model,
             "verify_sample": verify_sample,
-            "digest": digest,
         },
         spec,
     )
@@ -556,7 +556,7 @@ def _scanners(
                     verify=verify,
                     verifier_model=verifier_model,
                     verify_sample=verify_sample,
-                    digest=digest or DigestSettings(),
+                    digest=digest,
                 )
             )
         if spec.subagent_labels:

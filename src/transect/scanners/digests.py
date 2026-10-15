@@ -38,7 +38,8 @@ class DigestSettings(BaseModel, frozen=True):
     the `digest_turns` loader share one object, so every reader sees
     the same lines; Scout records it with the scanner's arguments. A
     part over its cap keeps its start and its end (`clip`); a cap of 0
-    leaves the part out.
+    leaves the part out, except ``final_text_chars``, which is never
+    below ``text_chars``.
     """
 
     text_chars: int = Field(default=300, ge=0)  # turn text, reasoning, each delegation
@@ -85,10 +86,21 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     Returns:
         ``Digest`` records in turn order.
     """
-    settings = digest or DigestSettings()
+    settings = resolve_digest(digest)
     text_chars = settings.text_chars
     lanes = Lanes(transcript)
     outputs = _tool_outputs(transcript) if settings.tool_result_chars else None
+    # the calls that spawned a sub-agent span: their tool event carries
+    # the span's id (OpenClaw); span-less sources show the spawn as the
+    # call's own task argument instead
+    spawn_ids = {
+        event.id
+        for event in lanes.events
+        if getattr(event, "event", None) == "tool"
+        and getattr(event, "agent_span_id", None) in lanes.sub_ids
+    }
+    turns = list(lanes.turns())
+    ends = [lanes.position(ev) for _, ev, _ in turns[1:]] + [len(lanes.events)]
     by_turn: dict[int, Digest] = {}
 
     def _digest(turn: int) -> Digest:
@@ -98,7 +110,7 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
 
     eligible_turns: list[int] = []  # orchestrator, non-failed: anchor targets
     final: tuple[int, str] | None = None  # last digest turn with text, uncapped
-    for turn, ev, calls in lanes.turns():
+    for (turn, ev, calls), until in zip(turns, ends, strict=True):
         event: Any = ev
         if _is_failed_turn(event):
             continue  # provider-failure placeholder: not a turn to judge
@@ -122,7 +134,15 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
         if text:
             final = (turn, text)
         record.tool_calls = [
-            _tool_digest(call, outputs, lanes.position(event), settings)
+            _tool_digest(
+                call,
+                outputs,
+                (lanes.position(event), until),
+                settings,
+                spawning=(call.id in spawn_ids)
+                if lanes.begins
+                else bool(_spawn_goal(call)),
+            )
             for call in calls
         ]
         record.delegations.extend(delegations)
@@ -163,7 +183,8 @@ def digest_line(d: Digest) -> str:
     elif d.tool_calls:
         parts.append(f"(tools: {', '.join(c.function for c in d.tool_calls)})")
     for goal in d.delegations:
-        parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
+        if goal:
+            parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
     return " ".join(parts)
 
 
@@ -194,6 +215,18 @@ def clip(text: str, cap: int) -> str:
     return clipped if len(clipped) < len(text) else text
 
 
+def resolve_digest(digest: DigestSettings | None) -> DigestSettings:
+    """The settings to digest with: ``None`` is the defaults; anything
+    but a `DigestSettings` is refused at build time, not per transcript."""
+    if digest is None:
+        return DigestSettings()
+    if not isinstance(digest, DigestSettings):
+        raise TypeError(
+            f"digest must be a DigestSettings or None, got {type(digest).__name__}"
+        )
+    return digest
+
+
 def _is_failed_turn(event: Any) -> bool:
     """Detect an OpenClaw provider-failure placeholder turn: the scaffold
     writes a fake assistant turn ("[assistant turn failed ...]") when a
@@ -217,19 +250,21 @@ def _spawn_goal(call: ToolCall) -> str:
 def _tool_digest(
     call: ToolCall,
     outputs: _ToolOutputs | None,
-    position: int,
+    window: tuple[int, int],
     settings: DigestSettings,
+    spawning: bool,
 ) -> ToolDigest:
     """One tool call as a digest shows it, within the per-call caps.
-    ``position`` is the calling model event's index in the event list;
-    ``outputs`` is None when output is switched off."""
-    spawning = bool(_spawn_goal(call))
+    ``window`` is the event-index span of the calling turn (its model
+    event, the next orchestrator turn); ``outputs`` is None when output
+    is switched off; a ``spawning`` call shows neither arguments nor
+    output, its task being the delegation line."""
     arguments = ""
     if settings.tool_call_chars and call.arguments and not spawning:
         arguments = json.dumps(call.arguments, ensure_ascii=False, default=str)
     result, error = ("", False)
     if outputs is not None and not spawning:
-        result, error = _tool_output(outputs, call.id, position)
+        result, error = _tool_output(outputs, call.id, window)
         if result.startswith(_HANDOFF_RESULT_PREFIX):
             result = ""
     return ToolDigest(
@@ -247,13 +282,19 @@ def _tool_outputs(transcript: Any) -> _ToolOutputs:
     whitespace-flattened)."""
     events: dict[str, list[tuple[int, str, bool]]] = {}
     messages: dict[str, tuple[str, bool]] = {}
+    ambiguous: set[str] = set()  # a call id answered by several tool messages
     for message in transcript.messages or []:
         call_id = getattr(message, "tool_call_id", None)
         if getattr(message, "role", None) != "tool" or not call_id:
             continue
+        if call_id in messages:
+            ambiguous.add(call_id)
+            continue
         error = getattr(message, "error", None)
         text = error.message if error is not None else (message.text or "")
-        messages.setdefault(call_id, (_flat(text), error is not None))
+        messages[call_id] = (_flat(text), error is not None)
+    for call_id in ambiguous:
+        del messages[call_id]
     for position, event in enumerate(transcript.events):
         if getattr(event, "event", None) != "tool" or not event.id:
             continue
@@ -266,19 +307,23 @@ def _tool_outputs(transcript: Any) -> _ToolOutputs:
 
 
 def _tool_output(
-    outputs: _ToolOutputs, call_id: str | None, position: int
+    outputs: _ToolOutputs, call_id: str | None, window: tuple[int, int]
 ) -> tuple[str, bool]:
-    """The output of the call ``call_id`` made at event ``position``: the
-    first tool event with that id after the turn, so a reused id
-    (OpenClaw sessions concatenated into one lane) resolves to its own
-    event; else the answering tool message; a call without an id gets
-    none."""
+    """The output of the call ``call_id`` made in the turn spanning
+    ``window``: the tool event with that id inside the window, so a
+    reused id (OpenClaw sessions concatenated into one lane) resolves
+    to its own event and never to another turn's; else the one tool
+    message that answered the id; a call without an id, or whose id
+    several messages answered, gets none."""
     if not call_id:
         return "", False
     events, messages = outputs
+    start, end = window
     for event_position, text, error in events.get(call_id, []):
-        if event_position > position:
+        if start < event_position < end:
             return text, error
+    if call_id in events:
+        return "", False  # recorded elsewhere only: not this call's output
     return messages.get(call_id, ("", False))
 
 

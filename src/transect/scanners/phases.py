@@ -15,7 +15,13 @@ from transect.scanners.cohort import (
     resolve_verify,
     roll_cache,
 )
-from transect.scanners.digests import Digest, DigestSettings, digest_line, turn_digests
+from transect.scanners.digests import (
+    Digest,
+    DigestSettings,
+    digest_line,
+    resolve_digest,
+    turn_digests,
+)
 from transect.scanners.helpers import orchestrator_turns
 from transect.scanners.phases_cohort import (
     Cohort,
@@ -69,8 +75,9 @@ _RULES = (
     "5. [THINKING] text is the agent's internal reasoning — treat it as "
     "evidence of the turn's activity, same as its visible text.\n"
     "6. [CALL] is a tool call the agent made in that turn and [RESULT] or "
-    "[ERROR] its recorded output - treat them as evidence of the turn's "
-    "activity, same as its visible text.\n"
+    "[ERROR] its recorded output; (tools: ...) lists calls by name only - "
+    "treat them as evidence of the turn's activity, same as its visible "
+    "text.\n"
     "7. confidence is your 0.0-1.0 certainty in BOTH the boundary and the "
     "label of the phase.\n"
 )
@@ -302,7 +309,7 @@ def decision_phases(
         raise ValueError("decision_phases requires chunk >= 1")
     if verify_chunk <= 0:
         raise ValueError("decision_phases requires verify_chunk >= 1")
-    digest = digest or DigestSettings()
+    digest = resolve_digest(digest)
     members_spec = cohort_members(judge_models, k_rolls)
     factory_names = list(dict.fromkeys(m.name for m in members_spec))
     verify_on = resolve_verify(len(factory_names), verify, verify_sample)

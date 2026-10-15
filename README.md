@@ -134,9 +134,9 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
   scanners are free and always on; judged scanners run when
   `judge_models` is set and the Spec declares their vocabulary.
 - **Turn digests**: what the phase judges read - one line per
-  orchestrator turn with its reasoning, text, tool calls and sub-agent
-  tasks, each part capped by a `DigestSettings` passed as `digest=`
-  to `transect()`.
+  orchestrator turn with content, carrying its reasoning, text, tool
+  calls and sub-agent tasks, each part capped by a `DigestSettings`
+  passed as `digest=` to `transect()`.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.

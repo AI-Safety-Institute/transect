@@ -6,10 +6,10 @@ import asyncio
 
 import pytest
 from helpers import (
-    MODEL,
     PHASES_SPEC,
     StubTranscript,
     agent_span,
+    call_turn,
     model_turn,
     run_scan,
     scripted_judge,
@@ -17,8 +17,7 @@ from helpers import (
     seg_answer,
     tool_event,
 )
-from inspect_ai.event import ModelEvent
-from inspect_ai.model import ChatMessageTool, ContentText, GenerateConfig, ModelOutput
+from inspect_ai.model import ChatMessageTool, ContentText
 from inspect_ai.tool import ToolCallError
 
 from transect import DigestSettings, digest_turns
@@ -28,20 +27,6 @@ from transect.scanners.phases import decision_phases
 RESULTS_ON = DigestSettings(tool_result_chars=200)
 COMMAND = "cd repo && pytest -q tests"
 OUTPUT = "2 failed, 40 passed in 1.2s"
-
-
-def call_turn(function, arguments, call_id, text=""):
-    """A model turn that makes one tool call (optionally with text)."""
-    return ModelEvent(
-        model="m",
-        input=[],
-        tools=[],
-        tool_choice="none",
-        config=GenerateConfig(),
-        output=ModelOutput.for_tool_call(
-            MODEL, function, arguments, tool_call_id=call_id, content=text
-        ),
-    )
 
 
 def lines(events, messages=(), digest=None):
@@ -115,15 +100,48 @@ def test_tool_calls_render_within_their_caps(settings, expected):
             [],
             ['0: read [CALL] read({"path": "x"}) [RESULT] line 1 line 2'],
         ),
+        (
+            [
+                call_turn("bash", {"cmd": "ls"}, "c1", text="first"),
+                call_turn("bash", {"cmd": "ls"}, "c1", text="again"),
+                tool_event("c1", result="b.py"),
+            ],
+            [],
+            [
+                '0: first [CALL] bash({"cmd": "ls"})',
+                '1: again [CALL] bash({"cmd": "ls"}) [RESULT] b.py',
+            ],
+        ),
+        (
+            [
+                call_turn("bash", {"cmd": "ls"}, "c1", text="first"),
+                call_turn("bash", {"cmd": "ls"}, "c1", text="again"),
+            ],
+            [
+                ChatMessageTool(content="a.py", tool_call_id="c1"),
+                ChatMessageTool(content="b.py", tool_call_id="c1"),
+            ],
+            [
+                '0: first [CALL] bash({"cmd": "ls"})',
+                '1: again [CALL] bash({"cmd": "ls"})',
+            ],
+        ),
     ],
-    ids=["error", "reused-id", "message-fallback", "content-blocks"],
+    ids=[
+        "error",
+        "reused-id",
+        "message-fallback",
+        "content-blocks",
+        "event-of-another-turn",
+        "ambiguous-messages",
+    ],
 )
-def test_output_is_the_first_tool_event_after_the_turn_else_the_tool_message(
+def test_output_is_the_tool_event_of_the_turn_else_the_one_answering_message(
     events, messages, expected
 ):
-    """An error renders behind [ERROR]; a reused call id resolves to the
-    event after its own turn; a source without tool events falls back
-    to the answering tool message; content blocks render their text."""
+    """An error renders behind [ERROR]; a reused id resolves to the event
+    inside its own turn and never to another turn's; without tool events
+    the one answering message serves, and several answers serve none."""
     assert lines(events, messages, digest=RESULTS_ON) == expected
 
 
@@ -170,13 +188,15 @@ def test_tool_call_only_turns_are_judged_unless_switched_off(
                 call_turn(
                     "sessions_spawn", {"task": "survey data"}, "c1", text="split"
                 ),
-                tool_event("c1", result='{"status": "accepted"}'),
+                tool_event("c1", result='{"status": "accepted"}', agent_span_id="s1"),
                 *agent_span(
                     "s1",
                     "sub",
                     inner=[model_turn("working")],
                     metadata={"task": "survey data"},
                 ),
+                call_turn("generate_image", {"prompt": "a cat"}, "c2", text="draw"),
+                tool_event("c2", result="cat.png"),
             ],
             "0: split (tools: sessions_spawn) [DELEGATES] survey data",
         ),
@@ -192,16 +212,22 @@ def test_tool_call_only_turns_are_judged_unless_switched_off(
 )
 def test_spawning_and_handoff_calls_show_their_task_once(events, expected):
     """A spawn's task is the delegation line whether it comes from the
-    call's arguments or the span, so the call shows neither arguments
-    nor its acceptance output; a handoff's transfer boilerplate is not
+    call's arguments or the span its tool event names, so the call shows
+    neither arguments nor its acceptance output, while another call with
+    a prompt argument keeps both; a handoff's transfer boilerplate is not
     output either."""
-    assert lines(events, digest=RESULTS_ON)[0] == expected
+    rendered = lines(events, digest=RESULTS_ON)
+    assert rendered[0] == expected
+    if len(rendered) > 1:
+        assert rendered[1] == (
+            '1: draw [CALL] generate_image({"prompt": "a cat"}) [RESULT] cat.png'
+        )
 
 
-def test_a_negative_cap_is_rejected_naming_the_setting():
-    """The settings object refuses a negative cap before any scan."""
-    with pytest.raises(ValueError, match="tool_result_chars"):
-        DigestSettings(tool_result_chars=-1)
+def test_settings_of_the_wrong_type_are_refused_at_build_time():
+    """A loader or scanner built with a dict for digest fails before any scan."""
+    with pytest.raises(TypeError, match="DigestSettings"):
+        digest_turns(digest={"text_chars": 10})  # type: ignore[arg-type]
 
 
 def test_digest_turns_items_carry_the_same_digest_lines():
