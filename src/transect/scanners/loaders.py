@@ -1,9 +1,10 @@
 """Loaders for user layers.
 
 `digest_turns` is the per-turn judged-layer shape: one loader item
-per digest turn of the orchestrator (the turns `decision_phases` shows
-its judge), so a `cohort_llm_scanner` built behind it judges the
-orchestrator agent one turn at a time.
+per digest turn of the orchestrator (an orchestrator turn with content
+to judge, rendered as the built-in phase judges read it), so a
+`cohort_llm_scanner` built behind it judges the orchestrator agent one
+turn at a time.
 """
 
 from collections.abc import AsyncIterator
@@ -28,10 +29,10 @@ def digest_turns(
 ) -> Loader[Transcript]:
     """One item per digest turn of the orchestrator.
 
-    Each item's message is the turn's digest line, as
-    `decision_phases` shows it: its reasoning (when the source records
-    reasoning blocks), its own text, its tool calls, and each sub-agent
-    spawn task. The item's metadata carries ``{"turn": n}``.
+    Each item's message is the turn's digest line: its reasoning
+    (when the source records reasoning blocks), its own text, its tool
+    calls, and each sub-agent spawn task, each part capped by
+    ``digest``. The item's metadata carries ``{"turn": n}``.
 
     Args:
         batch: With ``batch=N``, one item per window of up to N
@@ -41,8 +42,9 @@ def digest_turns(
             content and declares one fact dict per turn as
             ``metadata={"items": [...]}``, each carrying the turn
             number and the matching unbatched item id.
-        digest: What each item carries (`DigestSettings`, as on
-            `decision_phases`); ``None`` is the defaults.
+        digest: The caps on each part of the line and whether
+            tool-call-only turns yield an item (`DigestSettings`);
+            ``None`` is the defaults.
     """
     if batch < 1:
         raise ValueError(f"batch must be >= 1, got {batch}")
