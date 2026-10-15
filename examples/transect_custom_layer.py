@@ -12,14 +12,14 @@ from transect import (
     Layer,
     Spec,
     cohort_llm_scanner,
-    reasoning_turns,
+    digest_turns,
     transect,
     turns_frame,
 )
 from transect.report import Markdown, TurnBand
 
 
-@scanner(loader=reasoning_turns())
+@scanner(loader=digest_turns())
 def research_skills(
     spec: Spec,  # injected by transect(): the rubric lives in spec.extra
     judge_models: str | Model | list[str | Model] | None = None,

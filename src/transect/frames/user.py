@@ -28,7 +28,7 @@ def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
     its turns as a list, `token_timeline`'s convention; a judged batch
     result - ``cohort_llm_scanner(batch=True)`` - explodes its entries
     through the same judged projection as loader items). Any other
-    result is a loader item (e.g. one `transect.reasoning_turns` turn) and
+    result is a loader item (e.g. one `transect.digest_turns` turn) and
     projects one row: the item id and its ``Result.metadata`` (the
     ``turn`` key for a per-turn loader), the decided ``label``, and -
     whenever the value carries a judge block - the judged columns.

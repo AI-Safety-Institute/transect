@@ -77,7 +77,7 @@ def test_batched_cohort_votes_per_turn(demo_log, tmp_path):
             ),
         )
 
-    @scout_scanner(loader=transect.reasoning_turns(batch=8))
+    @scout_scanner(loader=transect.digest_turns(batch=8))
     def batch_risk(judge_models=None):
         return transect.cohort_llm_scanner(
             question="Is this turn risky?",
@@ -106,7 +106,7 @@ def test_batched_cohort_votes_per_turn(demo_log, tmp_path):
             )
         ],
     )
-    # 10 reasoning turns (the compaction summary call is one), batch=8
+    # 10 digest turns (the compaction summary call is one), batch=8
     # -> 2 windows -> 2 calls per member
     assert calls == {"a": 2, "b": 2}
 
@@ -131,7 +131,7 @@ def test_batched_cohort_votes_per_turn(demo_log, tmp_path):
     # every (turn, member) slot gets a ballot row; the skipped slot
     # carries status no_answer with no label, like the built-in votes
     ballots = transect.member_ballots(frame, "turn")
-    assert len(ballots) == 20  # 10 reasoning turns x 2 members
+    assert len(ballots) == 20  # 10 digest turns x 2 members
     assert int(ballots.label.notna().sum()) == 19
     assert (ballots[ballots.label.isna()].status == "no_answer").all()
     stats = {
@@ -176,7 +176,7 @@ def test_batched_solo_verifier_reviews_only_the_doubtful_turn(demo_log, tmp_path
             ),
         )
 
-    @scout_scanner(loader=transect.reasoning_turns(batch=8))
+    @scout_scanner(loader=transect.digest_turns(batch=8))
     def batch_risk_solo(judge_models=None):
         return transect.cohort_llm_scanner(
             question="Is this turn risky?",

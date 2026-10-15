@@ -1,10 +1,9 @@
 """Loaders for user layers.
 
-`reasoning_turns` is the per-turn judged-layer shape: one loader item
+`digest_turns` is the per-turn judged-layer shape: one loader item
 per digest turn of the orchestrator (the turns `decision_phases` shows
 its judge), so a `cohort_llm_scanner` built behind it judges the
-orchestrator agent one turn at a time. The name predates tool calls in
-the digests and is kept for compatibility.
+orchestrator agent one turn at a time.
 """
 
 from collections.abc import AsyncIterator
@@ -24,7 +23,7 @@ from transect.scanners.phases_common import DigestSettings, digest_line
         timeline=True,
     )
 )
-def reasoning_turns(
+def digest_turns(
     batch: int = 1, digest: DigestSettings | None = None
 ) -> Loader[Transcript]:
     """One item per digest turn of the orchestrator.

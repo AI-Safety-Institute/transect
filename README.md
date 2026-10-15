@@ -143,7 +143,7 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
   report, gets a larger cap) and decides whether turns whose only
   content is tool calls are judged; its docstring states the defaults
   and their basis. Pass it as `digest=` to `transect()`,
-  `decision_phases()` or `reasoning_turns()`; Scout records it with
+  `decision_phases()` or `digest_turns()`; Scout records it with
   the scan.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
@@ -503,10 +503,10 @@ worked example is `examples/transect_custom_layer.py`; the shape:
 
 ```python
 from inspect_scout import scanner
-from transect import Layer, cohort_llm_scanner, reasoning_turns, transect, turns_frame
+from transect import Layer, cohort_llm_scanner, digest_turns, transect, turns_frame
 from transect.report import Markdown, TurnBand
 
-@scanner(loader=reasoning_turns())  # the units to judge: one item per digest turn
+@scanner(loader=digest_turns())  # the units to judge: one item per digest turn
 def research_skills(spec, judge_models=None):
     skills = spec.extra["research_skills"]  # the rubric lives in the spec
     question = "Label this turn with the best-fitting category:\n" + "\n".join(
@@ -555,7 +555,7 @@ Each `Layer` field is one surface, all optional:
   voting, verifier, and batching; structural scanners are $0. Pass
   the factory un-invoked: `transect()` calls it with the judge
   arguments its signature declares, the loaded `spec` when declared,
-  and any `scanner_args={...}` on the layer. `reasoning_turns()`
+  and any `scanner_args={...}` on the layer. `digest_turns()`
   numbers its items on the orchestrator turn axis; a loader or
   scanner of your own numbers turns the same way, with
   `transect.scanners.helpers.orchestrator_turns` (a sub-agent's own
@@ -580,7 +580,7 @@ x rolls calls per transcript; the demo example costs cents. What
 each phase-judge call reads per turn, and so its size, is set by
 `DigestSettings` (see Concepts).
 
-Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
+Batching is the cost lever on long runs: `digest_turns(batch=N)`
 with `cohort_llm_scanner(batch=True)` judges N units per call,
 cutting a layer's classification calls. Each batched call returns
 one answer per unit, so votes are still counted per unit and the

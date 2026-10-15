@@ -232,7 +232,7 @@ def test_is_labelled_is_the_one_predicate_that_keeps_a_turn_inside_a_phase(
 
 
 def test_turns_before_a_refused_opening_chunk_belong_to_no_phase():
-    """Refused reasoning turns and the tool-only turns after them carry no
+    """Refused digest turns and the tool-only turns after them carry no
     phase, so the frame and band cannot claim coverage the judge never gave."""
     events = [
         model_turn("reasoning 0"),

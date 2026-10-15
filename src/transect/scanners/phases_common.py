@@ -66,7 +66,7 @@ class DigestSettings(BaseModel, frozen=True):
     """What every judge reads per orchestrator turn: the character cap
     of each digest part and whether turns whose only content is tool
     calls are judged. The phase judge, its verifier, the narrator and
-    the `reasoning_turns` loader share one object, so every reader sees
+    the `digest_turns` loader share one object, so every reader sees
     the same lines; Scout records it with the scanner's arguments. A
     part over its cap keeps its start and its end (`clip`); a cap of 0
     leaves the part out.

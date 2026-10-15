@@ -21,7 +21,7 @@ from inspect_ai.event import ModelEvent
 from inspect_ai.model import ChatMessageTool, ContentText, GenerateConfig, ModelOutput
 from inspect_ai.tool import ToolCallError
 
-from transect import DigestSettings, reasoning_turns
+from transect import DigestSettings, digest_turns
 from transect.scanners.phases import decision_phases, turn_digests
 from transect.scanners.phases_common import digest_line
 
@@ -204,7 +204,7 @@ def test_a_negative_cap_is_rejected_naming_the_setting():
         DigestSettings(tool_result_chars=-1)
 
 
-def test_reasoning_turns_items_carry_the_same_digest_lines():
+def test_digest_turns_items_carry_the_same_digest_lines():
     """The per-turn loader yields the decision_phases digest line,
     honouring the same settings."""
     events = [
@@ -217,7 +217,7 @@ def test_reasoning_turns_items_carry_the_same_digest_lines():
     async def items(digest=None):
         return [
             item.messages[0].text
-            async for item in reasoning_turns(digest=digest)(transcript)  # type: ignore[arg-type]
+            async for item in digest_turns(digest=digest)(transcript)  # type: ignore[arg-type]
         ]
 
     assert asyncio.run(items()) == ['0: list [CALL] bash({"cmd": "ls"})']

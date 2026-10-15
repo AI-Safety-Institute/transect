@@ -37,7 +37,7 @@ alongside the voted labels.
     uv run python examples/transect_custom_layer.py
 
 A user-defined judged layer (one research-skill label per
-orchestrator reasoning turn) injected via `extra_layers`: its own
+orchestrator turn the judge saw) injected via `extra_layers`: its own
 badge-marked report section, phase-card chips and filter, a
 "Group by: skill" option in Token spend, and an entity block in
 the reliability audit.

@@ -122,7 +122,7 @@ scanner change take effect; run a new scan and retain both results for compariso
   but no single orchestrator agent raises rather than guessing.
 - **Judge digests.** `scanners.phases.turn_digests` is the one builder
   of what the phase judge, its verifier, the narrator and the
-  `reasoning_turns` loader read per orchestrator turn, and one
+  `digest_turns` loader read per orchestrator turn, and one
   `DigestSettings` (passed as `digest=` through `transect()`) governs
   all of them; Scout records it with the scanner's arguments. Digests
   are prompt-side only, never stored. Changing a default changes every judge
