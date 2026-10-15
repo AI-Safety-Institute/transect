@@ -39,11 +39,6 @@ class DigestSettings(BaseModel, frozen=True):
     the same lines; Scout records it with the scanner's arguments. A
     part over its cap keeps its start and its end (`clip`); a cap of 0
     leaves the part out.
-
-    The text caps were sized on coding-agent final reports (nearly all
-    fit 4000 characters); calls on and output off come from a k-roll
-    comparison on a 900-turn OpenClaw run and the demo log, where
-    showing calls raised judge agreement and output lowered it again.
     """
 
     text_chars: int = Field(default=300, ge=0)  # turn text, reasoning, each delegation

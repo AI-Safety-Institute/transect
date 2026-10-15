@@ -126,8 +126,8 @@ scanner change take effect; run a new scan and retain both results for compariso
   `DigestSettings` (passed as `digest=` through `transect()`) governs
   all of them; Scout records it with the scanner's arguments. Digests
   are prompt-side only, never stored. Changing a default changes every judge
-  request, so it needs the k-roll agreement comparison the settings
-  docstring cites, not only a plausibility argument.
+  request, so it needs a k-roll agreement comparison on real runs, not
+  only a plausibility argument.
 - **Review units.** Phase `verifier_reviews` retains the original
   selected review units through display merging;
   `transect.reliability.review_units` is the review-population read.

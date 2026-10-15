@@ -141,8 +141,7 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
   `DigestSettings` caps each part in characters (a longer part keeps
   its start and its end; the agent's last turn with text, usually its
   report, gets a larger cap) and decides whether turns whose only
-  content is tool calls are judged; its docstring states the defaults
-  and their basis. Pass it as `digest=` to `transect()`,
+  content is tool calls are judged. Pass it as `digest=` to `transect()`,
   `decision_phases()` or `digest_turns()`; Scout records it with
   the scan.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
