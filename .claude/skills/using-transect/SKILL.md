@@ -91,6 +91,34 @@ all label descriptions together:
 
 Point out unresolved choices about label meaning.
 
+### Phase labels and event labels
+
+Segmentation splits the orchestrator turns into contiguous phases with
+one label each, so a phase label works best for what the agent does
+across a stretch of turns: investigating, implementing, testing,
+reporting. A label for something that happens in one turn or one tool
+call (a test edited so it passes, a commit hook bypassed, a file
+deleted) is an event, and phases record it poorly:
+
+- The event becomes a phase of one or two turns or is absorbed into
+  the label of the stretch around it, so a run where it happened can
+  end with no phase carrying its label. Such a phase between two
+  phases that share a label is also a wedge, which the verifier (when
+  on) re-reviews as doubtful.
+- The phase judge reads a digest of each turn, not the turn itself,
+  and each part over its cap (`snippet_chars`) keeps only its start
+  and end, so the evidence for a single action can fall outside what
+  the judge reads.
+- A label covers a whole phase, so it spans turns around the event as
+  well, and the judge can apply it to a stretch where the event did
+  not happen.
+
+Use phases for "what was the agent doing in these turns?" and ask "did
+this happen at any point in the run?" as its own question, with a
+custom layer whose unit fits the event (the add-a-layer skill, section
+6). A phase account that does not mention an event is not evidence
+that the event did not happen.
+
 ## 2. Running
 
 ```python
