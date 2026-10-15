@@ -22,10 +22,8 @@ from inspect_ai.model import ChatMessageTool, ContentText, GenerateConfig, Model
 from inspect_ai.tool import ToolCallError
 
 from transect import DigestSettings, reasoning_turns
-from transect.scanners.phases import decision_phases, system_prompt, turn_digests
-from transect.scanners.phases_common import DIGEST_MARKERS, digest_line
-from transect.scanners.phases_narrate import narrate_system_prompt
-from transect.scanners.phases_verify import verify_system_prompt
+from transect.scanners.phases import decision_phases, turn_digests
+from transect.scanners.phases_common import digest_line
 
 RESULTS_ON = DigestSettings(tool_result_chars=200)
 COMMAND = "cd repo && pytest -q tests"
@@ -198,14 +196,6 @@ def test_spawning_and_handoff_calls_show_their_task_once(events, expected):
     nor its acceptance output; a handoff's transfer boilerplate is not
     output either."""
     assert lines(events, digest=RESULTS_ON)[0] == expected
-
-
-def test_every_judge_prompt_explains_the_markers():
-    """The segmenter's rules name [CALL]; the verifier and the narrator
-    carry the shared marker legend."""
-    assert "[CALL]" in system_prompt(PHASES_SPEC)
-    assert DIGEST_MARKERS in verify_system_prompt(PHASES_SPEC, "")
-    assert DIGEST_MARKERS in narrate_system_prompt(PHASES_SPEC, "")
 
 
 def test_a_negative_cap_is_rejected_naming_the_setting():

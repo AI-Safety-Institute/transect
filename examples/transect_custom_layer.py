@@ -9,7 +9,6 @@ from inspect_ai.model import Model
 from inspect_scout import Scanner, Transcript, scanner
 
 from transect import (
-    DIGEST_MARKERS,
     Layer,
     Spec,
     cohort_llm_scanner,
@@ -31,9 +30,9 @@ def research_skills(
     """One research-skill label per digest turn."""
     skills: dict[str, str] = spec.extra["research_skills"]
     question = (
-        DIGEST_MARKERS
-        + "Above is one turn of an agent. Label the turn with the "
-        "best-fitting research-skill category:\n"
+        "Above is one turn of an agent, with its tool calls and any "
+        "sub-agent task it wrote behind a [DELEGATES] marker. Label the "
+        "turn with the best-fitting research-skill category:\n"
         + "\n".join(f"- {label}: {text}" for label, text in skills.items())
         + "\n\nJudge only the text shown. A turn often holds several moves - "
         "label the last substantive one. A [DELEGATES] line counts as the "

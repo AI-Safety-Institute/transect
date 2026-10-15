@@ -8,7 +8,6 @@ from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
 from transect.scanners.phases_common import (
-    DIGEST_MARKERS,
     Digest,
     NarrationGroupStatus,
     StitchedPhase,
@@ -36,7 +35,7 @@ _NARRATE_HEAD = (
     "3. GROUPS: a small number (2-5; just 1 if the phase is tiny) of "
     "CONTIGUOUS sub-sections partitioning the phase's turns, each a "
     "short title + one-line gist, in order, together covering ALL the "
-    "phase's turns.\n" + DIGEST_MARKERS
+    "phase's turns.\n"
 )
 
 

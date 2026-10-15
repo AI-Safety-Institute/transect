@@ -27,14 +27,6 @@ from transect.spec import Phase, Spec
 # per-phase evidence cap (digest lines shown to a judge)
 EVIDENCE_LINES = 200
 
-# every prompt that shows digest lines states what their markers mean
-DIGEST_MARKERS = (
-    "Each turn line may carry: [THINKING] the agent's reasoning; the "
-    "agent's own text; [CALL] a tool call with its arguments and, when "
-    "shown, [RESULT] or [ERROR] the call's recorded output (both "
-    "truncated); [DELEGATES] a task handed to a sub-agent.\n"
-)
-
 _CONTEXT_GUARD = (
     "Use it to recognise phases; do NOT invent moves the turns do not show."
 )

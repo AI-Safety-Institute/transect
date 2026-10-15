@@ -32,9 +32,7 @@ def reasoning_turns(
     Each item's message is the turn's digest line, as
     `decision_phases` shows it: its reasoning (when the source records
     reasoning blocks), its own text, its tool calls, and each sub-agent
-    spawn task, behind the markers `DIGEST_MARKERS` explains - a judge
-    prompt over these items should carry that legend. The item's
-    metadata carries ``{"turn": n}``.
+    spawn task. The item's metadata carries ``{"turn": n}``.
 
     Args:
         batch: With ``batch=N``, one item per window of up to N

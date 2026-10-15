@@ -503,15 +503,13 @@ worked example is `examples/transect_custom_layer.py`; the shape:
 
 ```python
 from inspect_scout import scanner
-from transect import (
-    DIGEST_MARKERS, Layer, cohort_llm_scanner, reasoning_turns, transect, turns_frame,
-)
+from transect import Layer, cohort_llm_scanner, reasoning_turns, transect, turns_frame
 from transect.report import Markdown, TurnBand
 
 @scanner(loader=reasoning_turns())  # the units to judge: one item per digest turn
 def research_skills(spec, judge_models=None):
     skills = spec.extra["research_skills"]  # the rubric lives in the spec
-    question = DIGEST_MARKERS + "Label this turn with the best-fitting category:\n" + "\n".join(
+    question = "Label this turn with the best-fitting category:\n" + "\n".join(
         f"- {label}: {text}" for label, text in skills.items()
     )
     return cohort_llm_scanner(
