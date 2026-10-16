@@ -34,7 +34,9 @@ from test_subagent_classification import span_item
 
 from transect.api import _run
 from transect.frames import (
+    interventions_df,
     label_definitions_df,
+    lane_activity_df,
     phase_turn_votes_df,
     phase_turns_df,
     phases_df,
@@ -328,22 +330,35 @@ def test_lane_activity_frame_anchors_tool_activity_to_orchestrator_turns(
     )
 
 
-@pytest.mark.parametrize("preceding_success", [False, True])
-def test_transcript_info_surfaces_recorded_setup_errors(preceding_success):
-    """Failed setup rows name their transcript and cause, even in a partial scan."""
-    rows = [{"value": {"compaction_prompt": None}}] if preceding_success else []
-    rows.append(
-        {
-            "transcript_id": "failed-transcript",
-            "value": None,
-            "scan_error": "stored timeline could not be resolved",
-        }
-    )
-    with pytest.raises(RuntimeError) as caught:
-        transcript_info_df(pd.DataFrame(rows))
-    assert "eval_setup" in str(caught.value)
-    assert "failed-transcript" in str(caught.value)
-    assert "stored timeline could not be resolved" in str(caught.value)
+@pytest.mark.parametrize(
+    "build",
+    [
+        transcript_info_df,
+        token_timeline_df,
+        interventions_df,
+        lane_activity_df,
+        lambda raw: flushes_df(raw, token_timeline_df(raw)),
+    ],
+)
+def test_structural_frames_skip_a_transcript_with_a_recorded_scan_error(build):
+    """An errored row has no value to project; it contributes no rows and
+    leaves the completed transcripts' rows intact."""
+    completed = {
+        "transcript_id": "ok",
+        "value": {
+            "compaction_prompt": None,
+            "timeline": [{"turn": 0, "agent_span_id": None, "lane_turn": 0}],
+            "flushes": [],
+            "interventions": [],
+            "spans": [],
+            "lane_activity": [],
+        },
+        "scan_error": None,
+    }
+    failed = {"transcript_id": "failed", "value": None, "scan_error": "boom"}
+    frame = build(pd.DataFrame([completed, failed]))
+    assert "failed" not in set(frame.transcript_id)
+    assert set(frame.columns) == set(build(pd.DataFrame([completed])).columns)
 
 
 @pytest.mark.parametrize("error", [None, pd.NA, float("nan"), ""])

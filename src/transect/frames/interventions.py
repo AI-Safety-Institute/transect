@@ -39,13 +39,21 @@ Columns (identity prefix explained in common.py):
 
 import pandas as pd
 
-from transect.frames.common import IDENTITY_COLS, identity, result_value, with_schema
+from transect.frames.common import (
+    IDENTITY_COLS,
+    identity,
+    result_value,
+    scan_error,
+    with_schema,
+)
 
 
 def interventions_df(results: pd.DataFrame) -> pd.DataFrame:
     """human_intervention results -> one row per mid-run human input."""
     rows = []
     for _, r in results.iterrows():
+        if scan_error(r):
+            continue
         identity_cols = identity(r)
         for i in result_value(r["value"]).get("interventions") or []:
             rows.append({**identity_cols, **i})

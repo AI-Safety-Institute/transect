@@ -92,37 +92,77 @@ def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
     assert _status_text(empty.report_paths[0]) == text
 
 
-def test_failed_eval_setup_surfaces_its_recorded_error_on_run_and_reload(
+def test_structural_scanner_failing_every_transcript_loads_and_renders(
     demo_log, tmp_path, monkeypatch
 ):
-    """A persisted setup failure reaches both API callers before frame projection."""
+    """A setup scan that completed nothing renders no setup facts and names
+    the recorded error, on the run and again on reload."""
 
     def fail_header(uri):
         raise RuntimeError("recorded setup failure")
 
     monkeypatch.setattr(base, "_eval_header", fail_header)
-    scans = tmp_path / "scans"
-    with pytest.raises(RuntimeError) as initial:
-        transect.transect(
-            str(demo_log),
-            transect.Spec(),
-            scans_dir=str(scans),
-            viewer=False,
-            open_report=False,
-        )
-
-    location = next(scans.glob("scan_id=*"))
-    raw = scan_results_df(str(location))
+    result = transect.transect(
+        str(demo_log),
+        transect.Spec(),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+    )
+    raw = scan_results_df(result.scan_location)
     (error,) = raw.errors
     assert error.scanner == "eval_setup"
-    assert raw.scanners["eval_setup"].value.isna().all()
     assert raw.summary.scanners["eval_setup"].results == 0
-    assert "eval_setup" in str(initial.value)
-    assert error.transcript_id in str(initial.value)
-    assert error.error in str(initial.value)
-    with pytest.raises(RuntimeError) as restored:
-        transect.load(str(location))
-    assert str(restored.value) == str(initial.value)
+    assert result.transcript_info.empty
+    assert list(result.transcript_info.columns)
+    assert len(result.token_timeline)
+    setup = next(s for s in result.scan_status.scanners if s.scanner == "eval_setup")
+    assert (setup.scanned_transcripts, setup.completed_transcripts) == (1, 0)
+    readable = " ".join(_status_element(result.report_paths[0]).itertext())
+    assert "eval_setup" in readable and "recorded setup failure" in readable
+    restored = transect.load(result.scan_location)
+    assert restored.scan_status == result.scan_status
+    assert restored.transcript_info.empty
+
+
+def test_structural_scanner_failing_one_transcript_loads_and_renders(
+    epochs_logs, tmp_path, monkeypatch
+):
+    """One errored transcript keeps the others' frames, is named by
+    scan_status, and renders a report whose setup facts say so."""
+    calls = []
+
+    def fail_once(uri):
+        calls.append(uri)
+        if len(calls) == 1:
+            raise RuntimeError("recorded setup failure")
+        return None
+
+    monkeypatch.setattr(base, "_eval_header", fail_once)
+    result = transect.transect(
+        str(epochs_logs),
+        transect.Spec(),
+        sample="epoch-sample-1",
+        epochs="all",
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+    )
+    (error,) = result.scan_status.errors
+    assert error.scanner == "eval_setup"
+    assert result.scan_status.has_failures
+    setup = next(s for s in result.scan_status.scanners if s.scanner == "eval_setup")
+    assert (setup.scanned_transcripts, setup.completed_transcripts) == (3, 2)
+    assert result.token_timeline.transcript_id.nunique() == 3
+    assert set(result.transcript_info.transcript_id) == set(
+        result.token_timeline.transcript_id
+    ) - {error.transcript_id}
+    assert len(result.report_paths) == 3
+    for path in result.report_paths:
+        assert "eval_setup" in " ".join(_status_element(path).itertext())
+    restored = transect.load(result.scan_location)
+    assert restored.scan_status == result.scan_status
+    assert len(restored.transcript_info) == 2
 
 
 @loader(messages="all")

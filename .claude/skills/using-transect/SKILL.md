@@ -236,7 +236,7 @@ means "not judged", never "fine"; absence is stated, never faked.
 | No agreement strip under the phase band | a solo judge (one model, `k_rolls=1`) has no per-turn agreement to show; the caption in its place says so - `k_rolls` > 1 or a cohort brings the strip back |
 | `sample= required` error | multi-sample log; the error lists the available ids |
 | Selected sample/epoch has multiple sources, transcripts or repeated input | narrow `logs` to one input per selected epoch and remove repeated copies; source paths and recorded identities are listed in the error. Explicit sample/epoch filters apply before this check |
-| `eval_setup failed for transcript ...` | the setup scanner recorded an error; loading reports its original message because that row has no setup facts to project. Diagnose that cause, then run a new scan and retain the failed store |
+| Empty Core setup / token chart for a transcript, with a recorded analysis error in the scan status | a structural scanner (`eval_setup`, `token_timeline`, ...) recorded an error on that transcript, so it has no rows in that frame; the status section carries the original message. Diagnose that cause, then run a new scan and retain the failed store |
 | "values outside the declared vocabulary ... coerced to NaN" warning on `load()` | the store's recorded values do not match the current scanner schema - run a new scan, retain the old one, and account for any fresh judge calls |
 | Loud "none joined this transcript's lanes" warning in the report | span identity mismatch between scan and render - treat as a bug, not cosmetics |
 | Charts render blank | the report's charts are CDN-loaded - it is an online document; check network |

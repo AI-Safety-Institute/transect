@@ -80,6 +80,7 @@ from transect.frames.common import (
     joined_judge_models,
     judge_identity,
     result_value,
+    scan_error,
     verifier_review,
     with_schema,
 )
@@ -297,8 +298,7 @@ def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:
         if not span_id:
             continue  # not a span item (defensive)
         meta = item_metadata(r)
-        error = r.get("scan_error")
-        has_error = isinstance(error, str) and bool(error)
+        has_error = scan_error(r) is not None
         value = result_value(r.get("value"))
         armed = value.get("verifier") or {}
         review = armed if armed.get("ran") else {}

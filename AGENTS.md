@@ -146,7 +146,10 @@ scanner change take effect; run a new scan and retain both results for compariso
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
   stored scan on every load. It records execution only: completed vs total
   transcripts, recorded errors, and the model usage each scanner billed
-  per judge model; judgement quality belongs to the reliability audit. The report always shows
+  per judge model; judgement quality belongs to the reliability audit.
+  A transcript whose structural scan recorded an error has no rows in
+  that frame (`frames.common.scan_error` is the one predicate) and is
+  named here, whether one transcript failed or every one did. The report always shows
   this run-wide status outside optional sections. Keep it in custom UIs,
   including when an epoch filter hides other scan transcripts.
 

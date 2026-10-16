@@ -64,7 +64,13 @@ from pathlib import PurePosixPath
 
 import pandas as pd
 
-from transect.frames.common import IDENTITY_COLS, identity, result_value, with_schema
+from transect.frames.common import (
+    IDENTITY_COLS,
+    identity,
+    result_value,
+    scan_error,
+    with_schema,
+)
 
 _RAW_FIELDS = {
     "model": "transcript_model",
@@ -117,18 +123,12 @@ _SETUP_COLUMNS = [
 
 def transcript_info_df(setup_results: pd.DataFrame) -> pd.DataFrame:
     """The eval_setup scanner's raw results frame -> one row per
-    transcript of identity + run metadata + setup facts.
-
-    A recorded scan error has no setup value to project; raise with
-    its transcript identity and original message instead.
-    """
+    transcript of identity + run metadata + setup facts; none for a
+    transcript whose scan recorded an error."""
     rows = []
     for _, r in setup_results.iterrows():
-        error = r.get("scan_error")
-        if isinstance(error, str) and error:
-            raise RuntimeError(
-                f"eval_setup failed for transcript {r.get('transcript_id')!r}: {error}"
-            )
+        if scan_error(r):
+            continue
         row = identity(r)
         for ours, theirs in _RAW_FIELDS.items():
             row[ours] = _none_if_na(r.get(theirs))

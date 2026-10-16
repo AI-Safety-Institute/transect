@@ -42,6 +42,7 @@ from transect.frames.common import (
     identity,
     lane_series,
     result_value,
+    scan_error,
     with_schema,
 )
 
@@ -86,6 +87,8 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
 
     rows = []
     for _, r in results.iterrows():
+        if scan_error(r):
+            continue
         identity_cols = identity(r)
         lanes = lanes_of.get(identity_cols["transcript_id"], {})
         for f in result_value(r["value"]).get("flushes") or []:
