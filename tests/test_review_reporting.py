@@ -43,7 +43,7 @@ def test_phase_metadata_counts_original_reviews_after_merging():
     text = BeautifulSoup(
         str(module.phase_meta_line(1, "judge", "m", None, note, 0)), "html.parser"
     ).get_text()
-    assert "1 of 3 completed original phase reviews relabelled (3 selected)" in text
+    assert "1 of 3 judged original phase reviews relabelled (3 selected)" in text
 
 
 def test_audit_shows_completion_coverage_beside_conditional_rate():
@@ -54,7 +54,7 @@ def test_audit_shows_completion_coverage_beside_conditional_rate():
     }
     assert "3 random sample" in rows["Verifier selection"]["value"]
     assert (
-        "1 completed · 2 without usable verdict" in (rows["Verifier outcomes"]["value"])
+        "1 judged · 2 without usable verdict" in (rows["Verifier outcomes"]["value"])
     )
     audit_rows = {row["label"]: row for row in audit(frame)["rows"]}
     assert "1/1 examined" in audit_rows["Verifier re-label rate (overall)"]["value"]
@@ -103,7 +103,7 @@ def test_failed_review_is_not_described_as_an_unchanged_verdict():
         (
             "verifier",
             "verifier_text",
-            ["1 selected · 0 completed · 1 without usable verdict · 0 overturned"],
+            ["1 selected · 0 judged · 1 without usable verdict · 0 overturned"],
         )
     ]
 

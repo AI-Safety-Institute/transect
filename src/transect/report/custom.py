@@ -386,7 +386,7 @@ def _run_judge_cells(
                 else 0
             )
             return (
-                f"{len(units)} selected · {len(completed)} completed · "
+                f"{len(units)} selected · {len(completed)} judged · "
                 f"{len(units) - len(completed)} without usable verdict · "
                 f"{overturned} overturned"
             )

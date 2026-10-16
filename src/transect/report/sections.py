@@ -2317,14 +2317,15 @@ def _span_verifier_rows(subagents: pd.DataFrame, unit_word: str = "span") -> lis
         },
         {
             "label": "Verifier outcomes",
-            "value": f"{len(completed)} completed · "
+            "value": f"{len(completed)} judged · "
             f"{len(selected) - len(completed)} without usable verdict · "
             f"{int(overturned.sum())} relabelled · {int(weak.sum())} "
             "weak relabel(s) recorded, not applied · "
             f"{int((overturned & sampled).sum())} of {int(sampled.sum())} "
-            "completed random samples relabelled",
-            "definition": "Relabel rates condition on usable completed verdicts; "
-            "missing outcomes are reported separately.",
+            "judged random samples relabelled",
+            "definition": "Judged means the verifier returned a usable verdict; "
+            "relabel rates condition on those, and missing outcomes are "
+            "reported separately.",
         },
     ]
 
