@@ -343,3 +343,35 @@ def test_tags_layer_keeps_its_turn_axis_when_a_judge_call_fails(demo_log, tmp_pa
     (error,) = result.scan_status.errors
     assert error.scanner == "label_turns" and "synthetic judge failure" in error.message
     assert result.report_paths
+
+
+def test_tags_layer_whose_judge_failed_everywhere_names_the_cause(demo_log, tmp_path):
+    """A layer whose every result errored has nothing to render or tag;
+    loading says so and quotes the error, instead of failing on the
+    frame's missing turn column."""
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("synthetic judge failure")
+
+    @scanner(loader=digest_turns())
+    def label_turns():
+        return cohort_llm_scanner(
+            "Classify the work",
+            ["research", "none_of_the_above"],
+            models=get_model("mockllm/model", custom_outputs=fail, memoize=False),
+            verify=False,
+        )
+
+    layer = Layer(name="labels", scanner=label_turns(), frame=turns_frame, tags=True)
+    with pytest.raises(ValueError, match="recorded an error on every one") as caught:
+        transect.transect(
+            str(demo_log),
+            Spec(),
+            extra_layers=[layer],
+            scans_dir=str(tmp_path / "scans"),
+            viewer=False,
+            open_report=False,
+        )
+    assert "synthetic judge failure" in str(caught.value)
+    location = next((tmp_path / "scans").glob("scan_id=*"))
+    assert load(str(location)).scan_status.has_failures
