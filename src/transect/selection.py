@@ -41,9 +41,7 @@ def select_transcripts(
 
     Raises:
         ValueError: When a selected sample/epoch has multiple physical
-            inputs or repeated transcript identities. Explicit sample and
-            epoch filters apply before this check; automatic epoch choice
-            never resolves a collision by taking the first input.
+            inputs or repeated transcript identities.
     """
     if not infos:
         raise ValueError("the log contains no transcripts")
@@ -103,14 +101,7 @@ def _epoch(info: TranscriptInfo) -> int:
 
 
 def _validate_unique_runs(infos: list[TranscriptInfo]) -> None:
-    """Require one physical input per selected sample/epoch before auto selection.
-
-    A task_set names a task family, not a run. Missing source IDs do not
-    establish independent runs; distinct transcript IDs still make selection
-    ambiguous. Repeated identities are reported rather than deduplicated from
-    metadata, which cannot establish that their contents are identical.
-    Every colliding sample/epoch is named in the one error.
-    """
+    """Require one physical input per selected sample/epoch before auto selection."""
     groups: dict[tuple[str, int], list[TranscriptInfo]] = {}
     for info in infos:
         groups.setdefault((info.task_id or "", _epoch(info)), []).append(info)
