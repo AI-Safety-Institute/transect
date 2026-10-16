@@ -27,11 +27,13 @@ from helpers import (
     seg,
     seg_answer,
     verify_answer,
+    vote_output,
     voter,
 )
 from inspect_ai.log import read_eval_log
 from test_subagent_classification import span_item
 
+from transect import load
 from transect.api import _run
 from transect.frames import (
     interventions_df,
@@ -826,3 +828,24 @@ def test_phase_turns_with_no_phase_project_a_null_label(raw_phases):
     turns = phase_turns_df(raw).sort_values("turn")
     assert pd.isna(turns.phase_index.iloc[0]) and pd.isna(turns.phase.iloc[0])
     assert turns.phase.iloc[1] == "experiment"
+
+
+def test_subagent_labels_join_their_definitions_after_reload(demo_log, tmp_path):
+    """A stored sub-agent label is the key its definition is recorded under,
+    on the run and again on reload."""
+    spec = Spec.model_validate(
+        {"subagent_labels": [{"label": "literature_survey", "description": "Reads"}]}
+    )
+    result = _run(
+        str(demo_log),
+        spec,
+        judge_models=scripted_judge(*[vote_output("literature_survey")] * 3),
+        verify=False,
+        scans_dir=str(tmp_path / "scans"),
+    )
+    for frames in [result, load(result.scan_location)]:
+        assert set(frames.subagents.label.dropna()) == {"literature_survey"}
+        definitions = frames.label_definitions.query("surface == 'subagents'")
+        joined = frames.subagents.merge(definitions, on=["transcript_id", "label"])
+        assert len(joined) == len(frames.subagents) > 0
+        assert set(joined.description) == {"Reads"}

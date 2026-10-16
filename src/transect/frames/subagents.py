@@ -84,6 +84,7 @@ from transect.frames.common import (
     with_schema,
 )
 from transect.scan_status import scan_error
+from transect.spec import label_key
 
 # the structural columns
 _SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
@@ -305,7 +306,7 @@ def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:
         raw = r.get("label")
         label = None
         if not has_error and isinstance(raw, str) and raw.strip():
-            label = "_".join(raw.strip().lower().split())
+            label = label_key(raw)
         confidence = value.get("confidence")
         label_source = value.get("label_source")
         agreement = n_voting = n_members = confidence_pm = None

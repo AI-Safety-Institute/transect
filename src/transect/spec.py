@@ -30,15 +30,25 @@ class SubagentLabel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str
-    """The declared role name, retained verbatim in the spec.
-
-    Scanners lowercase it and replace whitespace with underscores for
-    their closed answer vocabulary and result keys.
-    """
+    """The role name the judge answers with: its own key (see
+    `label_key`), since answers are stored under that key."""
 
     description: str = ""
     """What this role does, in the author's own words - rendered into
     the judge's rubric."""
+
+    @field_validator("label")
+    @classmethod
+    def _label_is_its_own_key(cls, value: str) -> str:
+        key = label_key(value)
+        if not key or key != value:
+            raise ValueError(
+                f"sub-agent label {value!r} must be its own key"
+                + (f", {key!r}" if key else "")
+                + ": judge answers are stored lowercased with whitespace as "
+                "underscores, and a label spelled otherwise never joins them"
+            )
+        return value
 
 
 class Spec(BaseModel):
@@ -65,6 +75,15 @@ class Spec(BaseModel):
     @classmethod
     def _plain_labels_ok(cls, value):  # "recon" == {"label": "recon"}
         return [{"label": p} if isinstance(p, str) else p for p in (value or [])]
+
+
+def label_key(label: str) -> str:
+    """The key a closed label is stored and matched under: lowercased,
+    whitespace runs collapsed to one underscore. The judged scanners
+    normalize every answer with it, so a declared closed label must
+    already equal its key; `SubagentLabel` and `cohort_llm_scanner`
+    refuse one that does not."""
+    return "_".join(label.strip().lower().split())
 
 
 def load_spec(path: Path | str) -> Spec:

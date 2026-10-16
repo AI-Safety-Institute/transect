@@ -29,11 +29,7 @@ from inspect_scout import (
 )
 from pydantic import BaseModel, Field, JsonValue, create_model
 
-from transect.scanners._labels import (
-    normalize_label,
-    normalize_labels,
-    normalize_vocabulary,
-)
+from transect.spec import label_key
 
 logger = logging.getLogger(__name__)
 
@@ -260,9 +256,9 @@ def cohort_llm_scanner(
 
     Args:
         question: The llm_scanner question.
-        answer: The closed label list. Keys are lowercased and whitespace
-            becomes underscores, in requests, votes and the recorded rubric.
-            Blank labels or normalization collisions raise before judging.
+        answer: The closed label list. Each label must be its own key
+            (`transect.spec.label_key`: lowercase, whitespace as
+            underscores), since answers are stored under that key.
         models: One model (solo) or several (cohort regime).
             ``None`` = llm_scanner's default model, solo only.
         k_rolls: Rolls of one model (k-roll regime); mutually
@@ -283,8 +279,7 @@ def cohort_llm_scanner(
             per-item draw, not an exact fraction.
         cache: Base cache setting; later rolls get ``{"roll": r}``
             scopes on top.
-        vocabulary: The rubric to record, with the same normalized keys.
-            Descriptions are preserved verbatim.
+        vocabulary: The rubric to record.
         batch: Judge several units per call, any unit shape. The
             loader is responsible for yielding batch-shaped items:
             each packs its units as ``[ITEM n]``-marked content
@@ -300,7 +295,8 @@ def cohort_llm_scanner(
         ValueError: On invalid models/k_rolls (see
             ``cohort_members``), incl. ``k_rolls != 1`` with
             ``models=None``; on ``verify=True`` with a multi-model
-            cohort (verifier XOR cohort); on blank or colliding label keys.
+            cohort (verifier XOR cohort); on an answer or vocabulary
+            label that is not its own key.
     """
     if isinstance(answer, str):
         raise TypeError(
@@ -308,8 +304,10 @@ def cohort_llm_scanner(
             "answer spec - voting over open-vocab free strings is not "
             "defined"
         )
-    labels = normalize_labels(answer)
+    labels = list(answer)
     vocabulary = _vocabulary_entries(vocabulary)
+    _require_label_keys(labels, "answer")
+    _require_label_keys([entry["label"] for entry in vocabulary or []], "vocabulary")
     if models is None and k_rolls != 1:
         raise ValueError(
             "k_rolls requires an explicit models value - "
@@ -723,7 +721,7 @@ def _member_batch_answers(
         if not isinstance(entry, dict):
             continue
         n = entry.get("item")
-        label = normalize_label(entry.get("label"))
+        label = _normalize_label(entry.get("label"))
         if not isinstance(n, int) or n not in expected or n in answers:
             continue
         if label is None:
@@ -859,16 +857,14 @@ def _vocabulary_entries(
     if vocabulary is None:
         return None
     if isinstance(vocabulary, Mapping):
-        entries = [
+        return [
             {"label": label, "description": description}
             for label, description in vocabulary.items()
         ]
-    else:
-        entries = [
-            entry if isinstance(entry, dict) else {"label": str(entry)}
-            for entry in vocabulary
-        ]
-    return normalize_vocabulary(entries)
+    return [
+        entry if isinstance(entry, dict) else {"label": str(entry)}
+        for entry in vocabulary
+    ]
 
 
 def _spot_check(item: Transcript, verify_sample: float) -> bool:
@@ -1084,6 +1080,28 @@ def _structured_answer(labels: list[str]) -> AnswerStructured:
     return AnswerStructured(type=answer_model)
 
 
+def _normalize_label(raw: object) -> str | None:
+    """A judge answer's stored key, None for no usable answer."""
+    if not isinstance(raw, str):
+        return None
+    return label_key(raw) or None
+
+
+def _require_label_keys(labels: list, what: str) -> None:
+    """Refuse, before any judge is built, a closed label that is not its
+    own key: its stored answers would never join it."""
+    bad = [
+        label
+        for label in labels
+        if not isinstance(label, str) or not label or label_key(label) != label
+    ]
+    if bad:
+        raise ValueError(
+            f"{what} labels must be their own keys (lowercase, whitespace as "
+            f"underscores), got {bad!r}"
+        )
+
+
 def _call_failure(outcome: list | BaseException) -> tuple[CallStatus, str | None]:
     """A failed judge call's (status, error)."""
     if isinstance(outcome, RefusalError):
@@ -1096,7 +1114,7 @@ def _call_failure(outcome: list | BaseException) -> tuple[CallStatus, str | None
 def _answer_fields(outcome: Result) -> tuple[str | None, float | None, str | None]:
     """A Result's (label, confidence, explanation), the label
     normalized snake_case."""
-    label = normalize_label(outcome.label)
+    label = _normalize_label(outcome.label)
     if label is None:
         return None, None, None
     value = outcome.value if isinstance(outcome.value, dict) else {}
