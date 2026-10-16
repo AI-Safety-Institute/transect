@@ -1,16 +1,16 @@
 {
-  "scan_id": "A9YKv76PgKKHD97CzB4yXj",
+  "scan_id": "RFi8PnCfTexhrzqCLpznY9",
   "scan_name": "transect",
-  "timestamp": "2026-10-05T14:59:37.245363+02:00",
+  "timestamp": "2026-10-15T15:18:04.684153+01:00",
   "revision": {
     "type": "git",
     "origin": "git@github.com:AI-Safety-Institute/transect.git",
     "version": "0.0.0-dev.0+unknown",
-    "commit": "fd9b9c9"
+    "commit": "188e3a5"
   },
   "packages": {
-    "inspect_ai": "0.3.268",
-    "inspect_scout": "0.5.3"
+    "inspect_ai": "0.3.277",
+    "inspect_scout": "0.5.4"
   },
   "options": {
     "max_transcripts": 25,
@@ -28,31 +28,31 @@
     "token_timeline": {
       "name": "transect/token_timeline",
       "version": 0,
-      "package_version": "0.2.0",
+      "package_version": "0.3.0",
       "params": {}
     },
     "context_flush": {
       "name": "transect/context_flush",
       "version": 0,
-      "package_version": "0.2.0",
+      "package_version": "0.3.0",
       "params": {}
     },
     "human_intervention": {
       "name": "transect/human_intervention",
       "version": 0,
-      "package_version": "0.2.0",
+      "package_version": "0.3.0",
       "params": {}
     },
     "eval_setup": {
       "name": "transect/eval_setup",
       "version": 0,
-      "package_version": "0.2.0",
+      "package_version": "0.3.0",
       "params": {}
     },
     "decision_phases": {
       "name": "transect/decision_phases",
       "version": 0,
-      "package_version": "0.2.0",
+      "package_version": "0.3.0",
       "params": {
         "spec": {
           "phases": [
@@ -123,6 +123,13 @@
           }
         },
         "k_rolls": 3,
+        "digest": {
+          "text_chars": 300,
+          "final_text_chars": 4000,
+          "tool_call_chars": 200,
+          "tool_result_chars": 0,
+          "tool_only_turns": true
+        },
         "verify": true,
         "verify_sample": 1.0,
         "verifier_model": null
@@ -131,7 +138,7 @@
     "subagent_classification": {
       "name": "transect/subagent_classification",
       "version": 0,
-      "package_version": "0.2.0",
+      "package_version": "0.3.0",
       "params": {
         "spec": {
           "phases": [

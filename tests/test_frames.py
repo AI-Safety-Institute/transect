@@ -34,13 +34,16 @@ from test_subagent_classification import span_item
 
 from transect.api import _run
 from transect.frames import (
+    interventions_df,
     label_definitions_df,
+    lane_activity_df,
     phase_turn_votes_df,
     phase_turns_df,
     phases_df,
     subagent_votes_df,
     subagents_df,
     token_timeline_df,
+    transcript_info_df,
     turn_groups_df,
 )
 from transect.frames.common import SCHEMA_VERSION
@@ -325,6 +328,82 @@ def test_lane_activity_frame_anchors_tool_activity_to_orchestrator_turns(
     pd.testing.assert_frame_equal(
         got[expected.columns].reset_index(drop=True), expected, check_dtype=False
     )
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        token_timeline_df,
+        interventions_df,
+        lane_activity_df,
+        lambda raw: flushes_df(raw, token_timeline_df(raw)),
+    ],
+)
+def test_structural_frames_skip_a_transcript_with_a_recorded_scan_error(build):
+    """An errored row has no value to project; it contributes no rows and
+    leaves the completed transcripts' rows intact."""
+    completed = {
+        "transcript_id": "ok",
+        "value": {
+            "compaction_prompt": None,
+            "timeline": [{"turn": 0, "agent_span_id": None, "lane_turn": 0}],
+            "flushes": [],
+            "interventions": [],
+            "spans": [],
+            "lane_activity": [],
+        },
+        "scan_error": None,
+    }
+    failed = {"transcript_id": "failed", "value": None, "scan_error": "boom"}
+    frame = build(pd.DataFrame([completed, failed]))
+    assert "failed" not in set(frame.transcript_id)
+    assert set(frame.columns) == set(build(pd.DataFrame([completed])).columns)
+
+
+def test_transcript_info_keeps_index_metadata_and_stamps_the_scan_error():
+    """An errored setup row still carries what the transcript index
+    recorded; its setup facts are None, not fabricated absence."""
+    frame = transcript_info_df(
+        pd.DataFrame(
+            [
+                {
+                    "transcript_id": "failed",
+                    "transcript_model": "mockllm/model",
+                    "transcript_message_count": 35,
+                    "value": None,
+                    "scan_error": "boom",
+                },
+                {
+                    "transcript_id": "ok",
+                    "transcript_model": "mockllm/model",
+                    "value": {"compaction_prompt": None, "system_prompt": "sys"},
+                    "scan_error": None,
+                },
+            ]
+        )
+    ).set_index("transcript_id")
+    assert frame.loc["failed", "scan_error"] == "boom"
+    assert frame.loc["failed", "model"] == "mockllm/model"
+    assert frame.loc["failed", "message_count"] == 35
+    assert pd.isna(frame.loc["failed", "system_prompt"])
+    assert pd.isna(frame.loc["failed", "header_available"])
+    assert pd.isna(frame.loc["ok", "scan_error"])
+    assert frame.loc["ok", "system_prompt"] == "sys"
+
+
+@pytest.mark.parametrize("error", [None, pd.NA, float("nan"), ""])
+def test_transcript_info_preserves_unrecorded_setup_facts(error):
+    """A successful setup with no recorded prompt is still a valid result."""
+    frame = transcript_info_df(
+        pd.DataFrame([{"value": {"compaction_prompt": None}, "scan_error": error}])
+    )
+    assert len(frame) == 1 and frame.compaction_prompt.iloc[0] is None
+
+
+def test_transcript_info_does_not_hide_a_successful_result_schema_breach():
+    """Missing required fields without a recorded scan error still fail loudly."""
+    with pytest.raises(KeyError, match="compaction_prompt"):
+        transcript_info_df(pd.DataFrame([{"value": {}, "scan_error": None}]))
 
 
 def test_transcript_info_describes_the_run(demo_results):

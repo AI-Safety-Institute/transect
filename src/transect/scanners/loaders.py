@@ -1,8 +1,10 @@
 """Loaders for user layers.
 
-`reasoning_turns` is the per-turn judged-layer shape: one loader item
-per reasoning-bearing orchestrator turn, so a `cohort_llm_scanner` built
-behind it judges the orchestrator agent one turn at a time.
+`digest_turns` is the per-turn judged-layer shape: one loader item
+per digest turn of the orchestrator (an orchestrator turn with content
+to judge, rendered as the built-in phase judges read it), so a
+`cohort_llm_scanner` built behind it judges the orchestrator agent one
+turn at a time.
 """
 
 from collections.abc import AsyncIterator
@@ -11,8 +13,12 @@ from inspect_ai.model import ChatMessageUser
 from inspect_scout import Loader, Transcript, TranscriptContent, loader
 
 from transect.scanners.cohort import batch_item_content
-from transect.scanners.phases import turn_digests
-from transect.scanners.phases_common import digest_line
+from transect.scanners.digests import (
+    DigestSettings,
+    digest_line,
+    resolve_digest,
+    turn_digests,
+)
 
 
 @loader(
@@ -22,16 +28,15 @@ from transect.scanners.phases_common import digest_line
         timeline=True,
     )
 )
-def reasoning_turns(batch: int = 1) -> Loader[Transcript]:
-    """One item per reasoning-bearing orchestrator turn.
+def digest_turns(
+    batch: int = 1, digest: DigestSettings | None = None
+) -> Loader[Transcript]:
+    """One item per digest turn of the orchestrator.
 
-    Each item's message is the turn's digest - the turn's reasoning
-    (when the source records reasoning blocks), its own text, its
-    tool names, and each sub-agent spawn task, built with the
-    `turn_digests` defaults: each part over its cap keeps its start
-    and its end, and the last turn with text keeps up to
-    ``FINAL_TEXT_CHARS`` of it. The item's metadata carries
-    ``{"turn": n}``.
+    Each item's message is the turn's digest line: its reasoning
+    (when the source records reasoning blocks), its own text, its tool
+    calls, and each sub-agent spawn task, each part capped by
+    ``digest``. The item's metadata carries ``{"turn": n}``.
 
     Args:
         batch: With ``batch=N``, one item per window of up to N
@@ -41,21 +46,25 @@ def reasoning_turns(batch: int = 1) -> Loader[Transcript]:
             content and declares one fact dict per turn as
             ``metadata={"items": [...]}``, each carrying the turn
             number and the matching unbatched item id.
+        digest: The caps on each part of the line and whether
+            tool-call-only turns yield an item (`DigestSettings`);
+            ``None`` is the defaults.
     """
     if batch < 1:
         raise ValueError(f"batch must be >= 1, got {batch}")
+    digest = resolve_digest(digest)
 
     async def load(transcript: Transcript) -> AsyncIterator[Transcript]:
-        digests = turn_digests(transcript)
+        digests = turn_digests(transcript, digest)
         if batch == 1:
-            for digest in digests:
+            for record in digests:
                 yield Transcript(
                     # the parent id keeps item ids globally unique, so
                     # per-item seeds (the verifier spot-check draw) stay
                     # independent across transcripts and epochs
-                    transcript_id=f"{transcript.transcript_id}:turn-{digest.turn}",
-                    messages=[ChatMessageUser(content=digest_line(digest))],
-                    metadata={"turn": digest.turn},
+                    transcript_id=f"{transcript.transcript_id}:turn-{record.turn}",
+                    messages=[ChatMessageUser(content=digest_line(record))],
+                    metadata={"turn": record.turn},
                 )
             return
         for start in range(0, len(digests), batch):

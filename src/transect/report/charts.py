@@ -174,7 +174,7 @@ def phase_band(
     range: the dense map can assign more turns to a phase than its
     declared range covers, and a tooltip reading "turns 6-6" over a
     chunk visibly spanning 6-8 disagrees with what the reader is looking
-    at. ``reasoning_turns_range`` carries the phase's declared range as a
+    at. ``judged_turns_range`` carries the phase's declared range as a
     second, distinctly-labelled row, and only when it differs from the
     run's extent (`None` - and so no row at all - otherwise).
 
@@ -314,7 +314,7 @@ def phase_band(
         # x1/x2 rather than threaded through both call sites - `x1 =
         # start - 0.5`/`x2 = end + 0.5` always, so the inverse is exact
         run_start, run_end = round(x1 + 0.5), round(x2 - 0.5)
-        reasoning_range = (
+        judged_range = (
             f"{span[0]}–{span[1]}"
             if span is not None and pd.notna(confidence)
             else None
@@ -338,10 +338,9 @@ def phase_band(
             # the phases frame's own declared range, shown as a second
             # tooltip row only when it differs from the run's extent
             # above - an absent cell emits no row at all
-            "reasoning_turns_range": (
-                reasoning_range
-                if reasoning_range is not None
-                and reasoning_range != f"{run_start}–{run_end}"
+            "judged_turns_range": (
+                judged_range
+                if judged_range is not None and judged_range != f"{run_start}–{run_end}"
                 else None
             ),
             "confidence": confidence,
@@ -403,7 +402,7 @@ def phase_band(
                 "phase_index",
                 "phase_label",
                 "turns_range",
-                "reasoning_turns_range",
+                "judged_turns_range",
                 "confidence",
                 "anchor",
             ]
@@ -444,7 +443,7 @@ def phase_band(
         "phase": "phase_index",
         "phase label": "phase_label",
         "turns": "turns_range",
-        "reasoning turns": "reasoning_turns_range",
+        "judged range": "judged_turns_range",
         "confidence": "confidence",
     }
     band = plot(
@@ -848,14 +847,15 @@ _STRIP_MARGIN = 1
 # the basis definitions in `transect.scanners.phases`' scan docstring; a new
 # basis value falls through unmapped rather than lying.
 _STRIP_BASIS_WHY = {
-    "judged": "judged: reasoning turn scored by the judge(s)",
+    "judged": "judged: turn scored by the judge(s)",
     "filled": "not judged: inherits the previous label",
     "attributed": (
-        "not judged: content-free tool-only or failed turn; takes the surrounding label"
+        "not judged: a turn the judge never saw (failed, empty, or tool-only "
+        "with tool_only_turns off); takes the surrounding label"
     ),
     "unattributed": (
-        "not judged: content-free tool-only or failed turn after an unjudged "
-        "turn; no phase to take"
+        "not judged: a turn the judge never saw, after an unjudged turn; no "
+        "phase to take"
     ),
     "refusal": "not judged: the judge refused",
     "no_answer": "not judged: no valid judge answer",
@@ -876,7 +876,7 @@ def _phase_anchor(phase_index, span_of: dict, card_id_prefix: str) -> str | None
     `phase_band` for the collision it avoids), or ``None`` when
     ``phase_index`` doesn't resolve to a real phase. Reads the same
     ``span_of`` lookup `phase_band` uses for its
-    ``reasoning_turns_range`` cell, so the tooltip and the link cannot
+    ``judged_turns_range`` cell, so the tooltip and the link cannot
     disagree about which cells have a real phase to point at.
     ``phase_index in span_of`` is False for a NaN index (float NaN never
     equality-matches a dict key), so a row with no owning phase gets

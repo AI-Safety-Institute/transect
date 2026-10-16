@@ -61,12 +61,29 @@ def model_turn(text, span_id=None, input=(), usage=None, error=None):
     )
 
 
-def tool_event(id, function="bash", span_id=None, agent_span_id=None):
+def call_turn(function, arguments, call_id, text="", input=()):
+    """A model turn that makes one tool call (optionally with text)."""
+    return ModelEvent(
+        model="m",
+        input=list(input),
+        tools=[],
+        tool_choice="none",
+        config=GenerateConfig(),
+        output=ModelOutput.for_tool_call(
+            MODEL, function, arguments, tool_call_id=call_id, content=text
+        ),
+    )
+
+
+def tool_event(
+    id, function="bash", span_id=None, agent_span_id=None, result="", error=None
+):
     return ToolEvent(
         id=id,
         function=function,
         arguments={},
-        result="",
+        result=result,
+        error=error,
         span_id=span_id,
         agent_span_id=agent_span_id,
     )

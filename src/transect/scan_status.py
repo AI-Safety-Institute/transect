@@ -144,6 +144,15 @@ class ScanStatus:
         return list(totals.values())
 
 
+def scan_error(row) -> str | None:
+    """A results row's recorded scan error; None for a completed scan.
+
+    The one predicate the frames and this status share, so a transcript
+    a frame leaves out is exactly one this status names.
+    """
+    return _text(row.get("scan_error"))
+
+
 def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanStatus:
     """Project persisted Scout execution metadata.
 
@@ -196,7 +205,7 @@ def build_scan_status(raw: ScanResultsDF, mounted_scanners: set[str]) -> ScanSta
                     ) from err
                 for model, usage in row_usage.items():
                     usage_by_model.setdefault(model, ModelTokenUsage(model)).add(usage)
-                error_message = _text(row.get("scan_error"))
+                error_message = scan_error(row)
                 if error_message is None:
                     continue
                 record = ScanError(

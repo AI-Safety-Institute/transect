@@ -34,6 +34,7 @@ from transect.frames.common import (
     result_value,
     with_schema,
 )
+from transect.scan_status import scan_error
 
 _TOKEN_FIELDS = (
     "output_tokens",
@@ -52,6 +53,8 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
     + derived token-view columns (see _derive_token_views)."""
     rows = []
     for _, r in results.iterrows():
+        if scan_error(r):
+            continue
         identity_cols = identity(r)
         timeline = result_value(r["value"]).get("timeline") or []
         for entry in timeline:

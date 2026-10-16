@@ -21,11 +21,9 @@ from transect.scanners.cohort import (
     ci_half_width,
     scoped_cache,
 )
+from transect.scanners.digests import Digest, digest_line
 from transect.scanners.helpers import capped_lines
 from transect.spec import Phase, Spec
-
-SNIPPET_CHARS = 300  # per-digest cap on text, reasoning, and each delegation
-FINAL_TEXT_CHARS = 4000  # cap on the text of the last digest turn with text
 
 # per-phase evidence cap (digest lines shown to a judge)
 EVIDENCE_LINES = 200
@@ -63,17 +61,6 @@ TurnBasis = Literal[
 NarrationGroupStatus = Literal[
     "complete", "invalid_partition", "empty_groups", "no_narrative", "not_run"
 ]
-
-
-class Digest(BaseModel):
-    """One reasoning-bearing turn, as shown to the judge."""
-
-    turn: int
-    text: str = ""
-    reasoning: str = ""  # the turn's reasoning-block text, when recorded
-    tools: list[str] = []
-    delegations: list[str] = []
-    event_id: str | None = None  # source model event uuid (viewer anchor)
 
 
 class DigestJudgement(BaseModel):
@@ -121,9 +108,9 @@ class StitchedPhase(BaseModel):
     phase: str = Field(description="The label shared by the merged judgements.")
     turn_start: int = Field(description="First digest turn of the phase (inclusive).")
     turn_end: int = Field(description="Last digest turn of the phase (inclusive).")
-    n_turns: int = Field(
-        description="Number of digest turns in the phase (the "
-        "reasoning-bearing turns the judge saw)."
+    n_digest_turns: int = Field(
+        description="Digest turns in the phase: the turns the judge saw, judged "
+        "and filled. Unseen turns inside the range are not counted."
     )
     confidence: float = Field(
         description="Mean over member judgements (fills included, at 0.3)."
@@ -227,6 +214,19 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str]:
     return phases, ops_name
 
 
+def reserved_phase_labels(spec: Spec) -> set[str]:
+    """The declared phase labels `resolve_phases` recognises by name, so
+    renaming one changes the resolved vocabulary: a declared
+    ``none_of_the_above``, and a declared ``ops`` when no phase carries
+    the ops flag (the flag, not the name, selects the bucket otherwise).
+    """
+    labels = {p.label for p in spec.phases}
+    reserved = {_NONE_PHASE.label} & labels
+    if not any(p.ops for p in spec.phases):
+        reserved |= {_DEFAULT_OPS_PHASE.label} & labels
+    return reserved
+
+
 def is_labelled(row: DigestJudgement) -> bool:
     """Whether ``row`` carries a phase label and so lies inside a phase.
 
@@ -273,7 +273,7 @@ def stitch_phases(
                 phase=members[0].phase or "",
                 turn_start=members[0].turn,
                 turn_end=members[-1].turn,
-                n_turns=len(members),
+                n_digest_turns=len(members),
                 confidence=round(sum(confidences) / len(confidences), 3),
                 min_confidence=round(min(confidences), 3),
                 min_agreement=round(min(agreements), 3) if agreements else None,
@@ -416,49 +416,6 @@ async def call_judge(
         if payload and all(payload.values()):
             return value, "ok"
     return None, "no_answer"
-
-
-def clip(text: str, cap: int) -> str:
-    """Bound a string to ``cap`` characters, keeping its start and its
-    end around a ``[... N chars ...]`` marker: a message's closing lines
-    often carry its conclusion.
-
-    Args:
-        text: The string to bound.
-        cap: Maximum characters kept, marker excluded.
-
-    Returns:
-        The text unchanged when within the cap, or when the clipped form
-        would be no shorter; otherwise its first ``cap // 2`` and last
-        ``cap - cap // 2`` characters, whitespace at the cut dropped,
-        with a marker between them counting every character they do not
-        cover ("" for a cap of 0).
-    """
-    if len(text) <= cap:
-        return text
-    if cap <= 0:
-        return ""
-    head = text[: cap // 2].rstrip()
-    tail = text[len(text) - (cap - cap // 2) :].lstrip()
-    marker = f"[... {len(text) - len(head) - len(tail)} chars ...]"
-    clipped = " ".join(part for part in (head, marker, tail) if part)
-    return clipped if len(clipped) < len(text) else text
-
-
-def digest_line(d: Digest) -> str:
-    """Render one digest as a single prompt line: index, reasoning
-    behind a [THINKING] marker, text, tool names, then each delegation
-    behind a [DELEGATES] marker."""
-    parts = [f"{d.turn}:"]
-    if d.reasoning:
-        parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
-    if d.text:
-        parts.append(d.text.replace("\n", " "))
-    if d.tools:
-        parts.append(f"(tools: {', '.join(d.tools)})")
-    for goal in d.delegations:
-        parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
-    return " ".join(parts)
 
 
 def phase_evidence(phase: StitchedPhase, by_turn: Mapping[int, Digest]) -> str:

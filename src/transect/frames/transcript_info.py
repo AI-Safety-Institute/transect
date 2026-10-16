@@ -57,6 +57,11 @@ Columns (identity prefix explained in common.py):
 
 None means the source never recorded the fact; the empty strings
 Scout stores for a no-error/no-limit run normalise to None too.
+- scan_error: the eval_setup scan's recorded error for this transcript,
+  None when it completed. Identity and run metadata still come from the
+  transcript index on such a row; every setup fact above is None there,
+  meaning unavailable, not unrecorded. ``scan_status`` carries the same
+  error.
 """
 
 import json
@@ -64,7 +69,13 @@ from pathlib import PurePosixPath
 
 import pandas as pd
 
-from transect.frames.common import IDENTITY_COLS, identity, result_value, with_schema
+from transect.frames.common import (
+    IDENTITY_COLS,
+    identity,
+    result_value,
+    with_schema,
+)
+from transect.scan_status import scan_error
 
 _RAW_FIELDS = {
     "model": "transcript_model",
@@ -117,9 +128,12 @@ _SETUP_COLUMNS = [
 
 def transcript_info_df(setup_results: pd.DataFrame) -> pd.DataFrame:
     """The eval_setup scanner's raw results frame -> one row per
-    transcript of identity + run metadata + setup facts."""
+    transcript of identity + run metadata + setup facts. A transcript
+    whose scan recorded an error keeps its index metadata, carries None
+    for every setup fact, and stamps the error in ``scan_error``."""
     rows = []
     for _, r in setup_results.iterrows():
+        error = scan_error(r)
         row = identity(r)
         for ours, theirs in _RAW_FIELDS.items():
             row[ours] = _none_if_na(r.get(theirs))
@@ -129,9 +143,14 @@ def transcript_info_df(setup_results: pd.DataFrame) -> pd.DataFrame:
             if isinstance(task_set, str) and task_set
             else _stem(r.get("transcript_source_uri"))
         )
-        row.update(_setup_columns(result_value(r.get("value"))))
+        row.update(
+            dict.fromkeys(_SETUP_COLUMNS)
+            if error
+            else _setup_columns(result_value(r.get("value")))
+        )
+        row["scan_error"] = error
         rows.append(row)
-    columns = [*IDENTITY_COLS, *_RAW_FIELDS, "task_name", *_SETUP_COLUMNS]
+    columns = [*IDENTITY_COLS, *_RAW_FIELDS, "task_name", *_SETUP_COLUMNS, "scan_error"]
     df = pd.DataFrame(rows, columns=columns)
     return with_schema(df)
 

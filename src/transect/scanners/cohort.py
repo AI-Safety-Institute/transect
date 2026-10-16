@@ -283,8 +283,8 @@ def cohort_llm_scanner(
             dict per unit, in content order, as
             ``metadata={"items": [...]}``. The facts (e.g.
             ``{"turn": 4}``) merge into that unit's result entry.
-            `transect.reasoning_turns` with ``batch=N`` yields this shape
-            for reasoning turns, with ids matching its unbatched items.
+            `transect.digest_turns` with ``batch=N`` yields this shape
+            for digest turns, with ids matching its unbatched items.
 
     Raises:
         TypeError: On a free-string (non-list) answer spec.
@@ -607,7 +607,7 @@ def _batch_llm_scanner(
                 "units as one fact dict per unit, in content order, e.g. "
                 'metadata={"items": [{"turn": 4, "id": "<tid>:turn-4"}, '
                 '{"turn": 5, "id": "<tid>:turn-5"}]} - '
-                "transect.reasoning_turns with batch=N yields this shape"
+                "transect.digest_turns with batch=N yields this shape"
             )
         units: list[dict] = [
             unit if isinstance(unit, dict) else {} for unit in declared

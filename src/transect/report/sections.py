@@ -18,7 +18,7 @@ import pandas as pd
 from markupsafe import Markup
 
 from transect.frames import SCHEMA_VERSION
-from transect.frames.transcript_info import _compact
+from transect.frames.transcript_info import _SETUP_COLUMNS, _compact
 from transect.frames.user import member_ballots
 from transect.report import reliability
 from transect.report._jinja import jinja_env
@@ -53,6 +53,9 @@ _reliability_tpl: Any = jinja_env().get_template("reliability.html.j2").module
 
 
 _NOT_FOUND = "not recorded by source"
+# the setup facts of a transcript whose eval_setup scan recorded an error:
+# the source may well have recorded them; the scan could not read them
+_SCAN_FAILED = "unavailable: the eval_setup scan recorded an error"
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,10 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     Additional Config Details, Run Summary. Every row renders even
     when its fact is absent, wording "not recorded by source" (never
     recorded) apart from "not set" (header read, option not
-    configured)."""
+    configured). When the transcript's eval_setup scan recorded an
+    error, a line above the expandables states it and every setup
+    fact reads "unavailable" instead: the index metadata rows still
+    render, since they never depended on the scan."""
     irow = info.iloc[0] if len(info) else pd.Series(dtype=object)
     srow = irow
     header_raw = srow.get("header_available")
@@ -181,11 +187,17 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
             return _compact(value)
         return value
 
+    setup_error = cell(irow, "scan_error")
+
     def found(row, name):
+        if setup_error and name in _SETUP_COLUMNS:
+            return _SCAN_FAILED
         value = cell(row, name)
         return _NOT_FOUND if value is None else str(value)
 
     def configured(name):
+        if setup_error:
+            return _SCAN_FAILED
         value = cell(srow, name)
         if value is not None:
             return str(value)
@@ -207,6 +219,8 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     )
 
     def scaffold(name):
+        if setup_error:
+            return _SCAN_FAILED
         value = cell(srow, name)
         if value is not None:
             return str(value)
@@ -292,7 +306,7 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         )
         if (value := cell(srow, name)) is not None
     ]
-    if cell(srow, "source_type") == "eval_log":
+    if cell(srow, "source_type") == "eval_log" and not setup_error:
         template = cell(srow, "compaction_prompt")
         # synthesized drops are detections, not recorded compactions
         recorded = flushes[flushes.source != "synthesized"]
@@ -319,7 +333,9 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         ("model roles", found(srow, "model_roles"), None),
         (
             "dataset",
-            _dataset_text(
+            _SCAN_FAILED
+            if setup_error
+            else _dataset_text(
                 cell(srow, "dataset_samples"),
                 cell(srow, "dataset_shuffled"),
                 header_read,
@@ -352,7 +368,7 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         {"title": "Additional config details", "rows": config_rows, "prompts": []},
         {"title": "Run summary", "rows": summary_rows, "prompts": []},
     ]
-    return _notes.setup_blocks(blocks)
+    return _notes.setup_blocks(blocks, error=setup_error)
 
 
 def _compaction_prompts(
@@ -418,16 +434,20 @@ def _verifier_name(entity: pd.DataFrame) -> str | None:
 
 def phase_chips(
     phases: pd.DataFrame,
+    phase_turns: pd.DataFrame,
     colors: dict[str, tuple[str, str | None]],
     definitions: pd.DataFrame | None = None,
 ) -> Markup:
     """The band's own legend: the hue-reuse caveat (if any) and the
-    per-phase chips, rendered directly under the chart. The
+    per-phase chips, rendered directly under the chart. A chip counts
+    the label's phases and the orchestrator turns those phases hold
+    (``phase_turns`` rows, attributed turns included). The
     counts/judge/cohort/verifier detail lives on `phase_meta_line`, next
     to the phase cards.
     """
-    one = phases.sort_values("phase_index")
-    counts = one.groupby("phase").agg(n=("phase", "size"), turns=("n_turns", "sum"))
+    counts = phases.groupby("phase").agg(n=("phase", "size"))
+    sizes = phase_turns.groupby("phase").size()
+    counts["turns"] = sizes.reindex(counts.index, fill_value=0)
     chips = []
     n_reused = 0
     for label, (color, hatch) in colors.items():
@@ -1104,9 +1124,7 @@ def phase_cards(
         spend = p.new_work_tokens if pd.notna(p.new_work_tokens) else 0
         tags = [
             f"turns {int(p.turn_start)}–{int(p.turn_end)}",
-            # n_turns counts the phase's reasoning-bearing (digest) turns,
-            # which can be fewer than the range width (tool-only turns)
-            f"{int(p.n_turns)} reasoning turn(s)",
+            f"{int(p.n_digest_turns)} turn(s) shown to the judge",
             f"{int(spend):,} orchestrator new-work tokens",
         ]
         n_tools = (
@@ -1317,11 +1335,12 @@ def reliability_audit(
                 "value": _turns_summary(phase_turns),
                 "definition": "Orchestrator turns of this transcript, split by "
                 "how each turn's label was decided: judged (labelled directly); "
-                "filled (a reasoning turn no judge answer covered, inheriting "
-                "the previous label at low confidence); attributed (content-free "
-                "tool-call-only or failed turns the judge never saw, taking the "
-                "surrounding phase); unjudged (refusal / no_answer / "
-                "missing_turn); or unattributed (tool-only turns after an "
+                "filled (a turn shown to the judge that no judge answer "
+                "covered, inheriting the previous label at low confidence); "
+                "attributed (turns the judge never saw - failed or empty "
+                "turns, and tool-call-only turns when tool_only_turns is off - "
+                "taking the surrounding phase); unjudged (refusal / no_answer "
+                "/ missing_turn); or unattributed (unseen turns after an "
                 "unjudged turn, with no phase to take - greyed in the band).",
             },
             {
@@ -2314,14 +2333,15 @@ def _span_verifier_rows(subagents: pd.DataFrame, unit_word: str = "span") -> lis
         },
         {
             "label": "Verifier outcomes",
-            "value": f"{len(completed)} completed · "
+            "value": f"{len(completed)} judged · "
             f"{len(selected) - len(completed)} without usable verdict · "
             f"{int(overturned.sum())} relabelled · {int(weak.sum())} "
             "weak relabel(s) recorded, not applied · "
             f"{int((overturned & sampled).sum())} of {int(sampled.sum())} "
-            "completed random samples relabelled",
-            "definition": "Relabel rates condition on usable completed verdicts; "
-            "missing outcomes are reported separately.",
+            "judged random samples relabelled",
+            "definition": "Judged means the verifier returned a usable verdict; "
+            "relabel rates condition on those, and missing outcomes are "
+            "reported separately.",
         },
     ]
 

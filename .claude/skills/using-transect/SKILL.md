@@ -263,6 +263,9 @@ means "not judged", never "fine"; absence is stated, never faked.
 | No phases / sub-agent sections in the report | the Phase timeline section states the reason in place: no judge configured (`judge_models=None`, the console warning names the declared vocabularies), or the judge ran and produced no phases - then inspect `scan_status` for failed or missing requested work |
 | No agreement strip under the phase band | a solo judge (one model, `k_rolls=1`) has no per-turn agreement to show; the caption in its place says so - `k_rolls` > 1 or a cohort brings the strip back |
 | `sample= required` error | multi-sample log; the error lists the available ids |
+| Selected sample/epoch has multiple sources, transcripts or repeated input | narrow `logs` to one input per selected epoch and remove repeated copies; source paths and recorded identities are listed in the error. Explicit sample/epoch filters apply before this check |
+| Eval setup opens with "eval_setup scan error" and its setup rows read "unavailable" | the setup scanner recorded an error on that transcript; the line and the scan status section carry the original message, and the identity and run summary rows still come from the transcript index. Diagnose that cause, then run a new scan and retain the failed store |
+| A transcript is missing from the report although it was selected | its `token_timeline` scan recorded an error (the report orders transcripts by that frame); the scan status section names it with the message |
 | "values outside the declared vocabulary ... coerced to NaN" warning on `load()` | the store's recorded values do not match the current scanner schema - run a new scan, retain the old one, and account for any fresh judge calls |
 | Loud "none joined this transcript's lanes" warning in the report | span identity mismatch between scan and render - treat as a bug, not cosmetics |
 | Charts render blank | the report's charts are CDN-loaded - it is an online document; check network |
@@ -297,10 +300,9 @@ too, but nothing here requires it.)
   `subagent_votes`, `label_definitions` (judged); `subagents` is
   both - every span's structural facts on any run, label columns
   filled only when judged.
-- Two column gotchas: `phases.n_turns` counts the reasoning turns the
-  judge saw, judged and filled (fewer than the `turn_start..turn_end`
-  width - content-free tool-only turns in range are not counted; the
-  axis itself holds orchestrator turns only, so a sub-agent's turns are
+- Two column gotchas: `phases.n_digest_turns` counts the turns the
+  judge saw; a phase's full size is its rows in `phase_turns` (the
+  axis holds orchestrator turns only, so a sub-agent's turns are
   never in a range); `new_work` sums are new-content tokens, not
   billable cost, and `phases.new_work_tokens` is orchestrator spend
   while `delegated_new_work_tokens` is the spend of sub-agents spawned

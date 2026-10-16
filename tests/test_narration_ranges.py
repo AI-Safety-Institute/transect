@@ -35,7 +35,7 @@ def phase(end=9, count=10):
         phase="setup",
         turn_start=0,
         turn_end=end,
-        n_turns=count,
+        n_digest_turns=count,
         confidence=0.9,
         min_confidence=0.9,
         explanation="Synthetic phase",
@@ -87,8 +87,8 @@ def test_valid_out_of_order_partition_only_reorders_groups():
     assert validate_turn_groups([second, first], phase(), "Setup") == [first, second]
 
 
-def test_reasoning_turns_are_excerpted_and_rendered_as_thinking_lines():
-    """A reasoning-bearing turn gets an excerpt even with no visible
+def test_turns_with_reasoning_are_excerpted_and_rendered_as_thinking_lines():
+    """A turn with recorded reasoning gets an excerpt even with no visible
     text, and the card renders the reasoning as its own muted line."""
     events = [
         model_turn(

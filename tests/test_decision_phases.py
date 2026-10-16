@@ -19,20 +19,9 @@ from helpers import (
 )
 from inspect_ai.model import ContentReasoning, ContentText, get_model
 
-from transect.scanners.phases import (
-    decision_phases,
-    project_phase_turns,
-    system_prompt,
-    turn_digests,
-)
-from transect.scanners.phases_common import (
-    FINAL_TEXT_CHARS,
-    DigestJudgement,
-    StitchedPhase,
-    clip,
-    digest_line,
-    is_labelled,
-)
+from transect.scanners.digests import DigestSettings, clip, digest_line, turn_digests
+from transect.scanners.phases import decision_phases, project_phase_turns, system_prompt
+from transect.scanners.phases_common import DigestJudgement, StitchedPhase, is_labelled
 from transect.scanners.phases_verify import select_for_verify
 from transect.spec import Spec
 
@@ -136,7 +125,7 @@ def test_clip_keeps_the_start_and_the_end(text, cap, expected):
 
 @pytest.mark.parametrize(
     ("final_text_chars", "keeps_whole"),
-    [(FINAL_TEXT_CHARS, True), (0, False)],
+    [(DigestSettings().final_text_chars, True), (0, False)],
     ids=["default", "below-snippet-cap"],
 )
 def test_the_last_text_turn_keeps_up_to_final_text_chars(final_text_chars, keeps_whole):
@@ -145,7 +134,8 @@ def test_the_last_text_turn_keeps_up_to_final_text_chars(final_text_chars, keeps
     report = "Update for the lead: " + "details " * 40 + "2 tests still fail."
     events = [model_turn(report), model_turn(report), model_turn("")]
     first, final = turn_digests(
-        StubTranscript(events), snippet_chars=60, final_text_chars=final_text_chars
+        StubTranscript(events),
+        DigestSettings(text_chars=60, final_text_chars=final_text_chars),
     )
     assert first.text == clip(report, 60)
     assert final.text == (report if keeps_whole else clip(report, 60))
@@ -231,7 +221,7 @@ def test_is_labelled_is_the_one_predicate_that_keeps_a_turn_inside_a_phase(
 
 
 def test_turns_before_a_refused_opening_chunk_belong_to_no_phase():
-    """Refused reasoning turns and the tool-only turns after them carry no
+    """Refused digest turns and the tool-only turns after them carry no
     phase, so the frame and band cannot claim coverage the judge never gave."""
     events = [
         model_turn("reasoning 0"),
@@ -461,7 +451,7 @@ def test_select_for_verify_sizes_the_random_sample(n_phases, sample, expected):
             phase=f"p{k % 3}",
             turn_start=k * 5,
             turn_end=k * 5 + 4,
-            n_turns=5,
+            n_digest_turns=5,
             confidence=0.9,
             min_confidence=0.9,
             explanation="scripted",
@@ -473,16 +463,7 @@ def test_select_for_verify_sizes_the_random_sample(n_phases, sample, expected):
     assert set(reasons.values()) <= {"random_sample"}
 
 
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"snippet_chars": -1},
-        {"final_text_chars": -1},
-        {"verify": True, "verify_sample": -0.1},
-    ],
-    ids=["snippet_chars", "final_text_chars", "verify_sample"],
-)
-def test_out_of_range_options_are_rejected_at_build_time(options):
-    """An out-of-range option raises at scanner build time, naming the option."""
-    with pytest.raises(ValueError, match=list(options)[-1]):
-        decision_phases(PHASES_SPEC, scripted_judge(), **options)
+def test_verify_sample_outside_the_unit_interval_is_rejected():
+    """A verify_sample outside [0, 1] raises at scanner build time."""
+    with pytest.raises(ValueError, match="verify_sample"):
+        decision_phases(PHASES_SPEC, scripted_judge(), verify=True, verify_sample=-0.1)
