@@ -53,9 +53,7 @@ def test_audit_shows_completion_coverage_beside_conditional_rate():
         for row in sections._span_verifier_rows(frame, unit_word="phase")
     }
     assert "3 random sample" in rows["Verifier selection"]["value"]
-    assert (
-        "1 judged · 2 without usable verdict" in (rows["Verifier outcomes"]["value"])
-    )
+    assert "1 judged · 2 without usable verdict" in (rows["Verifier outcomes"]["value"])
     audit_rows = {row["label"]: row for row in audit(frame)["rows"]}
     assert "1/1 examined" in audit_rows["Verifier re-label rate (overall)"]["value"]
 
