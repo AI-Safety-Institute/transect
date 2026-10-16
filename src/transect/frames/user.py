@@ -43,6 +43,8 @@ def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
     """
     rows: list[dict] = []
     for _, r in results.iterrows():
+        # an errored item carries neither a value nor its loader metadata,
+        # so there is no turn to place it on; scan_status names it
         if scan_error(r):
             continue
         identity_cols = identity(r)

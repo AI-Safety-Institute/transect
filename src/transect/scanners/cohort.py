@@ -29,7 +29,7 @@ from inspect_scout import (
 )
 from pydantic import BaseModel, Field, JsonValue, create_model
 
-from transect.spec import label_key
+from transect.spec import is_label_key, label_key
 
 logger = logging.getLogger(__name__)
 
@@ -307,7 +307,9 @@ def cohort_llm_scanner(
     labels = list(answer)
     vocabulary = _vocabulary_entries(vocabulary)
     _require_label_keys(labels, "answer")
-    _require_label_keys([entry["label"] for entry in vocabulary or []], "vocabulary")
+    _require_label_keys(
+        [entry.get("label") for entry in vocabulary or []], "vocabulary"
+    )
     if models is None and k_rolls != 1:
         raise ValueError(
             "k_rolls requires an explicit models value - "
@@ -1090,11 +1092,7 @@ def _normalize_label(raw: object) -> str | None:
 def _require_label_keys(labels: list, what: str) -> None:
     """Refuse, before any judge is built, a closed label that is not its
     own key: its stored answers would never join it."""
-    bad = [
-        label
-        for label in labels
-        if not isinstance(label, str) or not label or label_key(label) != label
-    ]
+    bad = [label for label in labels if not is_label_key(label)]
     if bad:
         raise ValueError(
             f"{what} labels must be their own keys (lowercase, whitespace as "

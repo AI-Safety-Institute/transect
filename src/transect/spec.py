@@ -41,7 +41,7 @@ class SubagentLabel(BaseModel):
     @classmethod
     def _label_is_its_own_key(cls, value: str) -> str:
         key = label_key(value)
-        if not key or key != value:
+        if not is_label_key(value):
             raise ValueError(
                 f"sub-agent label {value!r} must be its own key"
                 + (f", {key!r}" if key else "")
@@ -84,6 +84,11 @@ def label_key(label: str) -> str:
     already equal its key; `SubagentLabel` and `cohort_llm_scanner`
     refuse one that does not."""
     return "_".join(label.strip().lower().split())
+
+
+def is_label_key(label: object) -> bool:
+    """Whether ``label`` is a non-empty string equal to its own key."""
+    return isinstance(label, str) and bool(label) and label_key(label) == label
 
 
 def load_spec(path: Path | str) -> Spec:

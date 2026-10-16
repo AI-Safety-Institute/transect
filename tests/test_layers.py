@@ -8,10 +8,11 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 from conftest import turn_counter
+from inspect_ai.model import ModelOutput, get_model
 from inspect_scout import Result, Scanner, Transcript, scanner
 
 import transect
-from transect import Layer, Spec, load, turns_frame
+from transect import Layer, Spec, cohort_llm_scanner, digest_turns, load, turns_frame
 from transect.layers import resolve_scanner_factories, validate_layers
 
 SPEC = Path(__file__).parents[1] / "examples" / "spec.yaml"
@@ -300,3 +301,45 @@ def test_turns_frame_explodes_the_turns_key():
     assert len(frame) == 2
     assert list(frame.risk) == [0.1, 0.7]
     assert set(frame.transcript_id) == {"tr1"}
+
+
+def test_tags_layer_keeps_its_turn_axis_when_a_judge_call_fails(demo_log, tmp_path):
+    """An errored unit has no loader metadata, so it is left out of the
+    per-turn frame rather than breaking the turn axis the tags need; the
+    scan status names the failure and the report renders."""
+    calls = []
+
+    def judge(input, tools, tool_choice, config):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("synthetic judge failure")
+        return ModelOutput.for_tool_call(
+            "mockllm/model",
+            "answer",
+            {"label": "research", "confidence": 0.9, "explanation": "x"},
+        )
+
+    @scanner(loader=digest_turns())
+    def label_turns():
+        return cohort_llm_scanner(
+            "Classify the work",
+            ["research", "none_of_the_above"],
+            models=get_model("mockllm/model", custom_outputs=judge, memoize=False),
+            verify=False,
+        )
+
+    layer = Layer(name="labels", scanner=label_turns(), frame=turns_frame, tags=True)
+    result = transect.transect(
+        str(demo_log),
+        Spec(),
+        extra_layers=[layer],
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+    )
+    frame = result.layer_frames["labels"]
+    assert len(frame) == len(calls) - 1 and frame.turn.notna().all()
+    assert set(frame.label) == {"research"}
+    (error,) = result.scan_status.errors
+    assert error.scanner == "label_turns" and "synthetic judge failure" in error.message
+    assert result.report_paths
