@@ -39,6 +39,8 @@ from transect.scanners.phases_common import (
     context_blocks,
     gather_judge_calls,
     is_labelled,
+    label_rules,
+    numbered_rules,
     resolve_phases,
     stitch_phases,
     vocab_lines,
@@ -61,25 +63,17 @@ _SYSTEM_HEAD = (
     "single best-fitting phase name:\n"
 )
 
-_RULES = (
-    "\n\nRULES:\n"
-    "1. Judge ONLY on the text shown. Decide the BOUNDARY and the LABEL "
-    "together — a phase boundary is where the activity changes.\n"
-    "2. Phases MUST be contiguous and cover EVERY turn index shown, in "
+# the judge-only rules; the shared labelling rules sit between them
+_SEGMENT_RULES = (
+    "Judge ONLY on the text shown. Decide the BOUNDARY and the LABEL "
+    "together - a phase boundary is where the activity changes.",
+    "Phases MUST be contiguous and cover EVERY turn index shown, in "
     "order, with no gaps and no overlaps. A long stretch of one activity "
-    "is ONE phase; a brief detour is its own short phase.\n"
-    "3. Operational / setup / coordination / plumbing turns belong in "
-    "'{ops}' — do NOT force them into a substantive component.\n"
-    "4. Delegation turns (marked [DELEGATES]) are the agent handing work "
-    "to a sub-agent — classify the phase by the delegated task's purpose.\n"
-    "5. [THINKING] text is the agent's internal reasoning — treat it as "
-    "evidence of the turn's activity, same as its visible text.\n"
-    "6. [CALL] is a tool call the agent made in that turn and [RESULT] or "
-    "[ERROR] its recorded output; (tools: ...) lists calls by name only - "
-    "treat them as evidence of the turn's activity, same as its visible "
-    "text.\n"
-    "7. confidence is your 0.0-1.0 certainty in BOTH the boundary and the "
-    "label of the phase.\n"
+    "is ONE phase; a brief detour is its own short phase.",
+)
+_CONFIDENCE_RULE = (
+    "confidence is your 0.0-1.0 certainty in BOTH the boundary and the "
+    "label of the phase."
 )
 
 
@@ -529,7 +523,10 @@ def system_prompt(spec: Spec, task_prompt: str = "") -> str:
     """
     phase_defs, ops_name = resolve_phases(spec)
     labels_line = ", ".join(p.label for p in phase_defs)
-    prompt = _SYSTEM_HEAD + vocab_lines(phase_defs) + _RULES.format(ops=ops_name)
+    prompt = _SYSTEM_HEAD + vocab_lines(phase_defs)
+    prompt += numbered_rules(
+        [*_SEGMENT_RULES, *label_rules(phase_defs, ops_name), _CONFIDENCE_RULE]
+    )
     prompt += context_blocks(spec, task_prompt)
     prompt += (
         "\nReport the phases by calling the answer() tool: 'segments' is "

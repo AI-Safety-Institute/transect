@@ -10,7 +10,7 @@ from pydantic import ValidationError
 from transect import load
 from transect.api import _run
 from transect.diagnostics import descramble, scramble_spec
-from transect.scanners.phases_common import resolve_phases
+from transect.scanners.phases_common import reserved_phase_labels, resolve_phases
 from transect.scanners.subagents import subagent_classification
 from transect.spec import Spec, load_spec
 
@@ -38,6 +38,35 @@ def test_ops_flag_marks_the_operational_phase():
     """A phase declared with ops: true carries the flag; others default off."""
     spec = Spec.model_validate(MINIMAL)
     assert [p.ops for p in spec.phases] == [False, False, True]
+
+
+def test_ops_bucket_off_resolves_no_operational_phase():
+    """With ops_bucket off no reserved ops phase is appended, no phase is
+    the operational bucket, and the escape hatch no longer excludes
+    operational work."""
+    spec = Spec.model_validate({"phases": ["experiment"], "ops_bucket": False})
+    phases, ops_name = resolve_phases(spec)
+    assert [p.label for p in phases] == ["experiment", "none_of_the_above"]
+    assert ops_name is None
+    assert "operational" not in phases[-1].description
+
+
+def test_ops_bucket_off_rejects_a_flagged_ops_phase():
+    """A phase flagged ops contradicts ops_bucket: false and fails validation."""
+    with pytest.raises(ValidationError, match="flagged ops"):
+        Spec.model_validate(
+            {"phases": [{"label": "coordination", "ops": True}], "ops_bucket": False}
+        )
+
+
+def test_ops_bucket_off_makes_a_phase_named_ops_an_ordinary_phase():
+    """Without the bucket a declared phase called ops is selected by
+    nothing, so it is renamed by scrambling and the switch survives."""
+    spec = Spec.model_validate({"phases": ["ops", "experiment"], "ops_bucket": False})
+    assert reserved_phase_labels(spec) == set()
+    scrambled, maps = scramble_spec(spec, seed=7)
+    assert maps["phases"]["ops"].startswith("phase_")
+    assert scrambled.ops_bucket is False
 
 
 @pytest.mark.parametrize(

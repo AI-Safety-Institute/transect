@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class Phase(BaseModel):
@@ -64,6 +64,13 @@ class Spec(BaseModel):
     subagent_labels: list[SubagentLabel] = []
     """The sub-agent role vocabulary; empty disables classification."""
 
+    ops_bucket: bool = True
+    """Whether the phase judge is offered an operational bucket. With no
+    phase flagged ``ops`` the reserved "ops" phase is appended; ``False``
+    turns that off, so operational turns take a declared phase or
+    ``none_of_the_above``. A phase flagged ``ops`` contradicts ``False``
+    and fails validation."""
+
     context: str = ""
     """Free-text task context for phase prompts; not passed to subagent judges."""
 
@@ -75,6 +82,16 @@ class Spec(BaseModel):
     @classmethod
     def _plain_labels_ok(cls, value):  # "recon" == {"label": "recon"}
         return [{"label": p} if isinstance(p, str) else p for p in (value or [])]
+
+    @model_validator(mode="after")
+    def _ops_bucket_agrees_with_the_flags(self):
+        flagged = [p.label for p in self.phases if p.ops]
+        if flagged and not self.ops_bucket:
+            raise ValueError(
+                f"ops_bucket is false but a phase is flagged ops: {flagged}; "
+                "drop the flag or keep the bucket"
+            )
+        return self
 
 
 def label_key(label: str) -> str:
