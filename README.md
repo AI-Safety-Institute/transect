@@ -190,9 +190,7 @@ subagent_labels:
 ```
 
 `none_of_the_above` and an operational bucket are always
-available to the judges. A sub-agent label is a key, lowercase with
-underscores for spaces (`result_review`): judge answers are stored
-under that key, so a spec spelling one otherwise is rejected.
+available to the judges.
 
 > [!TIP]
 > The shipped skills help here (see [Installation](#installation)):
@@ -331,8 +329,7 @@ erDiagram
         object scaffold_prompt "recorded value, including structured content"
         string compaction "recorded strategy config, including threshold"
         string source_type "eval_log for Inspect"
-        bool header_available "False on OpenClaw imports, None on a scan error"
-        string scan_error "None unless the eval_setup scan errored"
+        bool header_available "False on OpenClaw imports"
         int message_limit "None = not set / not found"
         string system_prompt "verbatim; the long prompts sit last"
         string compaction_prompt "configured Inspect template, if recorded"
