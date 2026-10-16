@@ -227,8 +227,6 @@ viewer.
 `load(scans_dir)` re-reads a stored scan without rescanning (and without API
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
-A transcript whose structural scan recorded an error has no rows in the
-structural frames; the report's scan status names it and the error.
 
 ## Reading the report
 
