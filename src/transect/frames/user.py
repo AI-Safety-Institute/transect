@@ -18,6 +18,7 @@ from transect.frames.common import (
     result_value,
     verifier_review,
 )
+from transect.scan_status import scan_error
 
 
 def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
@@ -41,6 +42,8 @@ def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
     """
     rows: list[dict] = []
     for _, r in results.iterrows():
+        if scan_error(r):
+            continue
         identity_cols = identity(r)
         value = result_value(r.get("value"))
         entries = value.get(key)
@@ -70,6 +73,8 @@ def generic_flatten(results: pd.DataFrame) -> pd.DataFrame:
     columns; nested values stay raw objects in their cells."""
     rows = []
     for _, r in results.iterrows():
+        if scan_error(r):
+            continue
         rows.append({**identity(r), **result_value(r.get("value"))})
     return pd.DataFrame(rows)
 

@@ -333,7 +333,6 @@ def test_lane_activity_frame_anchors_tool_activity_to_orchestrator_turns(
 @pytest.mark.parametrize(
     "build",
     [
-        transcript_info_df,
         token_timeline_df,
         interventions_df,
         lane_activity_df,
@@ -359,6 +358,37 @@ def test_structural_frames_skip_a_transcript_with_a_recorded_scan_error(build):
     frame = build(pd.DataFrame([completed, failed]))
     assert "failed" not in set(frame.transcript_id)
     assert set(frame.columns) == set(build(pd.DataFrame([completed])).columns)
+
+
+def test_transcript_info_keeps_index_metadata_and_stamps_the_scan_error():
+    """An errored setup row still carries what the transcript index
+    recorded; its setup facts are None, not fabricated absence."""
+    frame = transcript_info_df(
+        pd.DataFrame(
+            [
+                {
+                    "transcript_id": "failed",
+                    "transcript_model": "mockllm/model",
+                    "transcript_message_count": 35,
+                    "value": None,
+                    "scan_error": "boom",
+                },
+                {
+                    "transcript_id": "ok",
+                    "transcript_model": "mockllm/model",
+                    "value": {"compaction_prompt": None, "system_prompt": "sys"},
+                    "scan_error": None,
+                },
+            ]
+        )
+    ).set_index("transcript_id")
+    assert frame.loc["failed", "scan_error"] == "boom"
+    assert frame.loc["failed", "model"] == "mockllm/model"
+    assert frame.loc["failed", "message_count"] == 35
+    assert pd.isna(frame.loc["failed", "system_prompt"])
+    assert pd.isna(frame.loc["failed", "header_available"])
+    assert pd.isna(frame.loc["ok", "scan_error"])
+    assert frame.loc["ok", "system_prompt"] == "sys"
 
 
 @pytest.mark.parametrize("error", [None, pd.NA, float("nan"), ""])

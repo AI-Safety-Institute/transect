@@ -43,9 +43,9 @@ from transect.frames.common import (
     IDENTITY_COLS,
     identity,
     result_value,
-    scan_error,
     with_schema,
 )
+from transect.scan_status import scan_error
 
 
 def interventions_df(results: pd.DataFrame) -> pd.DataFrame:

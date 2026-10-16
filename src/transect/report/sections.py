@@ -18,7 +18,7 @@ import pandas as pd
 from markupsafe import Markup
 
 from transect.frames import SCHEMA_VERSION
-from transect.frames.transcript_info import _compact
+from transect.frames.transcript_info import _SETUP_COLUMNS, _compact
 from transect.frames.user import member_ballots
 from transect.report import reliability
 from transect.report._jinja import jinja_env
@@ -53,6 +53,9 @@ _reliability_tpl: Any = jinja_env().get_template("reliability.html.j2").module
 
 
 _NOT_FOUND = "not recorded by source"
+# the setup facts of a transcript whose eval_setup scan recorded an error:
+# the source may well have recorded them; the scan could not read them
+_SCAN_FAILED = "unavailable: the eval_setup scan recorded an error"
 
 
 @dataclass(frozen=True)
@@ -166,7 +169,10 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     Additional Config Details, Run Summary. Every row renders even
     when its fact is absent, wording "not recorded by source" (never
     recorded) apart from "not set" (header read, option not
-    configured)."""
+    configured). When the transcript's eval_setup scan recorded an
+    error, a line above the expandables states it and every setup
+    fact reads "unavailable" instead: the index metadata rows still
+    render, since they never depended on the scan."""
     irow = info.iloc[0] if len(info) else pd.Series(dtype=object)
     srow = irow
     header_raw = srow.get("header_available")
@@ -181,11 +187,17 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
             return _compact(value)
         return value
 
+    setup_error = cell(irow, "scan_error")
+
     def found(row, name):
+        if setup_error and name in _SETUP_COLUMNS:
+            return _SCAN_FAILED
         value = cell(row, name)
         return _NOT_FOUND if value is None else str(value)
 
     def configured(name):
+        if setup_error:
+            return _SCAN_FAILED
         value = cell(srow, name)
         if value is not None:
             return str(value)
@@ -207,6 +219,8 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     )
 
     def scaffold(name):
+        if setup_error:
+            return _SCAN_FAILED
         value = cell(srow, name)
         if value is not None:
             return str(value)
@@ -292,7 +306,7 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         )
         if (value := cell(srow, name)) is not None
     ]
-    if cell(srow, "source_type") == "eval_log":
+    if cell(srow, "source_type") == "eval_log" and not setup_error:
         template = cell(srow, "compaction_prompt")
         # synthesized drops are detections, not recorded compactions
         recorded = flushes[flushes.source != "synthesized"]
@@ -319,7 +333,9 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         ("model roles", found(srow, "model_roles"), None),
         (
             "dataset",
-            _dataset_text(
+            _SCAN_FAILED
+            if setup_error
+            else _dataset_text(
                 cell(srow, "dataset_samples"),
                 cell(srow, "dataset_shuffled"),
                 header_read,
@@ -352,7 +368,7 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
         {"title": "Additional config details", "rows": config_rows, "prompts": []},
         {"title": "Run summary", "rows": summary_rows, "prompts": []},
     ]
-    return _notes.setup_blocks(blocks)
+    return _notes.setup_blocks(blocks, error=setup_error)
 
 
 def _compaction_prompts(

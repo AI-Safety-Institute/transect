@@ -69,7 +69,11 @@ were recorded but this one was left to the scaffold's own default
 (the log records only configured arguments, not resolved defaults);
 "not recorded by source" means the source never recorded the fact at
 all - the whole config block reads that way on OpenClaw imports (no
-.eval header exists). The compaction row describes the configured
+.eval header exists). A fourth, "unavailable: the eval_setup scan
+recorded an error", means the scan itself failed on this transcript:
+the line above the expandables and the scan status section carry the
+message, and only the index-sourced rows (model, task, run date, the
+run summary) are real. The compaction row describes the configured
 setting only; the flushes on the token chart are detected from the
 transcript regardless.
 

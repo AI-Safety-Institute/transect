@@ -147,9 +147,11 @@ scanner change take effect; run a new scan and retain both results for compariso
   stored scan on every load. It records execution only: completed vs total
   transcripts, recorded errors, and the model usage each scanner billed
   per judge model; judgement quality belongs to the reliability audit.
-  A transcript whose structural scan recorded an error has no rows in
-  that frame (`frames.common.scan_error` is the one predicate) and is
-  named here, whether one transcript failed or every one did. The report always shows
+  A transcript whose scan recorded an error for a scanner has no rows
+  in that scanner's frame, except that `transcript_info` keeps its index
+  metadata with every setup fact None and the error in `scan_error`;
+  `transect.scan_status.scan_error` is the one predicate, and the status
+  names the transcript whether one failed or every one did. The report always shows
   this run-wide status outside optional sections. Keep it in custom UIs,
   including when an epoch filter hides other scan transcripts.
 

@@ -78,17 +78,6 @@ def result_value(cell) -> dict:
     return cell if isinstance(cell, dict) else {}
 
 
-def scan_error(row) -> str | None:
-    """The row's recorded scan error; None for a completed scan.
-
-    An errored row carries no value, so a structural frame skips it
-    rather than projecting a fabricated absence; ``scan_status`` names
-    the transcript and its error.
-    """
-    error = row.get("scan_error")
-    return error if isinstance(error, str) and error else None
-
-
 def item_metadata(row) -> dict:
     """The loader item's ``Result.metadata`` for a results row."""
     return result_value(row.get("metadata"))

@@ -92,14 +92,22 @@ def test_failed_phase_scan_remains_visible_after_reload(demo_log, tmp_path):
     assert _status_text(empty.report_paths[0]) == text
 
 
+def _eval_setup_text(path):
+    """The Eval setup section's HTML, up to the next section heading."""
+    html = Path(path).read_text()
+    start = html.index("Eval setup")
+    return html[start : html.index("<h3", start)]
+
+
 def test_structural_scanner_failing_every_transcript_loads_and_renders(
     demo_log, tmp_path, monkeypatch
 ):
-    """A setup scan that completed nothing renders no setup facts and names
-    the recorded error, on the run and again on reload."""
+    """A setup scan that completed nothing keeps the index metadata, says
+    the setup facts are unavailable, and names the error, on the run and
+    again on reload."""
 
     def fail_header(uri):
-        raise RuntimeError("recorded setup failure")
+        raise RuntimeError("recorded setup failure <script>example()</script>")
 
     monkeypatch.setattr(base, "_eval_header", fail_header)
     result = transect.transect(
@@ -113,23 +121,32 @@ def test_structural_scanner_failing_every_transcript_loads_and_renders(
     (error,) = raw.errors
     assert error.scanner == "eval_setup"
     assert raw.summary.scanners["eval_setup"].results == 0
-    assert result.transcript_info.empty
-    assert list(result.transcript_info.columns)
+    (info,) = result.transcript_info.itertuples()
+    assert info.scan_error.startswith("recorded setup failure")
+    assert info.model == "mockllm/model" and info.system_prompt is None
     assert len(result.token_timeline)
     setup = next(s for s in result.scan_status.scanners if s.scanner == "eval_setup")
     assert (setup.scanned_transcripts, setup.completed_transcripts) == (1, 0)
-    readable = " ".join(_status_element(result.report_paths[0]).itertext())
-    assert "eval_setup" in readable and "recorded setup failure" in readable
+    status = " ".join(_status_element(result.report_paths[0]).itertext())
+    assert "eval_setup" in status and "recorded setup failure" in status
+    section = _eval_setup_text(result.report_paths[0])
+    assert "eval_setup scan error" in section
+    assert "unavailable: the eval_setup scan recorded an error" in section
+    # the two setup blocks never claim the source lacked a fact the scan
+    # could not read; the run summary still reports index-sourced absence
+    assert "not recorded by source" not in section[: section.index("Run summary")]
+    assert "model: mockllm/model" in Path(result.report_paths[0]).read_text()
+    assert "<script>" not in section and "&lt;script&gt;" in section
     restored = transect.load(result.scan_location)
     assert restored.scan_status == result.scan_status
-    assert restored.transcript_info.empty
+    assert restored.transcript_info.scan_error.tolist() == [info.scan_error]
 
 
 def test_structural_scanner_failing_one_transcript_loads_and_renders(
     epochs_logs, tmp_path, monkeypatch
 ):
     """One errored transcript keeps the others' frames, is named by
-    scan_status, and renders a report whose setup facts say so."""
+    scan_status, and only its own Eval setup section says so."""
     calls = []
 
     def fail_once(uri):
@@ -154,15 +171,20 @@ def test_structural_scanner_failing_one_transcript_loads_and_renders(
     setup = next(s for s in result.scan_status.scanners if s.scanner == "eval_setup")
     assert (setup.scanned_transcripts, setup.completed_transcripts) == (3, 2)
     assert result.token_timeline.transcript_id.nunique() == 3
-    assert set(result.transcript_info.transcript_id) == set(
-        result.token_timeline.transcript_id
-    ) - {error.transcript_id}
+    info = result.transcript_info.set_index("transcript_id")
+    assert len(info) == 3
+    assert info.scan_error.notna().sum() == 1
+    assert info.loc[error.transcript_id, "scan_error"] == error.message
+    failed_epoch = int(info.loc[error.transcript_id, "epoch"])
     assert len(result.report_paths) == 3
     for path in result.report_paths:
         assert "eval_setup" in " ".join(_status_element(path).itertext())
+        section = _eval_setup_text(path)
+        is_failed = path.endswith(f"epoch{failed_epoch}.html")
+        assert ("eval_setup scan error" in section) == is_failed
     restored = transect.load(result.scan_location)
     assert restored.scan_status == result.scan_status
-    assert len(restored.transcript_info) == 2
+    assert restored.transcript_info.scan_error.notna().sum() == 1
 
 
 @loader(messages="all")

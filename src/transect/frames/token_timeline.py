@@ -32,9 +32,9 @@ from transect.frames.common import (
     identity,
     lane_series,
     result_value,
-    scan_error,
     with_schema,
 )
+from transect.scan_status import scan_error
 
 _TOKEN_FIELDS = (
     "output_tokens",

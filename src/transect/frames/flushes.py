@@ -42,9 +42,9 @@ from transect.frames.common import (
     identity,
     lane_series,
     result_value,
-    scan_error,
     with_schema,
 )
+from transect.scan_status import scan_error
 
 _METADATA_COLUMNS = ("strategy", "messages_before", "messages_after", "trigger")
 _RECORDED_COLUMNS = ("role", "metadata", "compaction_prompt", "compaction_nudge")

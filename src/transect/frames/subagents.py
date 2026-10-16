@@ -80,10 +80,10 @@ from transect.frames.common import (
     joined_judge_models,
     judge_identity,
     result_value,
-    scan_error,
     verifier_review,
     with_schema,
 )
+from transect.scan_status import scan_error
 
 # the structural columns
 _SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
