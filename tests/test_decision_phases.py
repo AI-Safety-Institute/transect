@@ -21,8 +21,14 @@ from inspect_ai.model import ContentReasoning, ContentText, get_model
 
 from transect.scanners.digests import DigestSettings, clip, digest_line, turn_digests
 from transect.scanners.phases import decision_phases, project_phase_turns, system_prompt
-from transect.scanners.phases_common import DigestJudgement, StitchedPhase, is_labelled
-from transect.scanners.phases_verify import select_for_verify
+from transect.scanners.phases_common import (
+    DigestJudgement,
+    StitchedPhase,
+    is_labelled,
+    label_rules,
+    resolve_phases,
+)
+from transect.scanners.phases_verify import select_for_verify, verify_system_prompt
 from transect.spec import Spec
 
 
@@ -49,6 +55,51 @@ def test_declared_ops_phase_replaces_the_reserved_bucket():
     system = system_prompt(spec)
     assert "coordination" in system
     assert "- ops" not in system
+
+
+def test_ops_bucket_off_drops_the_ops_rule():
+    """A spec that turns the ops bucket off yields a judge prompt with no
+    ops label and no rule sending operational turns anywhere."""
+    spec = Spec.model_validate({"phases": ["experiment"], "ops_bucket": False})
+    system = system_prompt(spec)
+    assert "- ops" not in system and "Operational" not in system
+    assert "none_of_the_above" in system
+
+
+def test_flagged_ops_rule_defers_to_the_authors_description():
+    """When the spec flags its own ops phase, the ops rule points the judge
+    at that phase's description instead of the fixed wording."""
+    spec = Spec.model_validate(
+        {
+            "phases": [
+                {"label": "discussion", "description": "Talking to the operator."},
+                {"label": "coordination", "ops": True, "description": "Handoffs."},
+            ]
+        }
+    )
+    system = system_prompt(spec)
+    assert "'coordination' is the operational bucket" in system
+    assert "Operational / setup / coordination / plumbing" not in system
+
+
+def test_verifier_sees_the_judges_label_rules():
+    """Every label rule the judge works under is rendered verbatim in the
+    verifier prompt; the judge-only segmentation rules are not."""
+    phase_defs, ops_name = resolve_phases(PHASES_SPEC)
+    judge = system_prompt(PHASES_SPEC)
+    verifier = verify_system_prompt(PHASES_SPEC, "")
+    rules = label_rules(phase_defs, ops_name)
+    assert len(rules) >= 4
+    assert all(rule in judge and rule in verifier for rule in rules)
+    assert "contiguous" in judge and "contiguous" not in verifier
+
+
+def test_delegation_rule_states_the_multi_phase_tie_break():
+    """The delegation rule tells the judge what to do when one turn's
+    delegated tasks serve different phases, ending in none_of_the_above."""
+    phase_defs, ops_name = resolve_phases(PHASES_SPEC)
+    (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
+    assert "more than half" in rule and "none_of_the_above" in rule
 
 
 def test_segments_sharing_a_label_stitch_into_one_phase():

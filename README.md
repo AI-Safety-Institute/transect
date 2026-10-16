@@ -189,8 +189,11 @@ subagent_labels:
     description: Checks results and drafts before they are used.
 ```
 
-`none_of_the_above` and an operational bucket are always
-available to the judges.
+`none_of_the_above` is always available to the judges, and so is an
+operational bucket: the phase you flag `ops: true`, else a reserved
+`ops` phase, unless the spec sets `ops_bucket: false`. The phase judge
+and its verifier also follow a short fixed rule set beyond your
+descriptions (the using-transect skill lists it).
 
 > [!TIP]
 > The shipped skills help here (see [Installation](#installation)):
