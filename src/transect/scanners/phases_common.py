@@ -40,9 +40,36 @@ _DEFAULT_OPS_PHASE = Phase(
 
 _NONE_PHASE = Phase(
     label="none_of_the_above",
-    description=(
-        "Activity that fits none of the declared phases and is not operational work"
-    ),
+    description="Activity that fits none of the declared phases",
+)
+_NONE_PHASE_BESIDE_OPS = _NONE_PHASE.model_copy(
+    update={"description": _NONE_PHASE.description + " and is not operational work"}
+)
+
+# the rules the judge and its verifier share; a change alters every judge request
+_OPS_RULE_FIXED = (
+    "Operational / setup / coordination / plumbing turns belong in '{ops}' "
+    "- do NOT force them into a substantive phase."
+)
+_OPS_RULE_AUTHORED = (
+    "'{ops}' is the operational bucket, defined by its description above: a "
+    "turn matching that description belongs there - do NOT force it into a "
+    "substantive phase, and do NOT widen the bucket beyond that description."
+)
+_DELEGATION_RULE = (
+    "A turn marked [DELEGATES] hands work to sub-agents. Unless a phase "
+    "description claims the hand-off itself, classify it by the delegated "
+    "task's purpose. When one turn's tasks serve different phases: use the "
+    "surrounding turns' phase if any task serves it; else the phase more "
+    "than half the tasks serve; else '{none}'."
+)
+_MARKER_RULES = (
+    "[THINKING] text is the agent's internal reasoning - treat it as "
+    "evidence of the turn's activity, same as its visible text.",
+    "[CALL] is a tool call the agent made in that turn and [RESULT] or "
+    "[ERROR] its recorded output; (tools: ...) lists calls by name only - "
+    "treat them as evidence of the turn's activity, same as its visible "
+    "text.",
 )
 
 
@@ -186,45 +213,79 @@ class StitchedPhase(BaseModel):
     )
 
 
-def resolve_phases(spec: Spec) -> tuple[list[Phase], str]:
+def resolve_phases(spec: Spec) -> tuple[list[Phase], str | None]:
     """Resolve the phase definitions shown to the judge, guaranteeing
-    an operational bucket and a none_of_the_above escape category.
+    a none_of_the_above escape category and, unless the spec turns it
+    off, an operational bucket.
 
     Args:
         spec: Supplies the user's phase definitions.
 
     Returns:
         ``(phases, ops_name)`` - the spec's phases, plus the reserved
-        "ops" phase when none is flagged ``ops`` in the spec, plus
-        the reserved "none_of_the_above" phase when the spec does
-        not declare one itself.
+        "ops" phase when ``spec.ops_bucket`` is on and no phase is
+        flagged ``ops``, plus the reserved "none_of_the_above" phase
+        when the spec does not declare one itself. ``ops_name`` is
+        None when the spec has no operational bucket.
     """
     phases = list(spec.phases)
     ops_name = next((p.label for p in phases if p.ops), None)
-    if ops_name is None:  # an unflagged "ops" phase is still the reserved bucket
+    if ops_name is None and spec.ops_bucket:
+        # an unflagged "ops" phase is still the reserved bucket
         ops_name = next(
             (p.label for p in phases if p.label == _DEFAULT_OPS_PHASE.label),
             None,
         )
-    if ops_name is None:
-        phases.append(_DEFAULT_OPS_PHASE)
-        ops_name = _DEFAULT_OPS_PHASE.label
+        if ops_name is None:
+            phases.append(_DEFAULT_OPS_PHASE)
+            ops_name = _DEFAULT_OPS_PHASE.label
     if all(p.label != _NONE_PHASE.label for p in phases):
-        phases.append(_NONE_PHASE)
+        phases.append(_NONE_PHASE if ops_name is None else _NONE_PHASE_BESIDE_OPS)
     return phases, ops_name
 
 
 def reserved_phase_labels(spec: Spec) -> set[str]:
     """The declared phase labels `resolve_phases` recognises by name, so
     renaming one changes the resolved vocabulary: a declared
-    ``none_of_the_above``, and a declared ``ops`` when no phase carries
-    the ops flag (the flag, not the name, selects the bucket otherwise).
+    ``none_of_the_above``, and a declared ``ops`` when the bucket is on
+    and no phase carries the ops flag (the flag, not the name, selects
+    the bucket otherwise; with the bucket off the name selects nothing).
     """
     labels = {p.label for p in spec.phases}
     reserved = {_NONE_PHASE.label} & labels
-    if not any(p.ops for p in spec.phases):
+    if spec.ops_bucket and not any(p.ops for p in spec.phases):
         reserved |= {_DEFAULT_OPS_PHASE.label} & labels
     return reserved
+
+
+def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
+    """The labelling rules the phase judge and its verifier share, in
+    order and unnumbered: the ops rule (only with an operational
+    bucket; worded from the author's description unless the bucket is
+    the reserved default or undescribed), the delegation rule with its
+    tie-break for a turn whose tasks serve several phases, and the
+    digest-marker rules. The judge adds its segmentation and confidence
+    rules around these; the verifier shows exactly these.
+
+    Args:
+        phase_defs: The resolved phases (`resolve_phases`).
+        ops_name: The operational bucket's label, None without one.
+    """
+    rules = []
+    if ops_name is not None:
+        ops = next(p for p in phase_defs if p.label == ops_name)
+        fixed = ops == _DEFAULT_OPS_PHASE or not ops.description
+        rules.append(
+            (_OPS_RULE_FIXED if fixed else _OPS_RULE_AUTHORED).format(ops=ops_name)
+        )
+    rules.append(_DELEGATION_RULE.format(none=_NONE_PHASE.label))
+    rules.extend(_MARKER_RULES)
+    return rules
+
+
+def numbered_rules(rules: Sequence[str]) -> str:
+    """Render rules as the prompt's numbered RULES block."""
+    return "\n\nRULES:\n" + "".join(f"{i}. {r}\n" for i, r in enumerate(rules, 1))
 
 
 def is_labelled(row: DigestJudgement) -> bool:
