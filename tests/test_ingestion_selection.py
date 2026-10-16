@@ -4,29 +4,39 @@ one-sample/epoch selection rules."""
 import asyncio
 import importlib
 import re
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
 import pytest
+from inspect_ai.log import read_eval_log, write_eval_log
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.api import _import_openclaw, _openclaw_files, _run, load
-from transect.selection import select_transcripts
+from transect.selection import read_index, select_transcripts
 from transect.spec import Spec
 
 
 def info(
-    task_id="s1", epoch=1, task_set="ts1", success=None, transcript_id=None
+    task_id="s1",
+    epoch=1,
+    task_set="ts1",
+    success=None,
+    transcript_id=None,
+    source_id=None,
 ) -> Any:
     """A TranscriptInfo stand-in (duck-typed; Any keeps checkers off)."""
+    transcript_id = transcript_id or f"{task_id}-e{epoch}-{task_set}"
     return SimpleNamespace(
         task_id=task_id,
         task_repeat=epoch,
         task_set=task_set,
         success=success,
-        transcript_id=transcript_id or f"{task_id}-e{epoch}-{task_set}",
+        transcript_id=transcript_id,
+        source_id=source_id,
+        source_uri=f"logs/{transcript_id}.eval",
     )
 
 
@@ -88,12 +98,85 @@ def test_auto_epoch_prefers_the_earliest_success(successes, kept_epoch):
     assert selection.transcript_ids == [f"s1-e{kept_epoch}-ts1"]
 
 
-def test_same_sample_and_epoch_across_task_sets_is_refused():
-    """The same (sample, epoch) in two task_sets is two different runs,
-    never an implicit choice."""
-    infos = [info(task_set="a"), info(task_set="b")]
-    with pytest.raises(ValueError, match="2 task_sets"):
-        select_transcripts(infos)
+@pytest.mark.parametrize("epochs", [None, "all", 1])
+@pytest.mark.parametrize(
+    "records, reason",
+    [
+        ([info(task_set="a"), info(task_set="b")], "2 task_sets"),
+        (
+            [
+                info(transcript_id="a", source_id="run-a"),
+                info(transcript_id="b", source_id="run-b"),
+            ],
+            "2 sources",
+        ),
+        (
+            [info(transcript_id="a"), info(transcript_id="b")],
+            "multiple transcript identities",
+        ),
+        (
+            [info(transcript_id="a", source_id="run-a"), info(transcript_id="b")],
+            "multiple transcript identities",
+        ),
+        (
+            [
+                info(transcript_id="same", source_id="run-a"),
+                info(transcript_id="same", source_id="run-b"),
+            ],
+            "2 sources",
+        ),
+        ([info(transcript_id="same", source_id="run")] * 2, "repeated input"),
+    ],
+)
+def test_same_sample_and_epoch_from_several_inputs_is_refused(epochs, records, reason):
+    """One sample/epoch with several physical inputs is never an implicit
+    epoch choice; the error states why and names every input's origin."""
+    with pytest.raises(ValueError, match=reason) as caught:
+        select_transcripts(records, epochs=epochs)
+    message = str(caught.value)
+    assert "sample 's1' (epoch 1)" in message
+    for record in records:
+        assert repr(record.transcript_id) in message
+        assert record.source_uri in message
+
+
+def test_every_colliding_epoch_is_reported_at_once():
+    """Collisions in several epochs surface in one error, not one per rerun."""
+    records = [
+        info(epoch=1),
+        info(epoch=1, task_set="b"),
+        info(epoch=3),
+        info(epoch=3, task_set="b"),
+    ]
+    with pytest.raises(ValueError) as caught:
+        select_transcripts(records, epochs="all")
+    assert "(epoch 1)" in str(caught.value) and "(epoch 3)" in str(caught.value)
+
+
+@pytest.mark.parametrize("sources", [("run-a", "run-b"), (None, None)])
+def test_distinct_epochs_select_regardless_of_recorded_sources(sources):
+    """Unique epochs stay valid whether or not the index recorded sources."""
+    records = [
+        info(source_id=sources[0]),
+        info(epoch=2, success=True, source_id=sources[1]),
+    ]
+    assert select_transcripts(records).transcript_ids == ["s1-e2-ts1"]
+    assert select_transcripts(records, epochs="all").transcript_ids is None
+
+
+def test_explicit_selection_ignores_collisions_outside_it():
+    """A requested sample and epoch is checked alone; other inputs' collisions
+    do not block it."""
+    records = [
+        info(task_set="a"),
+        info(task_set="b"),
+        info(epoch=2),
+        info(task_id="other", transcript_id="d"),
+        info(task_id="other", transcript_id="e"),
+    ]
+    assert select_transcripts(records, sample="s1", epochs=2).transcript_ids == [
+        "s1-e2-ts1"
+    ]
 
 
 def test_empty_log_errors():
@@ -270,6 +353,48 @@ def test_eval_log_scan_selects_the_requested_sample(fixture_logs, tmp_path):
     )
     assert set(results.token_timeline.sample_id) == {"fixture-sample-1"}
     assert (results.token_timeline.epoch == 1).all()
+
+
+@pytest.fixture(scope="module")
+def two_runs(tmp_path_factory) -> Path:
+    """Two independent eval runs of the demo task: distinct run ids, one
+    task_set. Built once per module; the demo log is the committed example."""
+    demo = Path(__file__).parents[1] / "examples" / "logs" / "house_price_demo.eval"
+    logs = tmp_path_factory.mktemp("two_runs")
+    for suffix in ["a", "b"]:
+        log = read_eval_log(demo)
+        log.eval.eval_id = f"eval-{suffix}"
+        log.eval.run_id = f"run-{suffix}"
+        log.samples[0].uuid = f"sample-{suffix}"
+        write_eval_log(log, logs / f"run-{suffix}.eval")
+    return logs
+
+
+@pytest.mark.parametrize("epochs", [None, "all", 1])
+def test_two_eval_runs_of_one_sample_are_rejected_before_scanning(
+    epochs, two_runs, tmp_path, monkeypatch
+):
+    """Two .eval files for the same task/sample/epoch fail before any scanner runs."""
+    records = asyncio.run(read_index(transcripts_from(str(two_runs))))
+    assert len({row.source_id for row in records}) == 2
+    assert len({row.task_set for row in records}) == 1
+    monkeypatch.setattr(
+        "transect.api.scout_scan",
+        lambda **kwargs: pytest.fail("ambiguous selection must fail before scanning"),
+    )
+    with pytest.raises(ValueError, match="2 sources") as caught:
+        _run(str(two_runs), Spec(), epochs=epochs, scans_dir=str(tmp_path / "scans"))
+    assert "run-a.eval" in str(caught.value) and "run-b.eval" in str(caught.value)
+
+
+def test_identical_eval_copies_are_reported_as_repeated_inputs(demo_log, tmp_path):
+    """Byte-identical copies do not masquerade as two epochs or get silently chosen."""
+    for name in ["a.eval", "b.eval"]:
+        shutil.copy2(demo_log, tmp_path / name)
+    records = asyncio.run(read_index(transcripts_from(str(tmp_path))))
+    assert len(records) == 2 and len({row.transcript_id for row in records}) == 1
+    with pytest.raises(ValueError, match="repeated input"):
+        select_transcripts(records)
 
 
 def test_vendored_importer_notice_and_docstring_pin_the_same_upstream_commit():
