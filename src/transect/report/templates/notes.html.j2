@@ -33,7 +33,11 @@
     sections.eval_setup_blocks ("not recorded by source" / "not set" included);
     prompts are (label, verbatim text) sub-expandables - untrusted
     agent-facing content, interpolated raw into autoescape. -#}
-{% macro setup_blocks(blocks) -%}
+{#- ``error``: the transcript's recorded eval_setup scan error, when
+    the scan failed on it; the setup facts are then unavailable, not
+    unrecorded, and the line says so above the expandables. -#}
+{% macro setup_blocks(blocks, error=None) -%}
+{% if error %}<p class="meta"><strong>eval_setup scan error</strong>: {{ error }}. The setup facts below could not be read for this transcript; its identity and run summary come from the transcript index. The scan status section at the end lists every recorded error.</p>{% endif %}
 {% for b in blocks %}<details class="event"><summary>{{ b.title }}</summary>{% for label, value, definition in b.rows %}<p class="meta">{% if definition %}<strong><span title="{{ definition }}">{{ label }}</span></strong>{% else %}<strong>{{ label }}</strong>{% endif %}: {{ value }}</p>{% endfor %}{% for label, text in b.prompts %}<details class="event definitions"><summary>{{ label }}</summary><p class="prompt-verbatim">{{ text }}</p></details>{% endfor %}</details>{% endfor %}
 {%- endmacro %}
 

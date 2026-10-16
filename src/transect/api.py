@@ -240,6 +240,8 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     No scanning, API calls or report render. Available partial results keep
     their recorded errors and coverage, provided required structural tables and
     any mounted custom-frame contracts can be loaded. Otherwise loading raises.
+    A transcript whose structural scan recorded an error has no rows in the
+    structural frames; ``scan_status`` names it and the error.
 
     Args:
         scans_dir: A transect() ``scans_dir`` (the latest scan in it is

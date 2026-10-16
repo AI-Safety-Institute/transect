@@ -16,7 +16,13 @@ Columns (identity prefix explained in common.py):
 
 import pandas as pd
 
-from transect.frames.common import IDENTITY_COLS, identity, result_value, with_schema
+from transect.frames.common import (
+    IDENTITY_COLS,
+    identity,
+    result_value,
+    with_schema,
+)
+from transect.scan_status import scan_error
 
 
 def lane_activity_df(results: pd.DataFrame) -> pd.DataFrame:
@@ -24,6 +30,8 @@ def lane_activity_df(results: pd.DataFrame) -> pd.DataFrame:
     tool activity, for every sub-agent span."""
     rows = []
     for _, r in results.iterrows():
+        if scan_error(r):
+            continue
         identity_cols = identity(r)
         value = result_value(r["value"])
         end_of = {

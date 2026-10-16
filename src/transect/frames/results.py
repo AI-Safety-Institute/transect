@@ -20,7 +20,9 @@ class TransectResults:
     transcript_info: pd.DataFrame
     """One row per transcript: task, model, outcome, wall clock, and
     the run's setup facts (prompts, scaffold arguments, eval config)
-    for the report's intro."""
+    for the report's intro. A transcript whose eval_setup scan errored
+    keeps its index metadata, with the setup facts None and the error
+    in ``scan_error``."""
 
     token_timeline: pd.DataFrame
     """One row per model turn in any lane (turn NA off the orchestrator

@@ -44,6 +44,7 @@ from transect.frames.common import (
     result_value,
     with_schema,
 )
+from transect.scan_status import scan_error
 
 _METADATA_COLUMNS = ("strategy", "messages_before", "messages_after", "trigger")
 _RECORDED_COLUMNS = ("role", "metadata", "compaction_prompt", "compaction_nudge")
@@ -86,6 +87,8 @@ def flushes_df(results: pd.DataFrame, token_timeline: pd.DataFrame) -> pd.DataFr
 
     rows = []
     for _, r in results.iterrows():
+        if scan_error(r):
+            continue
         identity_cols = identity(r)
         lanes = lanes_of.get(identity_cols["transcript_id"], {})
         for f in result_value(r["value"]).get("flushes") or []:

@@ -83,6 +83,7 @@ from transect.frames.common import (
     verifier_review,
     with_schema,
 )
+from transect.scan_status import scan_error
 
 # the structural columns
 _SPINE_DTYPES: tuple[tuple[str, Literal["Int64", "Float64"]], ...] = (
@@ -297,8 +298,7 @@ def _judge_rows(results: pd.DataFrame) -> pd.DataFrame:
         if not span_id:
             continue  # not a span item (defensive)
         meta = item_metadata(r)
-        error = r.get("scan_error")
-        has_error = isinstance(error, str) and bool(error)
+        has_error = scan_error(r) is not None
         value = result_value(r.get("value"))
         armed = value.get("verifier") or {}
         review = armed if armed.get("ran") else {}
