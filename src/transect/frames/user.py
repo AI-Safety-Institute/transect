@@ -19,6 +19,7 @@ from transect.frames.common import (
     verifier_review,
 )
 from transect.scan_status import scan_error
+from transect.spec import label_key
 
 
 def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
@@ -42,6 +43,8 @@ def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
     """
     rows: list[dict] = []
     for _, r in results.iterrows():
+        # an errored item carries neither a value nor its loader metadata,
+        # so there is no turn to place it on; scan_status names it
         if scan_error(r):
             continue
         identity_cols = identity(r)
@@ -173,11 +176,7 @@ def _item_row(r, value: dict) -> dict:
     projection when the scanner stamped a judge block."""
     row = {"item": input_id(r), **item_metadata(r)}
     raw = r.get("answer")
-    label = (
-        "_".join(raw.strip().lower().split())
-        if isinstance(raw, str) and raw.strip()
-        else None
-    )
+    label = label_key(raw) if isinstance(raw, str) and raw.strip() else None
     row["label"] = label
     if "judge" not in value:
         row.update(value)

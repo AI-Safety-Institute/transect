@@ -371,3 +371,21 @@ def test_verify_sample_outside_the_unit_interval_is_rejected():
 def test_verify_with_a_cohort_is_rejected():
     with pytest.raises(ValueError, match="verifier XOR cohort"):
         subagent_classification(CLOSED, [MODEL, "mockllm/model2"], verify=True)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"answer": ["Research", "none_of_the_above"]},
+        {"answer": ["research"], "vocabulary": {"Research": "Investigate"}},
+    ],
+)
+def test_cohort_scanner_refuses_labels_that_are_not_keys(kwargs, monkeypatch):
+    """A custom layer's closed labels are checked before a judge exists."""
+    monkeypatch.setattr(
+        cohort_mod,
+        "llm_scanner",
+        lambda **_: pytest.fail("labels must be checked before building a judge"),
+    )
+    with pytest.raises(ValueError, match="must be their own keys"):
+        cohort_mod.cohort_llm_scanner("Classify the work", **kwargs)

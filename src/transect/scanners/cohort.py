@@ -29,6 +29,8 @@ from inspect_scout import (
 )
 from pydantic import BaseModel, Field, JsonValue, create_model
 
+from transect.spec import is_label_key, label_key
+
 logger = logging.getLogger(__name__)
 
 # every verifier selection trigger
@@ -254,7 +256,9 @@ def cohort_llm_scanner(
 
     Args:
         question: The llm_scanner question.
-        answer: The closed label list.
+        answer: The closed label list. Each label must be its own key
+            (`transect.spec.label_key`: lowercase, whitespace as
+            underscores), since answers are stored under that key.
         models: One model (solo) or several (cohort regime).
             ``None`` = llm_scanner's default model, solo only.
         k_rolls: Rolls of one model (k-roll regime); mutually
@@ -291,7 +295,8 @@ def cohort_llm_scanner(
         ValueError: On invalid models/k_rolls (see
             ``cohort_members``), incl. ``k_rolls != 1`` with
             ``models=None``; on ``verify=True`` with a multi-model
-            cohort (verifier XOR cohort).
+            cohort (verifier XOR cohort); on an answer or vocabulary
+            label that is not its own key.
     """
     if isinstance(answer, str):
         raise TypeError(
@@ -301,6 +306,10 @@ def cohort_llm_scanner(
         )
     labels = list(answer)
     vocabulary = _vocabulary_entries(vocabulary)
+    _require_label_keys(labels, "answer")
+    _require_label_keys(
+        [entry.get("label") for entry in vocabulary or []], "vocabulary"
+    )
     if models is None and k_rolls != 1:
         raise ValueError(
             "k_rolls requires an explicit models value - "
@@ -1074,10 +1083,21 @@ def _structured_answer(labels: list[str]) -> AnswerStructured:
 
 
 def _normalize_label(raw: object) -> str | None:
-    """snake_case label normalization."""
-    if not (isinstance(raw, str) and raw.strip()):
+    """A judge answer's stored key, None for no usable answer."""
+    if not isinstance(raw, str):
         return None
-    return "_".join(raw.strip().lower().split())
+    return label_key(raw) or None
+
+
+def _require_label_keys(labels: list, what: str) -> None:
+    """Refuse, before any judge is built, a closed label that is not its
+    own key: its stored answers would never join it."""
+    bad = [label for label in labels if not is_label_key(label)]
+    if bad:
+        raise ValueError(
+            f"{what} labels must be their own keys (lowercase, whitespace as "
+            f"underscores), got {bad!r}"
+        )
 
 
 def _call_failure(outcome: list | BaseException) -> tuple[CallStatus, str | None]:

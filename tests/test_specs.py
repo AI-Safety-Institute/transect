@@ -76,6 +76,25 @@ def test_committed_example_specs_load():
 
 
 @pytest.mark.parametrize(
+    "label, key",
+    [
+        ("Research", "research"),
+        ("Result Review", "result_review"),
+        (" review", "review"),
+        ("", ""),
+    ],
+)
+def test_subagent_label_must_be_its_own_key(label, key):
+    """A sub-agent label spelled unlike its stored key is refused up
+    front, naming the key to use."""
+    with pytest.raises(ValidationError, match="must be its own key") as caught:
+        Spec.model_validate({"subagent_labels": [label]})
+    if key:
+        assert f", {key!r}:" in str(caught.value)
+    assert Spec.model_validate({"subagent_labels": ["result_review"]})
+
+
+@pytest.mark.parametrize(
     "phases",
     [
         ["ops", "experiment"],
@@ -130,16 +149,16 @@ def test_only_phase_labels_resolved_by_name_keep_their_names(phases, kept):
     assert {label for label, token in mapping.items() if label == token} == kept
 
 
-@pytest.mark.parametrize("fallback", ["none_of_the_above", "None Of The Above"])
-def test_scrambled_subagent_vocabulary_is_isomorphic_to_the_original(fallback):
+def test_scrambled_subagent_vocabulary_is_isomorphic_to_the_original():
     """The scanner's stored rubric descrambles to the original's, entry for
-    entry: the exact reserved spelling keeps its name, any other label is
-    renamed (an ops-named role included) and the scanner adds its own
-    fallback in both cases alike."""
-    spec = Spec.model_validate({"subagent_labels": ["ops", "research", fallback]})
+    entry: a declared fallback keeps its name and every other label is
+    renamed, an ops-named role included."""
+    spec = Spec.model_validate(
+        {"subagent_labels": ["ops", "research", "none_of_the_above"]}
+    )
     scrambled, maps = scramble_spec(spec, seed=7)
     mapping = maps["subagents"]
-    assert (mapping[fallback] == fallback) == (fallback == "none_of_the_above")
+    assert mapping["none_of_the_above"] == "none_of_the_above"
     assert mapping["ops"].startswith("role_")
 
     def rubric(spec):

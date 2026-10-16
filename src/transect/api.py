@@ -55,7 +55,7 @@ from transect.layers import (
 from transect.report import render_report
 from transect.report.blocks import validate_section
 from transect.report.render import validate_section_order
-from transect.scan_status import build_scan_status
+from transect.scan_status import build_scan_status, scan_error
 from transect.scanners.base import (
     context_flush,
     eval_setup,
@@ -685,12 +685,23 @@ def _layer_frames(results, layers: list[Layer]) -> dict[str, pd.DataFrame]:
                     "transect() with the layer"
                 )
             raw = results.scanners[key]
-            if not len(raw) and (layer.section or layer.tags or layer.audit):
+            errors = [e for _, row in raw.iterrows() if (e := scan_error(row))]
+            if (layer.section or layer.tags or layer.audit) and not len(raw):
                 raise ValueError(
                     f"layer {layer.name!r}: scanner {key!r} produced no "
                     "results for this scan, so there is nothing to "
                     "render or tag - check the layer's loader against "
                     "these transcripts"
+                )
+            if (layer.section or layer.tags or layer.audit) and len(errors) == len(raw):
+                # an errored row carries no value, so a layer that only
+                # errored has nothing to render or tag: say why, rather
+                # than failing later on the frame's missing columns
+                raise ValueError(
+                    f"layer {layer.name!r}: scanner {key!r} recorded an error "
+                    f"on every one of its {len(raw)} results (first: "
+                    f"{errors[0]}), so there is nothing to render or tag - "
+                    "see scan_status, or load() without this layer"
                 )
             mounted[layer.name] = layer_frame(layer, raw)
         else:
