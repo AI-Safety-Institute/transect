@@ -53,6 +53,7 @@ class Lanes:
             if isinstance(item, TimelineEvent) and is_model_turn(item.event)
         )
         self._spans = {e.id: e for e in self.events if e.event == "span_begin"}
+        self._positions = {id(e): i for i, e in enumerate(self.events)}
 
     def is_main(self, event: Any) -> bool:
         """Whether a model event is one of the orchestrator's own turns."""
@@ -68,6 +69,10 @@ class Lanes:
             return None
         span = nearest_agent_span(self._spans, getattr(event, "span_id", None))
         return span if span is not None and span.id in self.sub_ids else None
+
+    def position(self, event: Any) -> int:
+        """An event's index in the transcript's event list."""
+        return self._positions[id(event)]
 
     def turns(self) -> Iterator[tuple[int, Any, list[ToolCall]]]:
         """Yield ``(turn, model event, tool calls)`` for the orchestrator's

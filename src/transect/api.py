@@ -62,6 +62,7 @@ from transect.scanners.base import (
     human_intervention,
     token_timeline,
 )
+from transect.scanners.digests import DigestSettings, resolve_digest
 from transect.scanners.phases import decision_phases
 from transect.scanners.subagents import subagent_classification
 from transect.selection import read_index, select_transcripts
@@ -80,6 +81,7 @@ def transect(
     verify: bool | None = None,
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
+    digest: DigestSettings | None = None,
     scans_dir: str = "scans",
     report_path: str | None = None,
     title: str | None = None,
@@ -138,6 +140,10 @@ def transect(
             per-span at that probability. No effect when the
             verifier is off (cohort regime, or ``verify=False``);
             values outside [0, 1] are rejected.
+        digest: What the phase judge, its verifier and the narrator
+            read per orchestrator turn (`DigestSettings`: the
+            character caps of each digest part and whether tool-call-
+            only turns are judged); ``None`` is the defaults.
         scans_dir: Where the scan store (and report) live.
         report_path: Where the report lands. A ``.html`` file path;
             an existing directory gets ``report.html`` placed inside
@@ -210,6 +216,7 @@ def transect(
         verify=verify,
         verifier_model=verifier_model,
         verify_sample=verify_sample,
+        digest=digest,
         scans_dir=scans_dir,
         max_processes=max_processes,
         extra_layers=extra_layers,
@@ -450,6 +457,7 @@ def _run(
     verify: bool | None = None,
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
+    digest: DigestSettings | None = None,
     scans_dir: str = "scans",
     max_processes: int = 1,
     extra_layers: list[Layer] | None = None,
@@ -463,6 +471,7 @@ def _run(
     # validate before resolving: a malformed layer must be refused before
     # its factory runs (and constructs judge models)
     validate_layers(list(extra_layers or []), builtin_frame_names())
+    digest = resolve_digest(digest)
     extra_layers = resolve_scanner_factories(
         list(extra_layers or []),
         {
@@ -482,6 +491,7 @@ def _run(
         verify=verify,
         verifier_model=verifier_model,
         verify_sample=verify_sample,
+        digest=digest,
     )
     if jsonl:
         # Keep new snapshots outside an existing database's recursive search root.
@@ -519,10 +529,12 @@ def _scanners(
     verify: bool | None = None,
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
+    digest: DigestSettings | None = None,
 ) -> list:
     """The scanner set for a run: structural always; judge scanners when a
     model is given - decision_phases additionally needs a phase vocab.
-    subagent_classification additionally needs subagent_labels."""
+    subagent_classification additionally needs subagent_labels. The
+    digest settings are passed resolved, so Scout records them."""
     scanners = [
         token_timeline(),
         context_flush(),
@@ -544,6 +556,7 @@ def _scanners(
                     verify=verify,
                     verifier_model=verifier_model,
                     verify_sample=verify_sample,
+                    digest=digest,
                 )
             )
         if spec.subagent_labels:

@@ -133,6 +133,10 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
 - **Scanners**: per-transcript extractors, run by Scout. Structural
   scanners are free and always on; judged scanners run when
   `judge_models` is set and the Spec declares their vocabulary.
+- **Turn digests**: what the phase judges read - one line per
+  orchestrator turn with content, carrying its reasoning, text, tool
+  calls and sub-agent tasks, each part capped by a `DigestSettings`
+  passed as `digest=` to `transect()`.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.
@@ -491,13 +495,13 @@ worked example is `examples/transect_custom_layer.py`; the shape:
 
 ```python
 from inspect_scout import scanner
-from transect import Layer, cohort_llm_scanner, reasoning_turns, transect, turns_frame
+from transect import Layer, cohort_llm_scanner, digest_turns, transect, turns_frame
 from transect.report import Markdown, TurnBand
 
-@scanner(loader=reasoning_turns())  # the units to judge: one item per reasoning turn
+@scanner(loader=digest_turns())  # the units to judge: one item per digest turn
 def research_skills(spec, judge_models=None):
     skills = spec.extra["research_skills"]  # the rubric lives in the spec
-    question = "Label this reasoning turn with the best-fitting category:\n" + "\n".join(
+    question = "Label this turn with the best-fitting category:\n" + "\n".join(
         f"- {label}: {text}" for label, text in skills.items()
     )
     return cohort_llm_scanner(
@@ -527,7 +531,7 @@ results = transect(
             audit=("turn", "label"),
             # the layer's own report section
             section=[
-                Markdown("#### One skill label per reasoning turn"),
+                Markdown("#### One skill label per turn"),
                 TurnBand(label="label"),
             ],
         )
@@ -543,7 +547,7 @@ Each `Layer` field is one surface, all optional:
   voting, verifier, and batching; structural scanners are $0. Pass
   the factory un-invoked: `transect()` calls it with the judge
   arguments its signature declares, the loaded `spec` when declared,
-  and any `scanner_args={...}` on the layer. `reasoning_turns()`
+  and any `scanner_args={...}` on the layer. `digest_turns()`
   numbers its items on the orchestrator turn axis; a loader or
   scanner of your own numbers turns the same way, with
   `transect.scanners.helpers.orchestrator_turns` (a sub-agent's own
@@ -564,9 +568,11 @@ Structural extraction is free (no LLM calls): without
 structural scanners run and the whole scan costs nothing. Custom
 scanners can make their own provider calls regardless of those
 switches. Judged surfaces cost roughly (turns + sub-agents) x judges
-x rolls calls per transcript; the demo example costs cents.
+x rolls calls per transcript; the demo example costs cents. What
+each phase-judge call reads per turn, and so its size, is set by
+`DigestSettings` (see Concepts).
 
-Batching is the cost lever on long runs: `reasoning_turns(batch=N)`
+Batching is the cost lever on long runs: `digest_turns(batch=N)`
 with `cohort_llm_scanner(batch=True)` judges N units per call,
 cutting a layer's classification calls. Each batched call returns
 one answer per unit, so votes are still counted per unit and the

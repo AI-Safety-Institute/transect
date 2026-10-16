@@ -22,13 +22,14 @@ from transect.report import charts
 from transect.report.excerpts import _tool_call_counts, _turn_excerpts
 from transect.report.lanes_layout import pack_lanes
 from transect.report.render import _span_lanes
+from transect.scanners.digests import turn_digests
 from transect.scanners.helpers import (
     all_model_turns,
     main_span,
     orchestrator_turns,
     subagent_span_begins,
 )
-from transect.scanners.phases import decision_phases, turn_digests
+from transect.scanners.phases import decision_phases
 from transect.spec import Spec
 
 T0 = datetime(2026, 1, 1, 10, 0, 0)

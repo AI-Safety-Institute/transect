@@ -418,16 +418,20 @@ def _verifier_name(entity: pd.DataFrame) -> str | None:
 
 def phase_chips(
     phases: pd.DataFrame,
+    phase_turns: pd.DataFrame,
     colors: dict[str, tuple[str, str | None]],
     definitions: pd.DataFrame | None = None,
 ) -> Markup:
     """The band's own legend: the hue-reuse caveat (if any) and the
-    per-phase chips, rendered directly under the chart. The
+    per-phase chips, rendered directly under the chart. A chip counts
+    the label's phases and the orchestrator turns those phases hold
+    (``phase_turns`` rows, attributed turns included). The
     counts/judge/cohort/verifier detail lives on `phase_meta_line`, next
     to the phase cards.
     """
-    one = phases.sort_values("phase_index")
-    counts = one.groupby("phase").agg(n=("phase", "size"), turns=("n_turns", "sum"))
+    counts = phases.groupby("phase").agg(n=("phase", "size"))
+    sizes = phase_turns.groupby("phase").size()
+    counts["turns"] = sizes.reindex(counts.index, fill_value=0)
     chips = []
     n_reused = 0
     for label, (color, hatch) in colors.items():
@@ -1104,9 +1108,7 @@ def phase_cards(
         spend = p.new_work_tokens if pd.notna(p.new_work_tokens) else 0
         tags = [
             f"turns {int(p.turn_start)}–{int(p.turn_end)}",
-            # n_turns counts the phase's reasoning-bearing (digest) turns,
-            # which can be fewer than the range width (tool-only turns)
-            f"{int(p.n_turns)} reasoning turn(s)",
+            f"{int(p.n_digest_turns)} turn(s) shown to the judge",
             f"{int(spend):,} orchestrator new-work tokens",
         ]
         n_tools = (
@@ -1317,11 +1319,12 @@ def reliability_audit(
                 "value": _turns_summary(phase_turns),
                 "definition": "Orchestrator turns of this transcript, split by "
                 "how each turn's label was decided: judged (labelled directly); "
-                "filled (a reasoning turn no judge answer covered, inheriting "
-                "the previous label at low confidence); attributed (content-free "
-                "tool-call-only or failed turns the judge never saw, taking the "
-                "surrounding phase); unjudged (refusal / no_answer / "
-                "missing_turn); or unattributed (tool-only turns after an "
+                "filled (a turn shown to the judge that no judge answer "
+                "covered, inheriting the previous label at low confidence); "
+                "attributed (turns the judge never saw - failed or empty "
+                "turns, and tool-call-only turns when tool_only_turns is off - "
+                "taking the surrounding phase); unjudged (refusal / no_answer "
+                "/ missing_turn); or unattributed (unseen turns after an "
                 "unjudged turn, with no phase to take - greyed in the band).",
             },
             {
@@ -2314,14 +2317,15 @@ def _span_verifier_rows(subagents: pd.DataFrame, unit_word: str = "span") -> lis
         },
         {
             "label": "Verifier outcomes",
-            "value": f"{len(completed)} completed · "
+            "value": f"{len(completed)} judged · "
             f"{len(selected) - len(completed)} without usable verdict · "
             f"{int(overturned.sum())} relabelled · {int(weak.sum())} "
             "weak relabel(s) recorded, not applied · "
             f"{int((overturned & sampled).sum())} of {int(sampled.sum())} "
-            "completed random samples relabelled",
-            "definition": "Relabel rates condition on usable completed verdicts; "
-            "missing outcomes are reported separately.",
+            "judged random samples relabelled",
+            "definition": "Judged means the verifier returned a usable verdict; "
+            "relabel rates condition on those, and missing outcomes are "
+            "reported separately.",
         },
     ]
 

@@ -1,4 +1,4 @@
-"""Research-skills custom layer: one skill label per reasoning turn.
+"""Research-skills custom layer: one skill label per digest turn.
 
 Run from the repo root (needs ANTHROPIC_API_KEY):
 
@@ -12,14 +12,14 @@ from transect import (
     Layer,
     Spec,
     cohort_llm_scanner,
-    reasoning_turns,
+    digest_turns,
     transect,
     turns_frame,
 )
 from transect.report import Markdown, TurnBand
 
 
-@scanner(loader=reasoning_turns())
+@scanner(loader=digest_turns())
 def research_skills(
     spec: Spec,  # injected by transect(): the rubric lives in spec.extra
     judge_models: str | Model | list[str | Model] | None = None,
@@ -27,12 +27,12 @@ def research_skills(
     verify: bool | None = None,
     verify_sample: float | None = None,
 ) -> Scanner[Transcript]:
-    """One research-skill label per reasoning turn."""
+    """One research-skill label per digest turn."""
     skills: dict[str, str] = spec.extra["research_skills"]
     question = (
-        "Above is one reasoning turn of an agent, with any sub-agent task "
-        "it wrote behind a [DELEGATES] marker. Label the turn with the "
-        "best-fitting research-skill category:\n"
+        "Above is one turn of an agent, with its tool calls and any "
+        "sub-agent task it wrote behind a [DELEGATES] marker. Label the "
+        "turn with the best-fitting research-skill category:\n"
         + "\n".join(f"- {label}: {text}" for label, text in skills.items())
         + "\n\nJudge only the text shown. A turn often holds several moves - "
         "label the last substantive one. A [DELEGATES] line counts as the "
@@ -70,9 +70,9 @@ results = transect(
             audit=("turn", "label"),
             section=[
                 Markdown(
-                    "#### Research-skill per reasoning turn\n\n"
-                    "One research-skill label per orchestrator reasoning turn "
-                    "(own text plus each sub-agent spawn task)."
+                    "#### Research-skill per turn\n\n"
+                    "One research-skill label per orchestrator turn the "
+                    "judge saw (its text, tool calls and sub-agent spawn tasks)."
                 ),
                 TurnBand(label="label"),
             ],
@@ -85,7 +85,7 @@ if results.viewer_url:
     print("viewer:", results.viewer_url)
 skills = results.layer_frames["research_skills"]
 print(
-    "\nskill labels over the run's reasoning turns:\n\n"
+    "\nskill labels over the run's digest turns:\n\n"
     + skills.label.value_counts().to_string()
 )
 print(

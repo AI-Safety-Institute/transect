@@ -63,7 +63,7 @@ def render_report(
         if len(timeline)
         else []
     )
-    phase_colors = _phase_colors(results.phases)
+    phase_colors = _phase_colors(results.phase_turns)
     # family -> declaring layer, the chips' and selectors' provenance
     tag_layer_of: dict[str, str] = {}
     for layer in results.extra_layers:
@@ -160,7 +160,9 @@ def render_report(
                         )
                     ),
                     _chart(phase_components, phase_height),
-                    sections.phase_chips(my_phases, phase_colors, my_definitions),
+                    sections.phase_chips(
+                        my_phases, my_phase_turns, phase_colors, my_definitions
+                    ),
                     sections.agreement_strip_caption(my_phase_turns, my_phases),
                     sections.phase_definitions(my_definitions),
                 ],

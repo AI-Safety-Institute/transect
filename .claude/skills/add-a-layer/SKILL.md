@@ -50,16 +50,16 @@ reliability functions work unchanged.
 
 ```python
 from inspect_scout import Scanner, Transcript, scanner
-from transect import Layer, cohort_llm_scanner, reasoning_turns, turns_frame
+from transect import Layer, cohort_llm_scanner, digest_turns, turns_frame
 from transect.report import Markdown, TurnBand
 
-@scanner(loader=reasoning_turns())
+@scanner(loader=digest_turns())
 def research_skills(spec, judge_models=None, k_rolls=1, verify=None):
     # the rubric lives in the spec's extra block: {label: description},
     # always including a none_of_the_above escape hatch
     skills = spec.extra["research_skills"]
     question = (
-        "Above is one reasoning turn of an agent. Label the turn with the "
+        "Above is one turn of an agent. Label the turn with the "
         "best-fitting category:\n"
         + "\n".join(f"- {label}: {text}" for label, text in skills.items())
     )
@@ -80,7 +80,7 @@ MY_LAYER = Layer(
     tags={"skill": "label"},
     audit=("turn", "label"),
     section=[
-        Markdown("#### One skill label per reasoning turn"),
+        Markdown("#### One skill label per turn"),
         TurnBand(label="label"),
     ],
 )
@@ -89,10 +89,14 @@ MY_LAYER = Layer(
 The pieces, and the rules that make them work:
 
 - **Loader**: the loader is how you choose the unit of judgement,
-  not a requirement. `transect.reasoning_turns()` yields one item per
-  main-lane reasoning turn (reasoning blocks inlined behind a
-  `[THINKING]` marker when the source records them, sub-agent spawn
-  tasks behind a `[DELEGATES]` marker) - the right unit for a second
+  not a requirement. `transect.digest_turns()` yields one item per
+  main-lane turn as `decision_phases` shows it to its judge: reasoning
+  blocks behind `[THINKING]` when the source records them, the turn's
+  text, each tool call with its arguments behind `[CALL]` (and its
+  output behind `[RESULT]` / `[ERROR]` when switched on), and
+  sub-agent spawn tasks behind `[DELEGATES]`; pass the same
+  `DigestSettings` as `digest=` to both the loader and `transect()`
+  to keep the lines identical - the right unit for a second
   per-turn facet, already numbered on the orchestrator turn axis. For
   another unit shape, write your own `@loader`; whatever metadata you
   put on each yielded item (e.g. `{"turn": n}`) rides into the frame
@@ -107,7 +111,7 @@ The pieces, and the rules that make them work:
   audit (`audit=("item", "label")`) work unchanged. Only the
   turn-anchored surfaces (tags, TurnBand/TurnChart, the spend
   grouping) need a per-turn unit.
-- **Batching**: `reasoning_turns(batch=N)` +
+- **Batching**: `digest_turns(batch=N)` +
   `cohort_llm_scanner(..., batch=True)` judges up to N turns per
   call instead of one - the big cost lever on long runs, and the
   judge sees neighbouring turns as context. Results stay per turn

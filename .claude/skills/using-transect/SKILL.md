@@ -269,10 +269,9 @@ too, but nothing here requires it.)
   `subagent_votes`, `label_definitions` (judged); `subagents` is
   both - every span's structural facts on any run, label columns
   filled only when judged.
-- Two column gotchas: `phases.n_turns` counts the reasoning turns the
-  judge saw, judged and filled (fewer than the `turn_start..turn_end`
-  width - content-free tool-only turns in range are not counted; the
-  axis itself holds orchestrator turns only, so a sub-agent's turns are
+- Two column gotchas: `phases.n_digest_turns` counts the turns the
+  judge saw; a phase's full size is its rows in `phase_turns` (the
+  axis holds orchestrator turns only, so a sub-agent's turns are
   never in a range); `new_work` sums are new-content tokens, not
   billable cost, and `phases.new_work_tokens` is orchestrator spend
   while `delegated_new_work_tokens` is the spend of sub-agents spawned

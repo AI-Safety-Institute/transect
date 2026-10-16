@@ -9,9 +9,9 @@ from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
 from transect.scanners.cohort import _SPOT_DEFAULT, LOWCONF, Trigger, VerifierReview
+from transect.scanners.digests import Digest
 from transect.scanners.phases_cohort import ConsensusJudgement
 from transect.scanners.phases_common import (
-    Digest,
     PhaseReview,
     StitchedPhase,
     call_judge,
@@ -114,7 +114,7 @@ def select_for_verify(
         prev_l = phases[k - 1].phase if k > 0 else None
         next_l = phases[k + 1].phase if k + 1 < len(phases) else None
         if (
-            p.n_turns <= 2
+            p.n_digest_turns <= 2
             and prev_l == next_l
             and prev_l is not None
             and prev_l != p.phase
