@@ -123,10 +123,11 @@ armed (the Sub-agent activity summary line does the same).
   single voter and read "n/a (single voter)", which is missing
   coverage, not disagreement. Confirm in the audit's Member coverage
   row (votes produced vs asked, longest missed stretch) before
-  reading anything into the labels there. A lone grey turn can also
-  be one the judge never saw (a failed or empty turn, or a
-  tool-call-only turn with `tool_only_turns` off) that took its
-  phase by attribution.
+  reading anything into the labels there. A grey turn, or a run of
+  them, can also be turns the judge never saw (failed or empty turns,
+  such as an OpenClaw provider-failure stretch, or tool-call-only
+  turns with `tool_only_turns` off) that took their phase by
+  attribution.
 - Legend chips count phases/turns per label. Reserved buckets (ops,
   none_of_the_above) chip even at zero - an unused escape hatch is
   information.
