@@ -214,6 +214,19 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str]:
     return phases, ops_name
 
 
+def reserved_phase_labels(spec: Spec) -> set[str]:
+    """The declared phase labels `resolve_phases` recognises by name, so
+    renaming one changes the resolved vocabulary: a declared
+    ``none_of_the_above``, and a declared ``ops`` when no phase carries
+    the ops flag (the flag, not the name, selects the bucket otherwise).
+    """
+    labels = {p.label for p in spec.phases}
+    reserved = {_NONE_PHASE.label} & labels
+    if not any(p.ops for p in spec.phases):
+        reserved |= {_DEFAULT_OPS_PHASE.label} & labels
+    return reserved
+
+
 def is_labelled(row: DigestJudgement) -> bool:
     """Whether ``row`` carries a phase label and so lies inside a phase.
 

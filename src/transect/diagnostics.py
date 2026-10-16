@@ -11,26 +11,27 @@ import random
 
 import pandas as pd
 
-from transect.scanners.phases_common import _DEFAULT_OPS_PHASE, _NONE_PHASE
-from transect.scanners.subagents import NONE_OF_THE_ABOVE
+from transect.scanners.phases_common import reserved_phase_labels
+from transect.scanners.subagents import reserved_subagent_labels
 from transect.spec import Spec
 
 
 def scramble_spec(spec: Spec, seed: int) -> tuple[Spec, dict[str, dict[str, str]]]:
     """A label-scrambled copy of ``spec`` plus the descramble mapping.
 
-    Non-reserved phase and sub-agent labels are replaced with neutral tokens
-    (``phase_a`` / ``role_a``, ..., neutral-token assignment shuffled by ``seed``);
-    descriptions, ``context``, and the ``ops`` flag are untouched, so
-    the judges see identical definitions. The phase name ``ops`` and each
-    surface's ``none_of_the_above`` keep their names: those names control
-    implicit category resolution. A custom-named ``ops=True`` phase is renamed
-    but retains its role.
+    Every phase and sub-agent label is replaced with a neutral token
+    (``phase_a`` / ``role_a``, ..., neutral-token assignment shuffled by ``seed``),
+    except the labels a scanner recognises by name (`reserved_phase_labels`,
+    `reserved_subagent_labels`): renaming those would change the resolved
+    vocabulary, so they keep their names. Descriptions, ``context``, and the
+    ``ops`` flag are untouched, so the judges see identical definitions.
 
     Returns:
         ``(scrambled, mapping)`` - mapping has one dict per surface
         (``"phases"`` / ``"subagents"``), original label -> token,
-        with declared reserved names mapped to themselves, for `descramble`.
+        with a kept label mapped to itself, for `descramble`. The mapping
+        depends on which labels are reserved, so retain it from the run
+        rather than re-deriving it under another transect version.
     """
     rng = random.Random(seed)
 
@@ -44,29 +45,19 @@ def scramble_spec(spec: Spec, seed: int) -> tuple[Spec, dict[str, dict[str, str]
                 out = chr(ord("a") + rem) + out
             return out
 
-        renamed_labels = [label for label in labels if label not in reserved]
-        letters = [suffix(i) for i in range(len(renamed_labels))]
+        renamed = [label for label in labels if label not in reserved]
+        letters = [suffix(i) for i in range(len(renamed))]
         rng.shuffle(letters)
-        renamed = {
-            label: f"{prefix}_{letter}"
-            for label, letter in zip(renamed_labels, letters, strict=True)
-        }
-        return {label: renamed.get(label, label) for label in labels}
+        token_of = dict(zip(renamed, (f"{prefix}_{x}" for x in letters), strict=True))
+        return {label: token_of.get(label, label) for label in labels}
 
     phase_map = tokens(
-        "phase",
-        [p.label for p in spec.phases],
-        {_DEFAULT_OPS_PHASE.label, _NONE_PHASE.label},
+        "phase", [p.label for p in spec.phases], reserved_phase_labels(spec)
     )
-    role_labels = [r.label for r in spec.subagent_labels]
     role_map = tokens(
         "role",
-        role_labels,
-        {
-            label
-            for label in role_labels
-            if "_".join(label.strip().lower().split()) == NONE_OF_THE_ABOVE
-        },
+        [r.label for r in spec.subagent_labels],
+        reserved_subagent_labels(spec),
     )
     scrambled = spec.model_copy(
         update={
@@ -86,9 +77,10 @@ def descramble(labels: pd.Series, mapping: dict[str, str]) -> pd.Series:
     """Map a scrambled run's label column back to the original names.
 
     ``mapping`` is one surface's dict from `scramble_spec` (original
-    -> token). Declared reserved names map to themselves. Values outside
-    the mapping, including automatically added reserved buckets and NaN,
-    pass through unchanged.
+    -> token; a kept label maps to itself). Values outside the mapping -
+    the buckets a scanner adds itself (``none_of_the_above``, a reserved
+    ``ops``) and NaN - pass through unchanged, since they were never
+    scrambled.
     """
     inverse = {token: original for original, token in mapping.items()}
     return labels.map(lambda v: inverse.get(v, v) if isinstance(v, str) else v)

@@ -162,6 +162,15 @@ def subagent_classification(
     return task_only
 
 
+def reserved_subagent_labels(spec: Spec) -> set[str]:
+    """The declared sub-agent labels `subagent_classification` recognises
+    by name: a declared ``none_of_the_above`` (that exact spelling, as the
+    scanner compares it) stands in for the scanner's own fallback entry,
+    so renaming it would add that entry back.
+    """
+    return {NONE_OF_THE_ABOVE} & {entry.label for entry in spec.subagent_labels}
+
+
 def _activity_digest(activity: SpanActivity) -> str:
     """Render a span's recorded activity for the judge.
 
