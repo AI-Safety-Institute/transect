@@ -437,27 +437,11 @@ frame has one row per call: a `Table` shows the rows as they are,
 while a per-turn band or tag needs an explicit aggregation to one row
 per turn first (section 1's one-row-per-unit rule).
 
-- **Question**: phrase it for one unit, and quote `"yes"` and `"no"`
-  in YAML, which otherwise reads them as booleans. The question is
-  the judge's only definition, since `Spec.context` does not reach a
-  custom judge. The judge sees one unit at a time, so an event whose
-  evidence spans units (a test that failed three turns earlier) needs
-  a batched loader so the judge sees neighbouring units, or a loader
-  that puts that context into the item.
-- **Reading it**: "did it happen at all" is an any-of over the
-  transcript's rows, `frame.label.eq("yes").groupby(frame.transcript_id).any()`
-  in pandas; each "yes" row names its turn, so it can be read against
-  the phase that turn falls in. A "yes" is a judge label like any
-  other: read the explanation and the transcript behind it before
-  reporting it.
-- **Whole-transcript variant**: `@scanner(messages="all")` with no
-  loader asks the question once per transcript (section 1's
-  no-loader shape), at one call per transcript and with the judge
-  seeing the whole run. It says whether, not where: Scout's `[Mn]`
-  message references do not survive `cohort_llm_scanner`. And a
-  transcript longer than the judge's context window is judged from
-  its last segment only (Scout's `ResultReducer.last` for a
-  structured answer, and `cohort_llm_scanner` takes no reducer), so
-  an event in an earlier segment is lost. Carrying message references
-  into the frames and a findings-shaped event scanner are tracked in
-  [issue #77](https://github.com/AI-Safety-Institute/transect/issues/77).
+Quote `"yes"` and `"no"` in the YAML, which otherwise reads them as
+booleans. The same question can also be asked
+once per transcript with no loader (`@scanner(messages="all")`,
+section 1), which says whether the event happened but not where, and
+on a transcript longer than the judge's context window answers from
+the last segment only; message references in the frames and a
+findings-shaped event scanner are tracked in
+[issue #77](https://github.com/AI-Safety-Institute/transect/issues/77).
