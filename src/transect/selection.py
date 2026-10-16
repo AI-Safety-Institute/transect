@@ -109,17 +109,17 @@ def _validate_unique_runs(infos: list[TranscriptInfo]) -> None:
     establish independent runs; distinct transcript IDs still make selection
     ambiguous. Repeated identities are reported rather than deduplicated from
     metadata, which cannot establish that their contents are identical.
+    Every colliding sample/epoch is named in the one error.
     """
     groups: dict[tuple[str, int], list[TranscriptInfo]] = {}
     for info in infos:
         groups.setdefault((info.task_id or "", _epoch(info)), []).append(info)
+    problems = []
     for (sample_id, epoch_n), group in groups.items():
         if len(group) < 2:
             continue
         task_sets = {info.task_set or "" for info in group}
-        sources = {
-            source for info in group if (source := getattr(info, "source_id", None))
-        }
+        sources = {info.source_id for info in group if info.source_id}
         transcripts = {info.transcript_id for info in group}
         if len(task_sets) > 1:
             reason = f"{len(task_sets)} task_sets {sorted(task_sets)}"
@@ -131,14 +131,16 @@ def _validate_unique_runs(infos: list[TranscriptInfo]) -> None:
             reason = "repeated input for the same transcript identity"
         origins = "; ".join(
             f"{info.transcript_id!r} "
-            f"(source_id={getattr(info, 'source_id', None)!r}, "
-            f"source_uri={getattr(info, 'source_uri', None)!r})"
+            f"(source_id={info.source_id!r}, source_uri={info.source_uri!r})"
             for info in group
         )
+        problems.append(
+            f"sample {sample_id!r} (epoch {epoch_n}) has {reason}: {origins}"
+        )
+    if problems:
         raise ValueError(
-            f"sample {sample_id!r} (epoch {epoch_n}) has {reason}: {origins}. "
-            "A Transect run scans one run of one sample; narrow logs to one "
-            "input per epoch and remove repeated inputs."
+            "\n".join(problems) + ". A Transect run scans one run of one sample; "
+            "narrow logs to one input per epoch and remove repeated inputs."
         )
 
 
