@@ -2,10 +2,16 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from helpers import JSON_SPEC
+from helpers import JSON_SPEC, demo_judge, run_item, scripted_judge, vote_output
+from inspect_ai.model import ChatMessageUser
+from inspect_scout import Transcript
 from pydantic import ValidationError
 
+from transect import load
+from transect.api import _run
 from transect.diagnostics import descramble, scramble_spec
+from transect.scanners.phases_common import resolve_phases
+from transect.scanners.subagents import subagent_classification
 from transect.spec import Spec, load_spec
 
 MINIMAL = {
@@ -69,27 +75,104 @@ def test_committed_example_specs_load():
     assert example.phases and example.subagent_labels
 
 
-def test_scramble_spec_round_trips_and_preserves_definitions():
-    """Scrambling renames labels only; descramble inverts them and
-    passes reserved/NaN values through."""
-
-    spec = Spec.model_validate(
-        {
-            "phases": [
-                {"label": "setup", "description": "prepare", "ops": True},
-                {"label": "experiment", "description": "run things"},
-            ],
-            "subagent_labels": [{"label": "reviewer", "description": "checks"}],
-            "context": "ctx",
-        }
+@pytest.mark.parametrize(
+    "phases",
+    [
+        ["ops", "experiment"],
+        [{"label": "coordination", "ops": True}, "experiment"],
+        [
+            {"label": "none_of_the_above", "description": "Authored fallback"},
+            "experiment",
+        ],
+        ["ops", "none_of_the_above", "experiment"],
+        ["ops", {"label": "coordination", "ops": True}, "experiment"],
+        [{"label": "setup", "description": "prepare", "ops": True}, "experiment"],
+        [],
+    ],
+)
+def test_scramble_spec_preserves_the_resolved_phase_vocabulary(phases):
+    """Scrambling renames labels only: definitions, flags, context and
+    the resolved vocabulary differ from the original by the mapping alone,
+    and descramble inverts it, passing unmapped and NaN values through."""
+    original = Spec.model_validate({"phases": phases, "context": "ctx"})
+    before, before_ops = resolve_phases(original)
+    scrambled, maps = scramble_spec(original, seed=7)
+    mapping = maps["phases"]
+    after, after_ops = resolve_phases(scrambled)
+    assert [p.model_dump() for p in after] == [
+        {**p.model_dump(), "label": mapping.get(p.label, p.label)} for p in before
+    ]
+    assert after_ops == mapping.get(before_ops, before_ops)
+    assert scrambled.context == "ctx"
+    assert len(set(mapping.values())) == len(mapping)
+    assert scramble_spec(original, seed=7)[1] == maps
+    back = descramble(
+        pd.Series([*(p.label for p in after), "unmapped", float("nan")]), mapping
     )
-    scrambled, mapping = scramble_spec(spec, seed=7)
-    assert {p.label for p in scrambled.phases} == {"phase_a", "phase_b"}
-    assert [p.description for p in scrambled.phases] == ["prepare", "run things"]
-    assert scrambled.phases[0].ops and scrambled.context == "ctx"
-    assert scramble_spec(spec, seed=7)[1] == mapping
-    tokens = pd.Series([mapping["phases"]["setup"], "none_of_the_above", float("nan")])
-    back = descramble(tokens, mapping["phases"])
-    assert back.iloc[0] == "setup"
-    assert back.iloc[1] == "none_of_the_above"
-    assert pd.isna(back.iloc[2])
+    assert back.iloc[:-2].tolist() == [p.label for p in before]
+    assert back.iloc[-2] == "unmapped" and pd.isna(back.iloc[-1])
+
+
+@pytest.mark.parametrize(
+    "phases, kept",
+    [
+        (["ops", "experiment"], {"ops"}),
+        (["ops", {"label": "coordination", "ops": True}], set()),
+        ([{"label": "ops", "ops": True}, "experiment"], set()),
+        (["none_of_the_above", "experiment"], {"none_of_the_above"}),
+    ],
+)
+def test_only_phase_labels_resolved_by_name_keep_their_names(phases, kept):
+    """A declared ops phase is renamed whenever a flag, not its name, selects
+    the bucket; a declared none_of_the_above always keeps its name."""
+    spec = Spec.model_validate({"phases": phases})
+    mapping = scramble_spec(spec, seed=7)[1]["phases"]
+    assert {label for label, token in mapping.items() if label == token} == kept
+
+
+@pytest.mark.parametrize("fallback", ["none_of_the_above", "None Of The Above"])
+def test_scrambled_subagent_vocabulary_is_isomorphic_to_the_original(fallback):
+    """The scanner's stored rubric descrambles to the original's, entry for
+    entry: the exact reserved spelling keeps its name, any other label is
+    renamed (an ops-named role included) and the scanner adds its own
+    fallback in both cases alike."""
+    spec = Spec.model_validate({"subagent_labels": ["ops", "research", fallback]})
+    scrambled, maps = scramble_spec(spec, seed=7)
+    mapping = maps["subagents"]
+    assert (mapping[fallback] == fallback) == (fallback == "none_of_the_above")
+    assert mapping["ops"].startswith("role_")
+
+    def rubric(spec):
+        result = run_item(
+            subagent_classification(
+                spec, scripted_judge(vote_output("none_of_the_above")), verify=False
+            ),
+            Transcript(transcript_id="span", messages=[ChatMessageUser(content="x")]),
+        )
+        return [(v["label"], v["reserved"]) for v in result.value["label_vocab"]]
+
+    expected = rubric(spec)
+    labels, flags = zip(*rubric(scrambled), strict=True)
+    assert (
+        list(zip(descramble(pd.Series(labels), mapping), flags, strict=True))
+        == expected
+    )
+
+
+def test_scrambled_run_stores_an_isomorphic_phase_vocabulary(demo_log, tmp_path):
+    """The full phase pipeline records the scrambled rubric, and both the run
+    and its reload descramble to the original categories."""
+    original = Spec.model_validate({"phases": ["ops", "experiment"]})
+    scrambled, maps = scramble_spec(original, seed=7)
+    result = _run(
+        str(demo_log),
+        scrambled,
+        judge_models=demo_judge(phase_label=maps["phases"]["experiment"]),
+        verify=False,
+        scans_dir=str(tmp_path / "scans"),
+    )
+    expected = [p.label for p in resolve_phases(original)[0]]
+    for frames in [result, load(result.scan_location)]:
+        definitions = frames.label_definitions.query("surface == 'phases'")
+        assert descramble(definitions.label, maps["phases"]).tolist() == expected
+        assert set(descramble(frames.phases.phase, maps["phases"])) == {"experiment"}
