@@ -340,7 +340,13 @@ turn, so a `TurnBand` and phase-card tags work directly, and
 
 ```python
 from inspect_scout import scanner
-from transect import DigestSettings, Layer, cohort_llm_scanner, digest_turns, turns_frame
+from transect import (
+    DigestSettings,
+    Layer,
+    cohort_llm_scanner,
+    digest_turns,
+    turns_frame,
+)
 from transect.report import TurnBand
 
 DIGEST = DigestSettings(tool_result_chars=400)  # show each call's output too
@@ -386,9 +392,10 @@ extra:
 ```
 
 Before trusting a "no", check that the digest carries the evidence the
-question needs: render a few lines with
-`transect.scanners.digests.turn_digests(transcript, DIGEST)` and
-`digest_line` and read them against the transcript. When it does not
+question needs: run the layer once with a scripted mockllm judge whose
+`custom_outputs` function prints the item it receives (the $0 prompt
+capture of the using-transect skill, section 8) and read those lines
+against the transcript. When it does not
 (an edit whose diff is longer than the argument cap, an output the
 cap truncates, a question about one call rather than one turn), write
 your own `@loader` and swap it in for `digest_turns()`. This one
