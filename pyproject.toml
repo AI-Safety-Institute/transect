@@ -1,12 +1,12 @@
 [project]
 name = "transect"
-version = "0.3.3"
+version = "0.3.4"
 description = "Transect: transcript analysis for agent evals, built on inspect-scout"
 license-files = ["LICENSE", "LICENSES/*.txt"]
 requires-python = ">=3.12"
 dependencies = [
     "inspect-ai>=0.3.277",
-    "inspect-scout>=0.5.4",
+    "inspect-scout>=0.6.0",
     "pandas>=3.0.5",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
