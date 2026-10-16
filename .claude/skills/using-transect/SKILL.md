@@ -105,10 +105,11 @@ deleted) is an event, and phases record it poorly:
   end with no phase carrying its label. Such a phase between two
   phases that share a label is also a wedge, which the verifier (when
   on) re-reviews as doubtful.
-- The phase judge reads a digest of each turn, not the turn itself,
-  and each part over its cap (`snippet_chars`) keeps only its start
-  and end, so the evidence for a single action can fall outside what
-  the judge reads.
+- The phase judge reads a digest of each turn, not the turn itself:
+  each part over its cap keeps only its start and end, tool-call
+  arguments are capped short and tool outputs are left out unless
+  `DigestSettings` switches them on, so the evidence for a single
+  action can fall outside what the judge reads.
 - A label covers a whole phase, so it spans turns around the event as
   well, and the judge can apply it to a stretch where the event did
   not happen.
