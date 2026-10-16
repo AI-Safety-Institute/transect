@@ -18,7 +18,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import pandas as pd
-from inspect_ai.model import Model
+from inspect_ai.model import GenerateConfig, Model
 from inspect_scout import (
     HEAVY_COLUMNS,
     columns,
@@ -88,6 +88,14 @@ def transect(
     viewer: bool = True,
     open_report: bool = True,
     max_processes: int = 1,
+    max_transcripts: int | None = None,
+    model_config: GenerateConfig | None = None,
+    results_buffer: int | None = None,
+    fail_on_error: bool = False,
+    chunk: int = 40,
+    verify_chunk: int = 8,
+    narrate: bool = True,
+    subagent_activity: bool = False,
     extra_layers: list[Layer] | None = None,
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
@@ -157,7 +165,37 @@ def transect(
             Python process (Ctrl+C to exit); without one (a coding
             agent, CI) it is left serving at the printed URL.
         open_report: Open the rendered HTML in the browser.
-        max_processes: Parallel scan worker processes.
+        max_processes: Parallel scan worker processes (Scout's own
+            default is several; one transcript per run gains nothing
+            from more). Scheduling only.
+        max_transcripts: Transcripts scanned concurrently (Scout's
+            default 25); binds only with several transcripts in the
+            scan (``epochs="all"``). Also Scout's default for the
+            judges' ``max_connections``. Scheduling only.
+        model_config: A ``GenerateConfig`` applied to every judge call
+            at the scan level: ``max_connections``, ``max_retries``,
+            ``timeout`` and ``batch`` schedule; any sampling field in
+            it (``temperature``, ``max_tokens``, ...) changes the
+            requests, and so the cache keys and the judgements. Scout
+            always fills ``max_connections`` here, and inspect_ai
+            merges this scan-level value over a judge's own
+            ``get_model(config=...)`` setting, so set the connection
+            limit here rather than on the judge model.
+        results_buffer: Results synced to the scan store every N
+            items, so a long run keeps partial results. Scheduling only.
+        fail_on_error: Fail the scan on the first scanner error instead
+            of recording it per transcript (a bad judge configuration
+            fails fast). Scheduling only.
+        chunk: Orchestrator turns per phase-judge segmentation call.
+            Changes every phase judge request.
+        verify_chunk: Phases per verifier call. Changes the verifier's
+            requests.
+        narrate: Narrate each phase (headline and summary) after
+            judging. Off removes those calls.
+        subagent_activity: Classify sub-agents by what they did (their
+            own activity) instead of the delegated task they were
+            given; experimental. Changes the sub-agent judge's
+            requests.
         extra_layers: User-injected `Layer` additions: each layer's
             scanner joins the scan batch and its frame mounts at
             ``results.layer_frames[name]``.
@@ -221,6 +259,14 @@ def transect(
         digest=digest,
         scans_dir=scans_dir,
         max_processes=max_processes,
+        max_transcripts=max_transcripts,
+        model_config=model_config,
+        results_buffer=results_buffer,
+        fail_on_error=fail_on_error,
+        chunk=chunk,
+        verify_chunk=verify_chunk,
+        narrate=narrate,
+        subagent_activity=subagent_activity,
         extra_layers=extra_layers,
     )
     return render(
@@ -464,6 +510,14 @@ def _run(
     digest: DigestSettings | None = None,
     scans_dir: str = "scans",
     max_processes: int = 1,
+    max_transcripts: int | None = None,
+    model_config: GenerateConfig | None = None,
+    results_buffer: int | None = None,
+    fail_on_error: bool = False,
+    chunk: int = 40,
+    verify_chunk: int = 8,
+    narrate: bool = True,
+    subagent_activity: bool = False,
     extra_layers: list[Layer] | None = None,
 ) -> TransectResults:
     """Scan the logs with the Transect scanner set and return the frames.
@@ -496,6 +550,10 @@ def _run(
         verifier_model=verifier_model,
         verify_sample=verify_sample,
         digest=digest,
+        chunk=chunk,
+        verify_chunk=verify_chunk,
+        narrate=narrate,
+        subagent_activity=subagent_activity,
     )
     if jsonl:
         # Keep new snapshots outside an existing database's recursive search root.
@@ -522,6 +580,10 @@ def _run(
         transcripts=transcripts,
         scans=scans_dir,
         max_processes=max_processes,
+        max_transcripts=max_transcripts,
+        model_config=model_config,
+        results_buffer=results_buffer,
+        fail_on_error=fail_on_error,
     )
     return load(status.location, extra_layers=extra_layers)
 
@@ -534,11 +596,16 @@ def _scanners(
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
     digest: DigestSettings | None = None,
+    chunk: int = 40,
+    verify_chunk: int = 8,
+    narrate: bool = True,
+    subagent_activity: bool = False,
 ) -> list:
     """The scanner set for a run: structural always; judge scanners when a
     model is given - decision_phases additionally needs a phase vocab.
     subagent_classification additionally needs subagent_labels. The
-    digest settings are passed resolved, so Scout records them."""
+    digest settings and the per-scanner knobs are passed resolved, so
+    Scout records them with the scanner's arguments."""
     scanners = [
         token_timeline(),
         context_flush(),
@@ -561,6 +628,9 @@ def _scanners(
                     verifier_model=verifier_model,
                     verify_sample=verify_sample,
                     digest=digest,
+                    chunk=chunk,
+                    verify_chunk=verify_chunk,
+                    narrate=narrate,
                 )
             )
         if spec.subagent_labels:
@@ -572,6 +642,7 @@ def _scanners(
                     verify=verify,
                     verifier_model=verifier_model,
                     verify_sample=verify_sample,
+                    activity=subagent_activity,
                 )
             )
     return scanners

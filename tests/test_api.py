@@ -6,6 +6,7 @@ from helpers import JSON_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
 from inspect_ai.event import timeline_build
 from inspect_ai.log import read_eval_log, write_eval_log
+from inspect_ai.model import GenerateConfig
 
 import transect.api as api
 from transect import load, reliability, transect
@@ -72,6 +73,60 @@ def test_structural_scanners_read_logs_with_stored_timelines(demo_log, tmp_path)
     )
     assert len(stored.transcript_info) == 1
     assert stored.transcript_info["scan_error"].isna().all()
+
+
+def test_scan_knobs_reach_scout(demo_log, tmp_path, monkeypatch):
+    """The Scout scheduling knobs transect() exposes are passed to the scan
+    call as given, and the scan still completes at $0."""
+    real, seen = api.scout_scan, {}
+
+    def capture(**kwargs):
+        seen.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(api, "scout_scan", capture)
+    config = GenerateConfig(max_connections=2, timeout=30)
+    results = transect(
+        logs=str(demo_log),
+        spec=Spec(),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+        max_transcripts=3,
+        model_config=config,
+        results_buffer=5,
+        fail_on_error=True,
+    )
+    assert not results.scan_status.has_failures
+    assert seen["max_transcripts"] == 3 and seen["model_config"] is config
+    assert seen["results_buffer"] == 5 and seen["fail_on_error"] is True
+    assert seen["max_processes"] == 1
+
+
+def test_judge_scanner_knobs_reach_the_scanner_factories(monkeypatch):
+    """chunk, verify_chunk, narrate and subagent_activity are forwarded to
+    decision_phases and subagent_classification by name."""
+    seen = {}
+    monkeypatch.setattr(
+        api, "decision_phases", lambda spec, **kw: seen.setdefault("phases", kw)
+    )
+    monkeypatch.setattr(
+        api,
+        "subagent_classification",
+        lambda spec, **kw: seen.setdefault("subagents", kw),
+    )
+    spec = Spec.model_validate({"phases": ["a"], "subagent_labels": ["r"]})
+    _scanners(
+        spec,
+        "mockllm/model",
+        chunk=10,
+        verify_chunk=4,
+        narrate=False,
+        subagent_activity=True,
+    )
+    assert (seen["phases"]["chunk"], seen["phases"]["verify_chunk"]) == (10, 4)
+    assert seen["phases"]["narrate"] is False
+    assert seen["subagents"]["activity"] is True
 
 
 def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):
