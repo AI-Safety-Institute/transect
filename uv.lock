@@ -1101,7 +1101,7 @@ wheels = [
 
 [[package]]
 name = "inspect-viz"
-version = "0.4.1"
+version = "0.4.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anywidget" },
@@ -1117,9 +1117,9 @@ dependencies = [
     { name = "traitlets" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/57/761287fe3c00200a24c69de58de0770d52071acf1847682315a8ea2c12f2/inspect_viz-0.4.1.tar.gz", hash = "sha256:ec45711c142837c69b109de406a799319bd0b862b122cec9e6765dd2082aee55", size = 134855, upload-time = "2026-07-09T19:28:55.674Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/a9/c9387194c7644784d90f2b5b4fe81eff9febade58f7ab577413de498033e/inspect_viz-0.4.2.tar.gz", hash = "sha256:938df86f5928966a486706b8f120427f919a2855b0be09e561afe81dfce385fb", size = 136006, upload-time = "2026-10-19T14:37:05.194Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/40/95/bab7c2e3a093d33953fdebebf5067eda31864c44f1bebe15320c68e0bf65/inspect_viz-0.4.1-py3-none-any.whl", hash = "sha256:d3e2b16e7d8e45b3f954b02b87207822df090d67b1abbe5f9fc13c15089eb45d", size = 192122, upload-time = "2026-07-09T19:28:54.292Z" },
+    { url = "https://files.pythonhosted.org/packages/41/78/23a0fc609e219e4c5c4bca4680aa243bb289915d48ed1adc123adea602b4/inspect_viz-0.4.2-py3-none-any.whl", hash = "sha256:eadf0057517e4d06d278b2ce2c3ffaeac081497beb9c14d366359571197f84aa", size = 193196, upload-time = "2026-10-19T14:37:03.639Z" },
 ]
 
 [[package]]
@@ -3319,7 +3319,7 @@ ui-test = [
 requires-dist = [
     { name = "inspect-ai", specifier = ">=0.3.277" },
     { name = "inspect-scout", specifier = ">=0.5.4" },
-    { name = "inspect-viz", specifier = ">=0.4.1" },
+    { name = "inspect-viz", specifier = ">=0.4.2" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "markdown-it-py", specifier = ">=4.2.0" },
     { name = "pandas", specifier = ">=3.0.5" },
