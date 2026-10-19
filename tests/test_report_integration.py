@@ -222,7 +222,12 @@ def _assert_no_page_errors(
             playwright.expect(rule).to_have_count(1)
         n_frames = len(page.frames)
         n_charts = page.locator(".chart-scroll").count()
-        n_blank = page.locator(".chart-scroll:not(:has(svg))").count()
+        blank = page.locator(".chart-scroll:not(:has(svg))")
+        try:  # a slow chart gets the expect timeout to draw
+            playwright.expect(blank).to_have_count(0)
+        except AssertionError:
+            pass
+        n_blank = blank.count()
         browser.close()
     if cdn_failures:
         pytest.skip(f"inspect-viz CDN unreachable: {cdn_failures[0]}")
@@ -278,7 +283,8 @@ def test_one_transcripts_inputs_leave_another_transcripts_chart_alone(
         token_charts = page.locator(".chart-scroll").filter(has_text="Scale:")
         playwright.expect(token_charts).to_have_count(3)
         first, second = token_charts.nth(0), token_charts.nth(1)
-        playwright.expect(second.locator(bars).first).to_be_attached()
+        for chart in (first, second):
+            playwright.expect(chart.locator(bars).first).to_be_attached()
         before = [c.locator(bars).evaluate_all(_Y2) for c in (first, second)]
         first.get_by_label("cumulative (excluding cache reads)").check()
         page.wait_for_function(

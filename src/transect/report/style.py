@@ -25,8 +25,7 @@ _STYLE = f"""
   --transect-color-border: #dee2e6;        /* [bootstrap] --bs-border-color */
   --transect-color-border-subtle: #e9ecef; /* [bootstrap] --bs-light-border-subtle */
   --transect-color-hover: #f8f9fa;         /* [bootstrap] --bs-light; the one hover
-                                          wash, restated as a literal in the
-                                          widget CSS */
+                                          wash */
   --transect-color-link: #104D6A;          /* steel - links + controls */
   --transect-color-link-hover: #0E2841;    /* navy */
   --transect-color-accent: #09A4A7;        /* teal - focus rings */
@@ -249,8 +248,9 @@ body.classified {{ padding-top: 30px; padding-bottom: 30px; }}
 # - `vconcat` renders one `.mosaic-widget` whose rows are class-less
 #   `<div>` siblings with zero margin; `div:has(> fieldset)` is the only
 #   way to target the input rows.
-# - tom-select's dropdown (`dropdownParent: "body"`) and the tippy
-#   popover escape `.mosaic-widget`, hence the page-level selectors.
+# - tom-select's dropdown (`dropdownParent: "body"`) escapes
+#   `.mosaic-widget`, and the tippy popover sits in whichever chart's
+#   widget hosts it (`_CHART_CSS`), hence the page-level selectors.
 # - inspect_viz's `select()` always wraps in Tom Select; a
 #   `.mosaic-widget select` rule paints nothing.
 # - The radios stay real visible inputs (no Bootstrap `.btn-check`
@@ -278,7 +278,7 @@ _WIDGET_STYLE_CSS = (
     ".mosaic-widget fieldset > label > input[type=radio] "
     "{ accent-color: #104D6A; }"
     # tom-select's visible control: strip the vendor chrome, match the
-    # outer page's `.filter-bar select` border/radius/font
+    # page's `.filter-bar select` border/radius/font
     ".mosaic-widget label:has(.ts-wrapper) "
     "{ font-weight: 600; color: rgba(33, 37, 41, 0.75); }"
     ".mosaic-widget .ts-wrapper { font-weight: 400; color: #212529; "
@@ -334,10 +334,14 @@ _WIDGET_STYLE_CSS = (
 #   have room to stick to the wrapper's left edge while the chart
 #   scrolls under them.
 # - Neither view may put a `transform`, or anything else that makes a
-#   containing block, on a chart's ancestors: inspect_viz mounts each
-#   tooltip inside its `.mosaic-widget` (tippy's `interactive` default),
-#   so such an ancestor both mispositions the popover and lets the
-#   wrapper clip it.
+#   containing block, on a chart's ancestors: inspect_viz keeps one tippy
+#   instance per page, bound to the widget whose svg it configured last,
+#   and mounts every popover inside that widget (tippy's `interactive`
+#   default), so such an ancestor of that widget mispositions every
+#   popover on the page and lets its wrapper clip them. The same binding
+#   is why a chart under `hidden` (an unselected spend tag family) would
+#   hide every tooltip if it were the last to render; on the reports
+#   checked, the token telemetry chart renders last.
 # - inspect_viz creates its one tippy instance with `interactive: true`,
 #   so the popover takes pointer events; appearing under the pointer it
 #   becomes the hit target, the chart svg fires `pointerleave`, and
