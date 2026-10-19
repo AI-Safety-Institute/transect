@@ -1,25 +1,20 @@
-"""Chart embedding: each section document carries only its own tables."""
+"""Chart embedding: every chart section is a fragment of one page."""
 
-import html
-import json
-import re
+from pathlib import Path
 
-import pandas as pd
-from inspect_viz import Data
-from inspect_viz.mark import dot
-from inspect_viz.plot import plot
-
-from transect.report.embed import embed_section
+from transect import load, render
 
 
-def test_section_document_embeds_only_the_tables_it_reads() -> None:
-    """A section carries the tables its chart reads, not every table in the process."""
-    used = Data.from_dataframe(pd.DataFrame({"x": [1], "y": [2]}))
-    Data.from_dataframe(pd.DataFrame({"x": [3], "y": [4]}))
-    document = html.unescape(
-        embed_section([plot(dot(used, x="x", y="y"))], height_px=200, extra_head="")
+def test_report_carries_one_chart_runtime_and_no_iframes(tmp_path):
+    """The report embeds the widget bundle once, with no per-section iframe."""
+    scans = Path(__file__).parent / "fixtures" / "demo_scan"
+    results = render(
+        load(str(scans)),
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
     )
+    html = Path(results.report_paths[0]).read_text()
 
-    match = re.search(r"const state = (.+);$", document, re.MULTILINE)
-    assert match is not None, "chart bootstrap state not found"
-    assert set(json.loads(match[1])["tables"]) == {used.table}
+    assert "<iframe" not in html
+    assert html.count('id="iv-esm"') == 1

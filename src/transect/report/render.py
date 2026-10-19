@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
+from inspect_viz.plot import HtmlPage
 from markupsafe import Markup
 
 from transect.frames import TransectResults, spine
@@ -27,7 +28,7 @@ from transect.report.excerpts import (
     read_transcript_extras,
 )
 from transect.report.lanes_layout import SpanGeometry, pack_lanes
-from transect.report.style import _STYLE, _WIDGET_STYLE_CSS
+from transect.report.style import _CHART_CSS, _STYLE, _WIDGET_STYLE_CSS
 from transect.tags import select_tags
 
 # The built-in sections' stable keys, in default reading order
@@ -74,6 +75,10 @@ def render_report(
     # read once for all transcripts; empty when the store is unreachable
     # at render time, and the affected surfaces render without extras
     transcript_extras = read_transcript_extras(results.transcripts_location, order)
+    # every chart is a fragment of this one page (`embed.embed_section`);
+    # each fragment it produces must reach the template, since a fragment
+    # waits without a timeout for a table an earlier one embeds
+    page = HtmlPage()
     transcripts = []
     for idx, transcript_id in enumerate(order):
         one = _mine(timeline, transcript_id)
@@ -130,7 +135,7 @@ def render_report(
             # on a multi-transcript page - hence the per-transcript
             # prefix (distinct from the "phase-cards-{idx}" scope id)
             card_id_prefix = f"phase-{idx}"
-            phase_components, phase_height = charts.phase_band(
+            phase_components = charts.phase_band(
                 my_phase_turns,
                 my_phases.sort_values("phase_index"),
                 phase_colors,
@@ -159,7 +164,7 @@ def render_report(
                             my_phases, my_turn_votes, my_phase_turns
                         )
                     ),
-                    _chart(phase_components, phase_height),
+                    _chart(page, phase_components),
                     sections.phase_chips(
                         my_phases, my_phase_turns, phase_colors, my_definitions
                     ),
@@ -225,13 +230,13 @@ def render_report(
         # natural cross-read is phase behaviour around an intervention
         # (only when the transcript has any)
         if len(my_interventions):
-            intervention_component, intervention_height = charts.interventions_chart(
+            intervention_component = charts.interventions_chart(
                 my_interventions, n_turns
             )
             interventions_section = sections.section(
                 "Human interventions",
                 [
-                    _chart([intervention_component], intervention_height),
+                    _chart(page, [intervention_component]),
                     sections.intervention_legend(),
                     sections.intervention_line(my_interventions),
                 ],
@@ -245,11 +250,11 @@ def render_report(
             )
         ]
         threshold = sections.compaction_threshold(my_info)
-        components, stack_height = charts.token_stack(
+        components = charts.token_stack(
             main, my_flushes, threshold.tokens if threshold is not None else None
         )
         token_blocks.append(
-            _chart(components, stack_height)
+            _chart(page, components)
             if components
             else Markup("<p>No timeline data.</p>")
         )
@@ -284,6 +289,7 @@ def render_report(
         lanes = _span_lanes(my_subagents, main)
         if lanes:
             subagent_section = _subagent_section(
+                page,
                 n_turns,
                 lanes,
                 my_subagents,
@@ -306,12 +312,10 @@ def render_report(
             phase_bars, subagent_bars, subagent_message = spend_data
             if phase_bars:
                 spend_blocks.append(sections.spend_group_heading("By phase label"))
-                comp, h = charts.spend_bars(phase_bars)
-                spend_blocks.append(_chart([comp], h))
+                spend_blocks.append(_chart(page, [charts.spend_bars(phase_bars)]))
             if subagent_bars:
                 spend_blocks.append(sections.spend_group_heading("By sub-agent label"))
-                comp, h = charts.spend_bars(subagent_bars)
-                spend_blocks.append(_chart([comp], h))
+                spend_blocks.append(_chart(page, [charts.spend_bars(subagent_bars)]))
             elif subagent_message:
                 spend_blocks.append(sections.spend_group_heading("By sub-agent label"))
                 spend_blocks.append(sections.spend_subagent_unavailable())
@@ -323,10 +327,12 @@ def render_report(
                 )
             )
             for pos, (family, _name, bars) in enumerate(family_groups):
-                comp, h = charts.spend_bars(bars)
                 spend_blocks.append(
                     sections.spend_family_group(
-                        scope, family, _chart([comp], h), hidden=pos > 0
+                        scope,
+                        family,
+                        _chart(page, [charts.spend_bars(bars)]),
+                        hidden=pos > 0,
                     )
                 )
         if spend_blocks:
@@ -347,7 +353,7 @@ def render_report(
             add(
                 (
                     layer.name,
-                    custom.layer_section(layer, layer_frame, ctx, my_definitions),
+                    custom.layer_section(page, layer, layer_frame, ctx, my_definitions),
                 )
             )
 
@@ -391,7 +397,8 @@ def render_report(
     template = jinja_env().get_template("report.html.j2")
     return template.render(
         title=title,
-        style=Markup(_STYLE),
+        chart_head=Markup(page.head()),
+        style=Markup(_STYLE + _WIDGET_STYLE_CSS + _CHART_CSS),
         scan_location=str(results.scan_location),
         scan_status_view=sections.scan_status_view(results.scan_status),
         n_transcripts=len(order),
@@ -424,6 +431,7 @@ def validate_section_order(
 
 
 def _subagent_section(
+    page: HtmlPage,
     n_turns: int,
     lanes: list[SpanGeometry],
     subagents: pd.DataFrame,
@@ -545,7 +553,7 @@ def _subagent_section(
     )
     row_titles = [span_title_of[row[0]] for row in packed.rows]
 
-    component, chart_height = charts.swimlanes(
+    component = charts.swimlanes(
         packed.rows,
         packed.yticks,
         packed.ylabels,
@@ -596,7 +604,7 @@ def _subagent_section(
                 classification_ran,
             ),
             sections.reliability_warnings(flags),
-            _chart([component], chart_height),
+            _chart(page, [component]),
             sections.subagent_legend(by_label, colors, classification_ran),
             sections.spawn_prompts_block(spawn_rows),
             sections.subagent_definitions(label_definitions),
@@ -696,10 +704,9 @@ def _info_cell(info: pd.DataFrame, column: str):
     return None if pd.isna(value) else value
 
 
-def _chart(components: list, height_px: int) -> Markup:
-    """One section's chart iframe: the widget style CSS and the
-    `Markup` wrapping of `embed_section` done in one place."""
-    return Markup(embed_section(components, height_px, extra_head=_WIDGET_STYLE_CSS))
+def _chart(page: HtmlPage, components: list) -> Markup:
+    """One section's chart fragment of ``page``, as `Markup`."""
+    return Markup(embed_section(page, components))
 
 
 def _mine(frame: pd.DataFrame, transcript_id: str) -> pd.DataFrame:

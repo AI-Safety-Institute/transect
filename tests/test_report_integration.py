@@ -15,14 +15,8 @@ from transect import load, render
 from transect.api import _run
 from transect.frames.flushes import flushes_df
 from transect.report import charts, sections
-from transect.report.embed import (
-    _TIP_EXTRA_LINE_PX,
-    _TIP_FIT_MARGIN,
-    _TIP_SHORT_ROW_PX,
-    _tip_floor,
-    wrap_row_px,
-)
 from transect.report.lanes_layout import SpanGeometry
+from transect.report.render import render_report
 from transect.scanners.phases_common import TurnBasis
 from transect.spec import Spec
 
@@ -176,13 +170,14 @@ def test_judged_report_renders_all_sections_from_a_stored_scan(store, tmp_path):
 
 def _assert_no_page_errors(
     report_path: str,
-    min_frames: int = 6,
+    min_charts: int = 6,
     setup_prompts: dict[str, str] | None = None,
     compaction_threshold: int | None = None,
 ) -> None:
-    """Load the report in a real browser and require zero page errors
-    (inspect-viz widget failures are console-only and blank charts
-    silently). Skips without playwright or without the CDN."""
+    """Load the report in a real browser and require zero page errors,
+    one document, and a drawn svg in every chart box (inspect-viz widget
+    failures are console-only and blank charts silently). Skips without
+    playwright or without the CDN."""
     playwright = pytest.importorskip("playwright.sync_api")
     errors: list[str] = []
     cdn_failures: list[str] = []
@@ -213,10 +208,9 @@ def _assert_no_page_errors(
                 assert content.inner_text() == text
         if compaction_threshold is not None:
             label = f"Compaction threshold: {compaction_threshold:,} tokens (dotted)"
-            frame = next(f for f in page.frames if f.get_by_label(label).count())
-            control = frame.get_by_label(label)
-            rule = frame.locator('[stroke="#9467bd"][stroke-dasharray="2,3"] line')
-            curve = frame.locator('[aria-label="line"][stroke="#4c78a8"]')
+            control = page.get_by_label(label)
+            rule = page.locator('[stroke="#9467bd"][stroke-dasharray="2,3"] line')
+            curve = page.locator('[aria-label="line"][stroke="#4c78a8"]')
             playwright.expect(control).to_be_checked()
             playwright.expect(rule).to_have_count(1)
             playwright.expect(curve).to_have_count(1)
@@ -227,11 +221,15 @@ def _assert_no_page_errors(
             control.check()
             playwright.expect(rule).to_have_count(1)
         n_frames = len(page.frames)
+        n_charts = page.locator(".chart-scroll").count()
+        n_blank = page.locator(".chart-scroll:not(:has(svg))").count()
         browser.close()
     if cdn_failures:
         pytest.skip(f"inspect-viz CDN unreachable: {cdn_failures[0]}")
     assert errors == []
-    assert n_frames >= min_frames
+    assert n_frames == 1
+    assert n_charts >= min_charts
+    assert n_blank == 0
 
 
 def test_recorded_compaction_threshold_survives_replay_and_toggles(demo_log, tmp_path):
@@ -253,58 +251,52 @@ def test_recorded_compaction_threshold_survives_replay_and_toggles(demo_log, tmp
     assert "compaction threshold</span>" in html
     assert "4,000 tokens" in html
     assert "dotted purple = configured compaction threshold (4,000 tokens)" in html
-    _assert_no_page_errors(str(report), min_frames=2, compaction_threshold=4000)
+    _assert_no_page_errors(str(report), min_charts=1, compaction_threshold=4000)
 
 
-def test_tip_floor_budgets_one_or_two_wrapping_rows():
-    """The tooltip-fit floor prices the single-line rows plus each
-    wrapping row's own allowance; wrap_row_px caps at four extras."""
-
-    assert _tip_floor(0, 40) == _TIP_FIT_MARGIN
-    assert _tip_floor(5, 40) == 4 * _TIP_SHORT_ROW_PX + 40 + _TIP_FIT_MARGIN
-    assert _tip_floor(5, 40, 30) == 3 * _TIP_SHORT_ROW_PX + 40 + 30 + _TIP_FIT_MARGIN
-    assert wrap_row_px(10) == _TIP_SHORT_ROW_PX
-    assert wrap_row_px(61) == _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX
-    assert wrap_row_px(10_000) == _TIP_SHORT_ROW_PX + 4 * _TIP_EXTRA_LINE_PX
-
-
-def test_spend_bars_floor_covers_the_declared_tooltip_rows():
-    """The spend chart's iframe floor follows its declared channels, so
-    a short chart cannot clip its own tooltip."""
-
-    _, height = charts.spend_bars(
-        [
-            {
-                "label": "x",
-                "value": 10,
-                "color": "#123456",
-                "share": None,
-                "output": "5",
-                "billable": "7",
-            }
-        ]
+def test_one_transcripts_inputs_leave_another_transcripts_chart_alone(
+    epochs_logs, tmp_path
+):
+    """Transcripts sharing a page: a measure radio redraws only its own bars."""
+    results = _run(
+        logs=str(epochs_logs),
+        spec=Spec(),
+        sample="epoch-sample-1",
+        epochs="all",
+        scans_dir=str(tmp_path / "s"),
     )
-    # single-line rows plus the bucket label's two-line allowance
-    assert height >= _tip_floor(5, _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
+    report = tmp_path / "report.html"
+    report.write_text(render_report(results))
+    # skips without playwright, a browser, or the CDN
+    _assert_no_page_errors(str(report), min_charts=3)
+    playwright = pytest.importorskip("playwright.sync_api")
+    bars = '[aria-label="rule"] line'
+    with playwright.sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(report.as_uri())
+        token_charts = page.locator(".chart-scroll").filter(has_text="Scale:")
+        playwright.expect(token_charts).to_have_count(3)
+        first, second = token_charts.nth(0), token_charts.nth(1)
+        playwright.expect(second.locator(bars).first).to_be_attached()
+        before = [c.locator(bars).evaluate_all(_Y2) for c in (first, second)]
+        first.get_by_label("cumulative (excluding cache reads)").check()
+        page.wait_for_function(
+            f"([el, was]) => ({_Y2})([...el.querySelectorAll('{bars}')]).join() != was",
+            arg=[first.element_handle(), ",".join(before[0])],
+        )
+        page.wait_for_timeout(500)  # room for a wrongly linked chart to follow
+        after = [c.locator(bars).evaluate_all(_Y2) for c in (first, second)]
+        browser.close()
+    assert after[0] != before[0]
+    assert after[1] == before[1]
 
 
-def test_interventions_chart_budgets_its_previews_not_a_generic_two_line_row():
-    """The interventions iframe is floored at its own five rows, the two
-    message previews priced as 60-character prose, so the chart no
-    longer carries a hundred blank pixels under a 94px strip."""
+_Y2 = "lines => lines.map(l => l.getAttribute('y2'))"
 
-    act = pd.DataFrame(
-        {
-            "turn": [3, 7],
-            "channel": ["approval", "operator_message"],
-            "outcome": ["approved", None],
-            "prompt": ["may I delete the cache? " * 8, None],
-            "content": ["yes, but keep the model artefacts " * 6, "stop and report"],
-        }
-    )
-    _, height = charts.interventions_chart(act, n_turns=10)
-    preview_px = wrap_row_px(charts._PREVIEW_CHARS)
-    assert height == _tip_floor(5, preview_px, preview_px)
+
+def test_intervention_preview_cuts_long_text_with_an_ellipsis():
+    """A tooltip preview keeps `_PREVIEW_CHARS` characters plus an ellipsis."""
     assert len(charts._preview("x" * 100)) == charts._PREVIEW_CHARS + 1
 
 
@@ -403,14 +395,14 @@ def test_custom_layer_section_renders_and_passes_the_browser(layered_run, tmp_pa
     assert "turn_chars" in html
     assert "an e2e fixture layer" in html  # markdown rendered
     # the chart+band embed sits inside the custom section itself (a
-    # page-level iframe count would pass on the built-ins' alone)
+    # page-level chart count would pass on the built-ins' alone)
     section_start = html.index('<h3>turn_chars <span class="custom-layer-badge">')
     section_end = html.index("<h3>", section_start + 1)
-    assert html[section_start:section_end].count("<iframe") >= 1
+    assert html[section_start:section_end].count('class="chart-scroll"') >= 1
     # the $0 mechanical report has fewer sections than the judged one
-    # the default floor is calibrated for: main frame + 3 built-in
-    # chart iframes + the custom section's one
-    _assert_no_page_errors(path, min_frames=5)
+    # the default floor is calibrated for: 3 built-in charts + the
+    # custom section's one
+    _assert_no_page_errors(path, min_charts=4)
 
 
 def test_tag_chips_and_selectors_ride_the_phase_cards(tmp_path):

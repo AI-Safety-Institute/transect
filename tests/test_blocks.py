@@ -4,6 +4,7 @@ from typing import Any, cast
 
 import pandas as pd
 import pytest
+from inspect_viz.plot import HtmlPage
 
 from transect import Layer
 from transect.report import (
@@ -55,7 +56,9 @@ def test_turn_blocks_skip_off_axis_rows():
         frame=frame,
         section=[TurnChart(y="risk"), TurnBand(label="why"), EventMarks(label="why")],
     )
-    html = layer_section(layer, frame, SectionContext("tr1", frame, n_turns=3))
+    html = layer_section(
+        HtmlPage(), layer, frame, SectionContext("tr1", frame, n_turns=3)
+    )
     assert "custom-layer-badge" in html
 
 
