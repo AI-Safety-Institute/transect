@@ -39,9 +39,10 @@ phases:
       submitting the answer.
   - label: coordination
     description: >
-      Operational overhead rather than substantive work: handing
-      subtasks off to sub-agents and receiving their reports back,
-      and workspace housekeeping.
+      Operational overhead rather than substantive work: environment
+      setup such as installing libraries, handing subtasks off to
+      sub-agents and receiving their reports back, and workspace
+      housekeeping.
 
 subagent_labels:
   - label: data_analysis
