@@ -4,6 +4,8 @@ import pandas as pd
 import pytest
 from helpers import JSON_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
+from inspect_ai.event import timeline_build
+from inspect_ai.log import read_eval_log, write_eval_log
 
 import transect.api as api
 from transect import load, reliability, transect
@@ -40,6 +42,36 @@ def test_triage_runs_the_default_path_end_to_end(demo_log, tmp_path, capsys):
         "subagent_votes",
         "label_definitions",
     }
+
+
+def test_structural_scanners_read_logs_with_stored_timelines(demo_log, tmp_path):
+    """A log whose samples store their timeline scans without a recorded
+    error on any structural scanner and numbers the same turns as the
+    same log without one (inspect_scout < 0.6.0 failed every scanner
+    that filters events on such a log)."""
+    log = read_eval_log(str(demo_log))
+    for sample in log.samples or []:
+        sample.timelines = [timeline_build(sample.events)]
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    write_eval_log(log, str(logs_dir / "timelines.eval"))
+    stored, plain = (
+        transect(
+            logs=str(source),
+            spec=Spec(),
+            scans_dir=str(tmp_path / f"scans_{name}"),
+            viewer=False,
+            open_report=False,
+        )
+        for name, source in [("stored", logs_dir), ("plain", demo_log)]
+    )
+    assert not stored.scan_status.has_failures, stored.scan_status.errors
+    assert [s.errors for s in stored.scan_status.scanners] == [0] * 4
+    assert (
+        stored.token_timeline["turn"].tolist() == plain.token_timeline["turn"].tolist()
+    )
+    assert len(stored.transcript_info) == 1
+    assert stored.transcript_info["scan_error"].isna().all()
 
 
 def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):
