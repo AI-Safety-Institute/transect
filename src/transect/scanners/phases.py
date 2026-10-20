@@ -174,8 +174,8 @@ def decision_phases(
     Returns:
         A scanner whose Result value carries:
 
-        - ``phase_names``: the spec's phase names plus the
-          reserved "ops" bucket when none is declared.
+        - ``phase_names``: the resolved vocabulary (`resolve_phases`):
+          the spec's phase names plus the reserved buckets it adds.
         - ``phases``: the phase partition, one entry per contiguous
           same-label run:
 

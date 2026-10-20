@@ -23,7 +23,7 @@ from transect.scanners.cohort import (
 )
 from transect.scanners.digests import Digest, digest_line
 from transect.scanners.helpers import capped_lines
-from transect.spec import Phase, Spec
+from transect.spec import DEFAULT_OPS_LABEL, NONE_PHASE_LABEL, Phase, Spec
 
 # per-phase evidence cap (digest lines shown to a judge)
 EVIDENCE_LINES = 200
@@ -33,12 +33,12 @@ _CONTEXT_GUARD = (
 )
 
 _DEFAULT_OPS_PHASE = Phase(
-    label="ops",
+    label=DEFAULT_OPS_LABEL,
     description="Operational, setup, coordination, or plumbing work",
 )
 
 _NONE_PHASE = Phase(
-    label="none_of_the_above",
+    label=NONE_PHASE_LABEL,
     description="Activity that fits none of the declared phases",
 )
 _NONE_PHASE_BESIDE_OPS = _NONE_PHASE.model_copy(
@@ -224,8 +224,8 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str | None]:
 
     Returns:
         ``(phases, ops_name)`` - the spec's phases, plus the reserved
-        bucket appended under ``spec.phase_ops_label`` when no declared
-        phase carries that label, plus the reserved "none_of_the_above"
+        "ops" bucket when the spec keeps the default ``phase_ops_label``
+        and declares no such phase, plus the reserved "none_of_the_above"
         phase when the spec does not declare one itself. ``ops_name``
         is ``spec.phase_ops_label``: None when the spec has no
         operational bucket.
@@ -233,7 +233,7 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str | None]:
     phases = list(spec.phases)
     ops_name = spec.phase_ops_label
     if ops_name is not None and all(p.label != ops_name for p in phases):
-        phases.append(_DEFAULT_OPS_PHASE.model_copy(update={"label": ops_name}))
+        phases.append(_DEFAULT_OPS_PHASE)
     if all(p.label != _NONE_PHASE.label for p in phases):
         phases.append(_NONE_PHASE if ops_name is None else _NONE_PHASE_BESIDE_OPS)
     return phases, ops_name
@@ -264,8 +264,7 @@ def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
     rules = []
     if ops_name is not None:
         ops = next(p for p in phase_defs if p.label == ops_name)
-        # the reserved bucket keeps the default description under any label
-        fixed = ops.description in ("", _DEFAULT_OPS_PHASE.description)
+        fixed = ops == _DEFAULT_OPS_PHASE or not ops.description
         rules.append(
             (_OPS_RULE_FIXED if fixed else _OPS_RULE_AUTHORED).format(ops=ops_name)
         )

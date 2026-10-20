@@ -56,11 +56,12 @@ classify against. The worked example is
   you would brief a colleague). `none_of_the_above` is always offered
   too - an escape hatch beats a forced wrong label.
 - `phase_ops_label` (default `ops`): the phase label that is the
-  operational bucket (delegation mechanics, housekeeping). Declare a
-  phase with that label to define the bucket in your own words;
-  otherwise a reserved bucket is appended under it. `null` offers no
-  bucket (an eval whose framework has no operational category). It is
-  phase-only; the sub-agent surface has no operational role.
+  operational bucket (delegation mechanics, housekeeping). Name a
+  declared phase to define the bucket in your own words; with the
+  default and no phase called `ops`, a reserved `ops` bucket is
+  appended. `null` offers no bucket (an eval whose framework has no
+  operational category). It is phase-only; the sub-agent surface has
+  no operational role.
 - Your descriptions are not the whole rubric. The phase judge and its
   verifier share a fixed rule set rendered after the vocabulary: the
   operational bucket's rule (worded from your declared phase's

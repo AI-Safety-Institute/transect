@@ -48,17 +48,31 @@ def test_phase_ops_label_names_a_declared_phase_as_the_bucket():
     ]
 
 
-@pytest.mark.parametrize("label", ["ops", "overhead"])
-def test_an_undeclared_phase_ops_label_appends_the_reserved_bucket_under_it(label):
-    """With no declared phase carrying the label (the default "ops" or
-    any other), the reserved bucket is appended under that label."""
-    content = {"phases": ["experiment"]}
-    if label != "ops":
-        content["phase_ops_label"] = label
-    phases, ops_name = resolve_phases(Spec.model_validate(content))
-    assert ops_name == label
-    assert [p.label for p in phases] == ["experiment", label, "none_of_the_above"]
+def test_the_default_phase_ops_label_appends_the_reserved_bucket():
+    """With no declared phase called ops, the reserved bucket is appended
+    under the default label."""
+    phases, ops_name = resolve_phases(Spec.model_validate({"phases": ["experiment"]}))
+    assert ops_name == "ops"
+    assert [p.label for p in phases] == ["experiment", "ops", "none_of_the_above"]
     assert phases[1].description
+
+
+@pytest.mark.parametrize(
+    "label, message",
+    [
+        ("coordinaton", "names no declared phase"),
+        ("none_of_the_above", "escape hatch"),
+    ],
+)
+def test_a_phase_ops_label_must_name_a_declared_phase_that_is_not_the_escape_hatch(
+    label, message
+):
+    """A non-default label matching no declared phase (a typo, say) and
+    the reserved none_of_the_above label are both refused up front."""
+    with pytest.raises(ValidationError, match=message):
+        Spec.model_validate(
+            {"phases": ["coordination", "none_of_the_above"], "phase_ops_label": label}
+        )
 
 
 def test_a_null_phase_ops_label_resolves_no_operational_phase():
@@ -71,11 +85,16 @@ def test_a_null_phase_ops_label_resolves_no_operational_phase():
     assert "operational" not in phases[-1].description
 
 
-def test_the_removed_ops_flag_is_refused_with_the_migration():
-    """A phase still carrying the old ops: true flag fails validation
-    with a message naming phase_ops_label."""
-    with pytest.raises(ValidationError, match="phase_ops_label"):
-        Spec.model_validate({"phases": [{"label": "coordination", "ops": True}]})
+@pytest.mark.parametrize(
+    "flag, message",
+    [(True, "phase_ops_label: 'coordination'"), (False, "drop it")],
+)
+def test_the_removed_ops_flag_is_refused_with_the_migration(flag, message):
+    """A phase still carrying the old ops flag fails validation: a true
+    flag is pointed at phase_ops_label, a false one (a no-op, as older
+    dumps wrote on every phase) is told to go."""
+    with pytest.raises(ValidationError, match=message):
+        Spec.model_validate({"phases": [{"label": "coordination", "ops": flag}]})
 
 
 def test_a_null_phase_ops_label_makes_a_phase_named_ops_an_ordinary_phase():
@@ -165,7 +184,6 @@ def test_subagent_label_must_be_its_own_key(label, key):
             "phases": [{"label": "setup", "description": "prepare"}, "experiment"],
             "phase_ops_label": "setup",
         },
-        {"phases": ["experiment"], "phase_ops_label": "overhead"},
         {"phases": ["ops", "experiment"], "phase_ops_label": None},
         {"phases": []},
     ],
