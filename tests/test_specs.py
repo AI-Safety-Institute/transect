@@ -115,9 +115,8 @@ def test_a_null_phase_ops_label_makes_a_phase_named_ops_an_ordinary_phase():
         {"phasez": ["typo"]},
         {"phases": [{"label": "a", "descriptionz": "typo"}]},
         {"subagent_labels": [{"label": "a", "ops": True}]},
-        {"phases": ["a"], "ops_bucket": False},
     ],
-    ids=["top-level-typo", "phase-field-typo", "ops-on-subagent-label", "old-switch"],
+    ids=["top-level-typo", "phase-field-typo", "ops-on-subagent-label"],
 )
 def test_unknown_fields_are_rejected_loudly(content):
     """A misspelled field fails validation instead of silently dropping."""

@@ -610,7 +610,8 @@ def _answer_spec(phase_names: Sequence[str]) -> AnswerStructured:
     """Build the per-spec answer schema.
 
     Args:
-        phase_names: The judged phase names (resolved, ops included).
+        phase_names: The judged phase names (resolved: reserved buckets
+            included).
 
     Returns:
         The ``AnswerStructured`` spec for ``generate_answer``.

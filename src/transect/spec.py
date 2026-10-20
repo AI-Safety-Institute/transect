@@ -82,7 +82,7 @@ class Spec(BaseModel):
     subagent_labels: list[SubagentLabel] = []
     """The sub-agent role vocabulary; empty disables classification."""
 
-    phase_ops_label: str | None = "ops"
+    phase_ops_label: str | None = DEFAULT_OPS_LABEL
     """The phase label that is the operational bucket (setup /
     coordination / plumbing). A declared phase with this label is the
     bucket, defined by its description; with the default and no such

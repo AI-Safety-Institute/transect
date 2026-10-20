@@ -95,15 +95,57 @@ def test_verifier_sees_the_judges_label_rules():
     assert "contiguous" in judge and "contiguous" not in verifier
 
 
-def test_delegation_rule_prefers_a_declared_phase_covering_delegation():
-    """The delegation rule sends a hand-off to a declared phase whose
-    description or meaning covers delegating or coordinating sub-agent
-    work, classifies by the delegated task's purpose otherwise, and
-    states the multi-phase tie-break ending in none_of_the_above."""
+def test_delegation_rule_keeps_the_reserved_bucket_out_of_the_preference():
+    """With the reserved ops bucket, a hand-off goes by the delegated
+    task's purpose and is not ops work, unless another phase covers
+    delegation; the multi-phase tie-break ends in none_of_the_above as
+    the label for a mixed hand-off."""
     phase_defs, ops_name = resolve_phases(PHASES_SPEC)
     (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
-    assert "declared phase" in rule and "delegating or coordinating" in rule
-    assert "more than half" in rule and "none_of_the_above" in rule
+    assert "not as 'ops' work" in rule and "another phase" in rule
+    assert "declared" not in rule
+    assert "more than half" in rule and "'none_of_the_above' (a mixed" in rule
+
+
+def test_delegation_rule_lets_an_authored_bucket_claim_hand_offs_by_description():
+    """With an authored ops bucket, a phase whose description or name
+    covers delegation takes the hand-off, the bucket by its description
+    only, so the rule cannot widen it past the authored ops rule."""
+    spec = Spec.model_validate(
+        {
+            "phases": [
+                "experiment",
+                {"label": "coordination", "description": "Hand-offs."},
+            ],
+            "phase_ops_label": "coordination",
+        }
+    )
+    phase_defs, ops_name = resolve_phases(spec)
+    (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
+    assert "description covers delegating" in rule
+    assert "for 'coordination' its description decides" in rule
+    assert "not as" not in rule
+
+
+def test_an_undescribed_declared_bucket_gets_the_fixed_ops_rule():
+    """A declared bucket with no description cannot define itself, so the
+    judge gets the fixed operational wording, not a pointer to an empty
+    definition."""
+    spec = Spec.model_validate(
+        {"phases": ["experiment", "coordination"], "phase_ops_label": "coordination"}
+    )
+    system = system_prompt(spec)
+    assert "plumbing turns belong in 'coordination'" in system
+    assert "defined by its description above" not in system
+
+
+def test_verifier_without_a_bucket_shows_no_ops_rule():
+    """The verifier prompt for a spec with phase_ops_label null carries the
+    delegation and marker rules but no operational rule."""
+    spec = Spec.model_validate({"phases": ["experiment"], "phase_ops_label": None})
+    verifier = verify_system_prompt(spec, "")
+    assert "[DELEGATES]" in verifier and "[THINKING]" in verifier
+    assert "Operational" not in verifier and "operational bucket" not in verifier
 
 
 def test_segments_sharing_a_label_stitch_into_one_phase():

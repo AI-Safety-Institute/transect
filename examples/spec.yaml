@@ -41,8 +41,7 @@ phases:
     description: >
       Operational overhead rather than substantive work: handing
       subtasks off to sub-agents and receiving their reports back,
-      workspace housekeeping, and the mechanics of submitting the
-      final answer.
+      and workspace housekeeping.
 
 subagent_labels:
   - label: data_analysis

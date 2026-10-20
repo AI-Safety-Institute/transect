@@ -55,14 +55,31 @@ _OPS_RULE_AUTHORED = (
     "turn matching that description belongs there - do NOT force it into a "
     "substantive phase, and do NOT widen the bucket beyond that description."
 )
-_DELEGATION_RULE = (
-    "A turn marked [DELEGATES] hands work to sub-agents. If a declared "
-    "phase's description or evident meaning covers delegating or "
-    "coordinating sub-agent work (a coordination phase, say), prefer it. "
-    "Otherwise classify by the delegated task's purpose. When one turn's "
-    "tasks serve different phases: use the surrounding turns' phase if any "
-    "task serves it; else the phase more than half the tasks serve; else "
-    "'{none}'."
+# the judge cannot tell a reserved phase from a declared one, so the
+# delegation rule names the reserved bucket to keep hand-offs out of it
+_DELEGATION_RULE_FIXED_OPS = (
+    "A turn marked [DELEGATES] hands work to sub-agents. Classify it by "
+    "the delegated task's purpose, not as '{ops}' work, unless another "
+    "phase's description or name covers delegating or coordinating "
+    "sub-agent work (a coordination phase, say), which then takes it."
+)
+_DELEGATION_RULE_AUTHORED_OPS = (
+    "A turn marked [DELEGATES] hands work to sub-agents. If a phase's "
+    "description covers delegating or coordinating sub-agent work, or its "
+    "name plainly means that (a coordination phase, say; for '{ops}' its "
+    "description decides), prefer it. Otherwise classify it by the "
+    "delegated task's purpose."
+)
+_DELEGATION_RULE_NO_OPS = (
+    "A turn marked [DELEGATES] hands work to sub-agents. If a phase's "
+    "description or name covers delegating or coordinating sub-agent work "
+    "(a coordination phase, say), prefer it. Otherwise classify it by the "
+    "delegated task's purpose."
+)
+_DELEGATION_TIE_BREAK = (
+    " When one turn's tasks serve different phases: use the surrounding "
+    "turns' phase if any task serves it; else the phase more than half the "
+    "tasks serve; else '{none}' (a mixed hand-off fits no single phase)."
 )
 _MARKER_RULES = (
     "[THINKING] text is the agent's internal reasoning - treat it as "
@@ -262,13 +279,22 @@ def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
         ops_name: The operational bucket's label, None without one.
     """
     rules = []
+    delegation = _DELEGATION_RULE_NO_OPS
     if ops_name is not None:
-        ops = next(p for p in phase_defs if p.label == ops_name)
+        ops = next((p for p in phase_defs if p.label == ops_name), None)
+        if ops is None:
+            raise ValueError(f"ops bucket {ops_name!r} is not among the phases")
         fixed = ops == _DEFAULT_OPS_PHASE or not ops.description
         rules.append(
             (_OPS_RULE_FIXED if fixed else _OPS_RULE_AUTHORED).format(ops=ops_name)
         )
-    rules.append(_DELEGATION_RULE.format(none=_NONE_PHASE.label))
+        delegation = (
+            _DELEGATION_RULE_FIXED_OPS if fixed else _DELEGATION_RULE_AUTHORED_OPS
+        )
+    rules.append(
+        delegation.format(ops=ops_name)
+        + _DELEGATION_TIE_BREAK.format(none=_NONE_PHASE.label)
+    )
     rules.extend(_MARKER_RULES)
     return rules
 
