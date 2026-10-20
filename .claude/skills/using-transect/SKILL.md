@@ -64,10 +64,11 @@ classify against. The worked example is
   operational bucket's rule (worded from your flagged phase's
   description when it has one, so your words define the bucket; fixed
   wording for the reserved `ops` phase), a delegation rule (a
-  `[DELEGATES]` turn takes the delegated task's purpose unless a
-  phase description claims the hand-off itself; when one turn's tasks
-  serve different phases it takes the surrounding phase if any task
-  serves it, else the majority phase, else `none_of_the_above`), and
+  `[DELEGATES]` turn goes to a declared phase whose description or
+  meaning covers delegating or coordinating sub-agent work, else takes
+  the delegated task's purpose; when one turn's tasks serve different
+  phases it takes the surrounding phase if any task serves it, else
+  the majority phase, else `none_of_the_above`), and
   the digest-marker rules. The judge alone adds the contiguity and
   confidence rules. Read them in `label_rules` in
   `src/transect/scanners/phases_common.py` before writing a

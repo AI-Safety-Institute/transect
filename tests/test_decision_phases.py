@@ -94,11 +94,14 @@ def test_verifier_sees_the_judges_label_rules():
     assert "contiguous" in judge and "contiguous" not in verifier
 
 
-def test_delegation_rule_states_the_multi_phase_tie_break():
-    """The delegation rule tells the judge what to do when one turn's
-    delegated tasks serve different phases, ending in none_of_the_above."""
+def test_delegation_rule_prefers_a_declared_phase_covering_delegation():
+    """The delegation rule sends a hand-off to a declared phase whose
+    description or meaning covers delegating or coordinating sub-agent
+    work, classifies by the delegated task's purpose otherwise, and
+    states the multi-phase tie-break ending in none_of_the_above."""
     phase_defs, ops_name = resolve_phases(PHASES_SPEC)
     (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
+    assert "declared phase" in rule and "delegating or coordinating" in rule
     assert "more than half" in rule and "none_of_the_above" in rule
 
 

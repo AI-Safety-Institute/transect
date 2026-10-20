@@ -57,11 +57,13 @@ _OPS_RULE_AUTHORED = (
     "substantive phase, and do NOT widen the bucket beyond that description."
 )
 _DELEGATION_RULE = (
-    "A turn marked [DELEGATES] hands work to sub-agents. Unless a phase "
-    "description claims the hand-off itself, classify it by the delegated "
-    "task's purpose. When one turn's tasks serve different phases: use the "
-    "surrounding turns' phase if any task serves it; else the phase more "
-    "than half the tasks serve; else '{none}'."
+    "A turn marked [DELEGATES] hands work to sub-agents. If a declared "
+    "phase's description or evident meaning covers delegating or "
+    "coordinating sub-agent work (a coordination phase, say), prefer it. "
+    "Otherwise classify by the delegated task's purpose. When one turn's "
+    "tasks serve different phases: use the surrounding turns' phase if any "
+    "task serves it; else the phase more than half the tasks serve; else "
+    "'{none}'."
 )
 _MARKER_RULES = (
     "[THINKING] text is the agent's internal reasoning - treat it as "
