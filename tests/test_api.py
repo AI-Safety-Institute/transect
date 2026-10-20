@@ -6,6 +6,7 @@ from helpers import JSON_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
 from inspect_ai.event import timeline_build
 from inspect_ai.log import read_eval_log, write_eval_log
+from inspect_ai.model import ModelOutput
 
 import transect.api as api
 from transect import load, reliability, transect
@@ -72,6 +73,37 @@ def test_structural_scanners_read_logs_with_stored_timelines(demo_log, tmp_path)
     )
     assert len(stored.transcript_info) == 1
     assert stored.transcript_info["scan_error"].isna().all()
+
+
+def test_a_model_event_without_choices_is_a_turn_not_a_scan_error(demo_log, tmp_path):
+    """A model event whose output records no choices (a converted log's
+    closing event) is a turn like any other model event: no structural
+    scanner records an IndexError from ``ModelOutput.message``, and the
+    axis gains exactly that turn."""
+    log = read_eval_log(str(demo_log))
+    for sample in log.samples or []:
+        last = max(i for i, e in enumerate(sample.events) if e.event == "model")
+        empty = sample.events[last].model_copy(
+            update={"output": ModelOutput(model="none", choices=[])}
+        )
+        sample.events.insert(last + 1, empty)
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    write_eval_log(log, str(logs_dir / "empty_output.eval"))
+    converted, plain = (
+        transect(
+            logs=str(source),
+            spec=Spec(),
+            scans_dir=str(tmp_path / f"scans_{name}"),
+            viewer=False,
+            open_report=False,
+        )
+        for name, source in [("converted", logs_dir), ("plain", demo_log)]
+    )
+    assert not converted.scan_status.has_failures, converted.scan_status.errors
+    assert [s.errors for s in converted.scan_status.scanners] == [0] * 4
+    turns = converted.token_timeline["turn"].dropna().tolist()
+    assert turns == [*plain.token_timeline["turn"].dropna().tolist(), len(turns) - 1]
 
 
 def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):

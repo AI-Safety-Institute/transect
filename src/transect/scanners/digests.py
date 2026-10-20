@@ -18,6 +18,7 @@ from transect.scanners.helpers import (
     message_reasoning,
     span_task_text,
     strip_subagent_scaffold,
+    turn_message,
 )
 
 _OPENCLAW_FAILED_TURN_PREFIX = "[assistant turn failed"  # placeholder assistant turn
@@ -115,7 +116,7 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
         if _is_failed_turn(event):
             continue  # provider-failure placeholder: not a turn to judge
         eligible_turns.append(turn)
-        message = event.output.message
+        message = turn_message(event)
         text = (message.text or "").strip() if message else ""
         reasoning = message_reasoning(message)
         delegations: list[str] = []
@@ -231,7 +232,7 @@ def _is_failed_turn(event: Any) -> bool:
     """Detect an OpenClaw provider-failure placeholder turn: the scaffold
     writes a fake assistant turn ("[assistant turn failed ...]") when a
     provider call dies."""
-    message = event.output.message
+    message = turn_message(event)
     text = (message.text or "").strip().lower() if message else ""
     return text.startswith(_OPENCLAW_FAILED_TURN_PREFIX)
 

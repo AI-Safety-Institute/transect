@@ -27,7 +27,7 @@ from typing import Any
 
 from inspect_scout import Transcript
 
-from transect.scanners.helpers import is_model_turn
+from transect.scanners.helpers import is_model_turn, turn_message
 
 _MEMORY_WARNING_PREFIX = "Context compaction approaching. Use memory() to save"
 
@@ -70,7 +70,8 @@ def compaction_texts(transcript: Transcript) -> list[dict[str, str | None]]:
                 and summarization.input
                 and summarization.input[-1].role == "user"
                 and summarization.input[-1].id not in history_ids
-                and summarization.output.message.id not in history_ids
+                and (summary := turn_message(summarization)) is not None
+                and summary.id not in history_ids
             ):
                 prompt = summarization.input[-1].text
             texts.append(
