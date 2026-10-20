@@ -15,6 +15,7 @@ from helpers import (
     seg_answer,
 )
 from inspect_ai.log import read_eval_log
+from inspect_ai.model import ModelOutput
 
 from transect.api import _run
 from transect.frames import spine
@@ -103,6 +104,21 @@ def test_orchestrator_turns_number_the_main_lane_while_all_lanes_stay_visible():
     assert numbered == [(0, "lead 0"), (1, "lead 1"), (2, "lead 2")]
     texts = [e.output.message.text for e, _ in all_model_turns(transcript)]
     assert texts == ["lead 0", "a0", "a1", "lead 1", "b0", "lead 2"]
+
+
+def test_a_model_event_without_choices_is_a_turn_with_no_message():
+    """``ModelOutput.message`` raises on an empty ``choices`` list; a
+    model event recorded that way (a converted log's closing event) is
+    still a turn, with no message, calls, digest or excerpt."""
+    empty = model_turn("")
+    empty.output = ModelOutput(model="none", choices=[])
+    transcript = StubTranscript([model_turn("x"), empty])
+    assert [(t, len(c)) for t, _, c in orchestrator_turns(transcript)] == [
+        (0, 0),
+        (1, 0),
+    ]
+    assert [d.turn for d in turn_digests(transcript)] == [0]
+    assert list(_turn_excerpts(transcript)) == [0]
 
 
 @pytest.mark.parametrize(

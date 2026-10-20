@@ -39,6 +39,7 @@ from transect.scanners.helpers import (
     message_reasoning,
     orchestrator_turns,
     span_task_text,
+    turn_message,
 )
 
 TEXT_CHARS = 400
@@ -311,7 +312,7 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
     """
     found: dict[int, Excerpt] = {}
     for turn, event, calls in orchestrator_turns(transcript):
-        message = event.output.message
+        message = turn_message(event)
         raw = (getattr(message, "text", None) or "") if message else ""
         text = " ".join(raw.split())
         reasoning = message_reasoning(message)

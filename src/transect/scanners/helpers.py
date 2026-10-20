@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, TypeGuard
 
 from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_build
-from inspect_ai.model import ContentReasoning
+from inspect_ai.model import ChatMessageAssistant, ContentReasoning
 from inspect_ai.tool import ToolCall
 
 # OpenClaw spawn-prompt scaffold markers
@@ -106,13 +106,22 @@ def is_model_turn(event: Any) -> TypeGuard[ModelEvent]:
     return isinstance(event, ModelEvent) and event.output is not None
 
 
+def turn_message(event: ModelEvent) -> ChatMessageAssistant | None:
+    """The assistant message a model turn produced, or None when its
+    output records no choices. ``ModelOutput.message`` indexes
+    ``choices[0]`` and raises on an empty list; a log written by a
+    converter can carry such a model event (an output-less closing
+    event, a placeholder), and it is still a turn (`is_model_turn`)."""
+    return event.output.message if event.output.choices else None
+
+
 def all_model_turns(transcript: Any) -> Iterator[tuple[Any, list[ToolCall]]]:
     """Yield (model event, its tool calls) for every model turn in every
     lane, in event order; unnumbered, the turn axis is `orchestrator_turns`."""
     for event in transcript.events:
         if not is_model_turn(event):
             continue
-        message = event.output.message
+        message = turn_message(event)
         yield event, (message.tool_calls or []) if message else []
 
 
@@ -337,7 +346,7 @@ def span_activity(lanes: Lanes, span_id: str) -> SpanActivity:
         if is_model_turn(event):
             sub = lanes.sub_agent_of(event)
             if sub is not None and sub.id == span_id:
-                message = event.output.message
+                message = turn_message(event)
                 text = getattr(message, "text", None) if message else None
                 if isinstance(text, str) and text.strip():
                     activity.turn_texts.append(" ".join(text.split()))
