@@ -190,10 +190,11 @@ subagent_labels:
 ```
 
 `none_of_the_above` is always available to the judges, and so is an
-operational bucket: the phase you flag `ops: true`, else a reserved
-`ops` phase, unless the spec sets `ops_bucket: false`. The phase judge
-and its verifier also follow a short fixed rule set beyond your
-descriptions (the using-transect skill lists it).
+operational bucket: the declared phase named by `phase_ops_label`
+(default `ops`), else a reserved phase appended under that label;
+`phase_ops_label: null` offers no bucket. The phase judge and its
+verifier also follow a short fixed rule set beyond your descriptions
+(the using-transect skill lists it).
 
 > [!TIP]
 > The shipped skills help here (see [Installation](#installation)):

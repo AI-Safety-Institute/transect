@@ -19,9 +19,15 @@ class Phase(BaseModel):
     """What work belongs to this phase, in the author's own words -
     rendered into the judge's rubric."""
 
-    ops: bool = False
-    """Marks this phase as the operational bucket (setup/coordination/
-    plumbing); without one the reserved "ops" phase is appended."""
+    @model_validator(mode="before")
+    @classmethod
+    def _ops_flag_moved_to_the_spec(cls, value):
+        if isinstance(value, dict) and "ops" in value:
+            raise ValueError(
+                "the per-phase ops flag is gone: name the operational bucket "
+                f"with phase_ops_label: {value.get('label')!r} on the spec"
+            )
+        return value
 
 
 class SubagentLabel(BaseModel):
@@ -64,12 +70,13 @@ class Spec(BaseModel):
     subagent_labels: list[SubagentLabel] = []
     """The sub-agent role vocabulary; empty disables classification."""
 
-    ops_bucket: bool = True
-    """Whether the phase judge is offered an operational bucket. With no
-    phase flagged ``ops`` the reserved "ops" phase is appended; ``False``
-    turns that off, so operational turns take a declared phase or
-    ``none_of_the_above``. A phase flagged ``ops`` contradicts ``False``
-    and fails validation."""
+    phase_ops_label: str | None = "ops"
+    """The phase label that is the operational bucket (setup /
+    coordination / plumbing). A declared phase with this label is the
+    bucket, defined by its description; otherwise the reserved bucket is
+    appended under this label. ``None`` offers no bucket, so operational
+    turns take a declared phase or ``none_of_the_above``. Phase-only:
+    the sub-agent surface has no operational role."""
 
     context: str = ""
     """Free-text task context for phase prompts; not passed to subagent judges."""
@@ -82,16 +89,6 @@ class Spec(BaseModel):
     @classmethod
     def _plain_labels_ok(cls, value):  # "recon" == {"label": "recon"}
         return [{"label": p} if isinstance(p, str) else p for p in (value or [])]
-
-    @model_validator(mode="after")
-    def _ops_bucket_agrees_with_the_flags(self):
-        flagged = [p.label for p in self.phases if p.ops]
-        if flagged and not self.ops_bucket:
-            raise ValueError(
-                f"ops_bucket is false but a phase is flagged ops: {flagged}; "
-                "drop the flag or keep the bucket"
-            )
-        return self
 
 
 def label_key(label: str) -> str:

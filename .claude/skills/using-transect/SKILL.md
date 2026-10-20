@@ -53,17 +53,19 @@ classify against. The worked example is
 
 - `phases`: expected activity phases, each `label` + `description`
   (the description is rendered into the judge's rubric - write it as
-  you would brief a colleague). Mark one phase `ops: true` for
-  operational overhead (delegation mechanics, housekeeping); without
-  one a reserved `ops` bucket is appended, unless `ops_bucket: false`
-  turns the bucket off (an eval whose framework has no operational
-  category). `none_of_the_above` is always offered too - an escape
-  hatch beats a forced wrong label.
+  you would brief a colleague). `none_of_the_above` is always offered
+  too - an escape hatch beats a forced wrong label.
+- `phase_ops_label` (default `ops`): the phase label that is the
+  operational bucket (delegation mechanics, housekeeping). Declare a
+  phase with that label to define the bucket in your own words;
+  otherwise a reserved bucket is appended under it. `null` offers no
+  bucket (an eval whose framework has no operational category). It is
+  phase-only; the sub-agent surface has no operational role.
 - Your descriptions are not the whole rubric. The phase judge and its
   verifier share a fixed rule set rendered after the vocabulary: the
-  operational bucket's rule (worded from your flagged phase's
+  operational bucket's rule (worded from your declared phase's
   description when it has one, so your words define the bucket; fixed
-  wording for the reserved `ops` phase), a delegation rule (a
+  wording for the reserved bucket), a delegation rule (a
   `[DELEGATES]` turn goes to a declared phase whose description or
   meaning covers delegating or coordinating sub-agent work, else takes
   the delegated task's purpose; when one turn's tasks serve different

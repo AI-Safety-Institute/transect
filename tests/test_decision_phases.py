@@ -47,34 +47,35 @@ def test_system_prompt_carries_the_vocabulary_and_escape_hatches():
 
 
 def test_declared_ops_phase_replaces_the_reserved_bucket():
-    """A spec phase flagged ops: true becomes the operational bucket;
-    no extra reserved ops label is appended."""
+    """The declared phase named by phase_ops_label becomes the operational
+    bucket; no extra reserved ops label is appended."""
     spec = Spec.model_validate(
-        {"phases": [{"label": "coordination", "ops": True}, "experiment"]}
+        {"phases": ["coordination", "experiment"], "phase_ops_label": "coordination"}
     )
     system = system_prompt(spec)
     assert "coordination" in system
     assert "- ops" not in system
 
 
-def test_ops_bucket_off_drops_the_ops_rule():
-    """A spec that turns the ops bucket off yields a judge prompt with no
-    ops label and no rule sending operational turns anywhere."""
-    spec = Spec.model_validate({"phases": ["experiment"], "ops_bucket": False})
+def test_a_null_phase_ops_label_drops_the_ops_rule():
+    """A spec with no ops bucket yields a judge prompt with no ops label
+    and no rule sending operational turns anywhere."""
+    spec = Spec.model_validate({"phases": ["experiment"], "phase_ops_label": None})
     system = system_prompt(spec)
     assert "- ops" not in system and "Operational" not in system
     assert "none_of_the_above" in system
 
 
-def test_flagged_ops_rule_defers_to_the_authors_description():
-    """When the spec flags its own ops phase, the ops rule points the judge
+def test_declared_ops_rule_defers_to_the_authors_description():
+    """When the spec names its own ops phase, the ops rule points the judge
     at that phase's description instead of the fixed wording."""
     spec = Spec.model_validate(
         {
             "phases": [
                 {"label": "discussion", "description": "Talking to the operator."},
-                {"label": "coordination", "ops": True, "description": "Handoffs."},
-            ]
+                {"label": "coordination", "description": "Handoffs."},
+            ],
+            "phase_ops_label": "coordination",
         }
     )
     system = system_prompt(spec)

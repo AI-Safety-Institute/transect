@@ -35,7 +35,6 @@ _CONTEXT_GUARD = (
 _DEFAULT_OPS_PHASE = Phase(
     label="ops",
     description="Operational, setup, coordination, or plumbing work",
-    ops=True,
 )
 
 _NONE_PHASE = Phase(
@@ -225,39 +224,28 @@ def resolve_phases(spec: Spec) -> tuple[list[Phase], str | None]:
 
     Returns:
         ``(phases, ops_name)`` - the spec's phases, plus the reserved
-        "ops" phase when ``spec.ops_bucket`` is on and no phase is
-        flagged ``ops``, plus the reserved "none_of_the_above" phase
-        when the spec does not declare one itself. ``ops_name`` is
-        None when the spec has no operational bucket.
+        bucket appended under ``spec.phase_ops_label`` when no declared
+        phase carries that label, plus the reserved "none_of_the_above"
+        phase when the spec does not declare one itself. ``ops_name``
+        is ``spec.phase_ops_label``: None when the spec has no
+        operational bucket.
     """
     phases = list(spec.phases)
-    ops_name = next((p.label for p in phases if p.ops), None)
-    if ops_name is None and spec.ops_bucket:
-        # an unflagged "ops" phase is still the reserved bucket
-        ops_name = next(
-            (p.label for p in phases if p.label == _DEFAULT_OPS_PHASE.label),
-            None,
-        )
-        if ops_name is None:
-            phases.append(_DEFAULT_OPS_PHASE)
-            ops_name = _DEFAULT_OPS_PHASE.label
+    ops_name = spec.phase_ops_label
+    if ops_name is not None and all(p.label != ops_name for p in phases):
+        phases.append(_DEFAULT_OPS_PHASE.model_copy(update={"label": ops_name}))
     if all(p.label != _NONE_PHASE.label for p in phases):
         phases.append(_NONE_PHASE if ops_name is None else _NONE_PHASE_BESIDE_OPS)
     return phases, ops_name
 
 
 def reserved_phase_labels(spec: Spec) -> set[str]:
-    """The declared phase labels `resolve_phases` recognises by name, so
-    renaming one changes the resolved vocabulary: a declared
-    ``none_of_the_above``, and a declared ``ops`` when the bucket is on
-    and no phase carries the ops flag (the flag, not the name, selects
-    the bucket otherwise; with the bucket off the name selects nothing).
+    """The declared phase labels `resolve_phases` recognises by a fixed
+    name, so renaming one changes the resolved vocabulary: a declared
+    ``none_of_the_above`` only. The ops bucket is selected by
+    ``spec.phase_ops_label``, which a renaming updates alongside.
     """
-    labels = {p.label for p in spec.phases}
-    reserved = {_NONE_PHASE.label} & labels
-    if spec.ops_bucket and not any(p.ops for p in spec.phases):
-        reserved |= {_DEFAULT_OPS_PHASE.label} & labels
-    return reserved
+    return {_NONE_PHASE.label} & {p.label for p in spec.phases}
 
 
 def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
@@ -276,7 +264,8 @@ def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
     rules = []
     if ops_name is not None:
         ops = next(p for p in phase_defs if p.label == ops_name)
-        fixed = ops == _DEFAULT_OPS_PHASE or not ops.description
+        # the reserved bucket keeps the default description under any label
+        fixed = ops.description in ("", _DEFAULT_OPS_PHASE.description)
         rules.append(
             (_OPS_RULE_FIXED if fixed else _OPS_RULE_AUTHORED).format(ops=ops_name)
         )

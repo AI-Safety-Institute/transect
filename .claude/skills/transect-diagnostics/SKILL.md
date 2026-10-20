@@ -111,11 +111,10 @@ provenance and the source evidence.
 ## Label-name sensitivity
 
 `transect.diagnostics.scramble_spec` renames labels, keeps definition order
-fixed and preserves text and ops flags. A label a scanner recognises by name
-keeps it, so the effective category set does not grow: a declared
-`none_of_the_above` on either surface, and a declared phase `ops` when the
-bucket is on and no phase carries the ops flag (a flagged ops phase is renamed
-and keeps its role; with `ops_bucket: false` the name selects nothing). Retain
+fixed and preserves text; `phase_ops_label` follows its phase's new name, so
+the bucket keeps its role under a neutral token. A label a scanner recognises
+by a fixed name keeps it, so the effective category set does not grow: a
+declared `none_of_the_above` on either surface. Retain
 the mapping from the run; it is not stable across transect versions. Text can
 contain label-name references, so first inspect prompt coherence.
 Compare any renamed condition with unchanged-setup fresh-response repeats; account
