@@ -107,10 +107,10 @@ def test_delegation_rule_keeps_the_reserved_bucket_out_of_the_preference():
     assert "more than half" in rule and "'none_of_the_above' (a mixed" in rule
 
 
-def test_delegation_rule_lets_an_authored_bucket_claim_hand_offs_by_description():
-    """With an authored ops bucket, a phase whose description or name
-    covers delegation takes the hand-off, the bucket by its description
-    only, so the rule cannot widen it past the authored ops rule."""
+def test_delegation_rule_makes_an_authored_bucket_decisive_for_hand_offs():
+    """With an authored ops bucket whose description covers hand-offs,
+    every [DELEGATES] turn belongs there whatever was delegated; only a
+    bucket that does not claim hand-offs leaves purpose classification."""
     spec = Spec.model_validate(
         {
             "phases": [
@@ -122,9 +122,9 @@ def test_delegation_rule_lets_an_authored_bucket_claim_hand_offs_by_description(
     )
     phase_defs, ops_name = resolve_phases(spec)
     (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
-    assert "description covers delegating" in rule
-    assert "for 'coordination' its description decides" in rule
-    assert "not as" not in rule
+    assert "every such turn belongs in 'coordination'" in rule
+    assert "whatever the delegated task's purpose" in rule
+    assert "prefer" not in rule and "not as" not in rule
 
 
 def test_an_undescribed_declared_bucket_gets_the_fixed_ops_rule():

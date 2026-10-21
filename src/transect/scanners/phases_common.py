@@ -64,22 +64,24 @@ _DELEGATION_RULE_FIXED_OPS = (
     "sub-agent work (a coordination phase, say), which then takes it."
 )
 _DELEGATION_RULE_AUTHORED_OPS = (
-    "A turn marked [DELEGATES] hands work to sub-agents. If a phase's "
-    "description covers delegating or coordinating sub-agent work, or its "
-    "name plainly means that (a coordination phase, say; for '{ops}' its "
-    "description decides), prefer it. Otherwise classify it by the "
-    "delegated task's purpose."
+    "A turn marked [DELEGATES] hands work to sub-agents. When the "
+    "description of '{ops}' covers handing work to sub-agents, every such "
+    "turn belongs in '{ops}', whatever the delegated task's purpose. "
+    "Otherwise it belongs to a phase whose description or name covers "
+    "delegating or coordinating sub-agent work if there is one, else "
+    "classify it by the delegated task's purpose."
 )
 _DELEGATION_RULE_NO_OPS = (
-    "A turn marked [DELEGATES] hands work to sub-agents. If a phase's "
-    "description or name covers delegating or coordinating sub-agent work "
-    "(a coordination phase, say), prefer it. Otherwise classify it by the "
-    "delegated task's purpose."
+    "A turn marked [DELEGATES] hands work to sub-agents. It belongs to a "
+    "phase whose description or name covers delegating or coordinating "
+    "sub-agent work (a coordination phase, say) if there is one, else "
+    "classify it by the delegated task's purpose."
 )
 _DELEGATION_TIE_BREAK = (
-    " When one turn's tasks serve different phases: use the surrounding "
-    "turns' phase if any task serves it; else the phase more than half the "
-    "tasks serve; else '{none}' (a mixed hand-off fits no single phase)."
+    " When classifying by purpose and one turn's tasks serve different "
+    "phases: use the surrounding turns' phase if any task serves it; else "
+    "the phase more than half the tasks serve; else '{none}' (a mixed "
+    "hand-off fits no single phase)."
 )
 _MARKER_RULES = (
     "[THINKING] text is the agent's internal reasoning - treat it as "
