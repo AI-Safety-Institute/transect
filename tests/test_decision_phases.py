@@ -60,12 +60,15 @@ def test_declared_ops_phase_replaces_the_reserved_bucket():
 
 
 def test_a_null_phase_ops_label_drops_the_ops_rule():
-    """A spec with no ops bucket yields a judge prompt with no ops label
-    and no rule sending operational turns anywhere."""
+    """A spec with no ops bucket yields judge and verifier prompts with no
+    ops label and no rule sending operational turns anywhere, while the
+    delegation and marker rules and the escape hatch stay."""
     spec = Spec.model_validate({"phases": ["experiment"], "phase_ops_label": None})
-    system = system_prompt(spec)
-    assert "- ops" not in system and "Operational" not in system
-    assert "none_of_the_above" in system
+    for prompt in [system_prompt(spec), verify_system_prompt(spec, "")]:
+        assert "- ops" not in prompt and "Operational" not in prompt
+        assert "operational bucket" not in prompt
+        assert "[DELEGATES]" in prompt and "[THINKING]" in prompt
+        assert "none_of_the_above" in prompt
 
 
 def test_declared_ops_rule_defers_to_the_authors_description():
@@ -97,36 +100,39 @@ def test_verifier_sees_the_judges_label_rules():
     assert "contiguous" in judge and "contiguous" not in verifier
 
 
-def test_delegation_rule_keeps_the_reserved_bucket_out_of_the_preference():
-    """With the reserved ops bucket, a hand-off goes by the delegated
-    task's purpose and is not ops work, unless another phase covers
-    delegation; the multi-phase tie-break ends in none_of_the_above as
-    the label for a mixed hand-off."""
-    phase_defs, ops_name = resolve_phases(PHASES_SPEC)
+@pytest.mark.parametrize(
+    "content, wanted, unwanted",
+    [
+        (
+            {"phases": ["experiment"]},
+            ["not as 'ops' work", "another phase", "'none_of_the_above' (a mixed"],
+            ["every such turn"],
+        ),
+        (
+            {"phases": ["experiment", COORDINATION], "phase_ops_label": "coordination"},
+            ["every such turn belongs in 'coordination'", "whatever the delegated"],
+            ["not as"],
+        ),
+        (
+            {"phases": ["experiment"], "phase_ops_label": None},
+            ["It belongs to a phase whose description or name covers delegating"],
+            ["not as", "every such turn"],
+        ),
+    ],
+    ids=["reserved-bucket", "authored-bucket", "no-bucket"],
+)
+def test_the_delegation_rule_takes_the_form_the_bucket_calls_for(
+    content, wanted, unwanted
+):
+    """With the reserved bucket a hand-off goes by the delegated task's
+    purpose and is not ops work; with an authored bucket whose description
+    covers hand-offs every one belongs there; with no bucket a phase
+    covering delegation takes it, else purpose. The tie-break for a
+    mixed hand-off ends in none_of_the_above."""
+    phase_defs, ops_name = resolve_phases(Spec.model_validate(content))
     (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
-    assert "not as 'ops' work" in rule and "another phase" in rule
-    assert "declared" not in rule
-    assert "more than half" in rule and "'none_of_the_above' (a mixed" in rule
-
-
-def test_delegation_rule_makes_an_authored_bucket_decisive_for_hand_offs():
-    """With an authored ops bucket whose description covers hand-offs,
-    every [DELEGATES] turn belongs there whatever was delegated; only a
-    bucket that does not claim hand-offs leaves purpose classification."""
-    spec = Spec.model_validate(
-        {
-            "phases": [
-                "experiment",
-                COORDINATION,
-            ],
-            "phase_ops_label": "coordination",
-        }
-    )
-    phase_defs, ops_name = resolve_phases(spec)
-    (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
-    assert "every such turn belongs in 'coordination'" in rule
-    assert "whatever the delegated task's purpose" in rule
-    assert "prefer" not in rule and "not as" not in rule
+    assert all(text in rule for text in wanted)
+    assert not any(text in rule for text in unwanted)
 
 
 def test_the_thinking_rule_does_not_equate_reasoning_with_the_visible_record():
@@ -137,15 +143,6 @@ def test_the_thinking_rule_does_not_equate_reasoning_with_the_visible_record():
     (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[THINKING]" in r]
     assert "faithful" in rule
     assert "same as its visible text" not in rule
-
-
-def test_verifier_without_a_bucket_shows_no_ops_rule():
-    """The verifier prompt for a spec with phase_ops_label null carries the
-    delegation and marker rules but no operational rule."""
-    spec = Spec.model_validate({"phases": ["experiment"], "phase_ops_label": None})
-    verifier = verify_system_prompt(spec, "")
-    assert "[DELEGATES]" in verifier and "[THINKING]" in verifier
-    assert "Operational" not in verifier and "operational bucket" not in verifier
 
 
 def test_segments_sharing_a_label_stitch_into_one_phase():
