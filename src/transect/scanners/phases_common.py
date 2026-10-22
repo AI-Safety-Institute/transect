@@ -84,8 +84,10 @@ _DELEGATION_TIE_BREAK = (
     "hand-off fits no single phase)."
 )
 _MARKER_RULES = (
-    "[THINKING] text is the agent's internal reasoning - treat it as "
-    "evidence of the turn's activity, same as its visible text.",
+    "[THINKING] text is the agent's recorded reasoning. It can show what "
+    "the agent was considering, but reasoning is not always faithful to "
+    "what the turn did, so weigh it against the turn's visible text, tool "
+    "calls and hand-offs rather than classifying on it alone.",
     "[CALL] is a tool call the agent made in that turn and [RESULT] or "
     "[ERROR] its recorded output; (tools: ...) lists calls by name only - "
     "treat them as evidence of the turn's activity, same as its visible "

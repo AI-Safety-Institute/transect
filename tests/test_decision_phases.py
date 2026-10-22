@@ -129,6 +129,16 @@ def test_delegation_rule_makes_an_authored_bucket_decisive_for_hand_offs():
     assert "prefer" not in rule and "not as" not in rule
 
 
+def test_the_thinking_rule_does_not_equate_reasoning_with_the_visible_record():
+    """[THINKING] is offered as a window on what the agent was considering,
+    not as a record of what the turn did: the rule names the faithfulness
+    caveat and points the judge at the visible text and calls."""
+    phase_defs, ops_name = resolve_phases(Spec.model_validate({"phases": ["a"]}))
+    (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[THINKING]" in r]
+    assert "faithful" in rule
+    assert "same as its visible text" not in rule
+
+
 def test_verifier_without_a_bucket_shows_no_ops_rule():
     """The verifier prompt for a spec with phase_ops_label null carries the
     delegation and marker rules but no operational rule."""
