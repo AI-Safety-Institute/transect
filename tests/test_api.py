@@ -98,35 +98,83 @@ def test_scan_knobs_reach_scout(demo_log, tmp_path, monkeypatch):
         fail_on_error=True,
     )
     assert not results.scan_status.has_failures
-    assert seen["max_transcripts"] == 3 and seen["model_config"] is config
+    assert seen["max_transcripts"] == 3 and seen["model_config"] == config
     assert seen["results_buffer"] == 5 and seen["fail_on_error"] is True
     assert seen["max_processes"] == 1
 
 
-def test_judge_scanner_knobs_reach_the_scanner_factories(monkeypatch):
-    """chunk, verify_chunk, narrate and subagent_activity are forwarded to
-    decision_phases and subagent_classification by name."""
+def test_the_callers_model_config_is_not_written_to(demo_log, tmp_path):
+    """Scout fills max_connections on the scan-level config it is handed;
+    the object the caller passed stays as they built it, so reusing it
+    across runs cannot carry one run's limit into the next."""
+    config = GenerateConfig(timeout=30)
+    transect(
+        logs=str(demo_log),
+        spec=Spec(),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+        max_transcripts=4,
+        model_config=config,
+    )
+    assert config.max_connections is None
+
+
+@pytest.mark.parametrize(
+    "field, value", [("batch", True), ("temperature", 0.5), ("max_tokens", 100)]
+)
+def test_a_model_config_field_the_judges_never_see_is_refused(
+    demo_log, tmp_path, field, value
+):
+    """inspect_ai passes only the connection, retry, timeout and cache
+    settings of the scan-level config on to the judge models, so a
+    sampling or batching field there would silently do nothing: it is
+    refused up front, naming the field and where it belongs."""
+    with pytest.raises(ValueError, match=f"{field}.*on the judge"):
+        transect(
+            logs=str(demo_log),
+            spec=Spec(),
+            scans_dir=str(tmp_path / "scans"),
+            viewer=False,
+            open_report=False,
+            model_config=GenerateConfig(**{field: value}),
+        )
+
+
+def test_judge_call_shaping_reaches_the_scanner_factories(
+    demo_log, tmp_path, monkeypatch
+):
+    """chunk, verify_chunk, narrate and subagent_activity travel from
+    transect() to decision_phases and subagent_classification by name,
+    and the judged scan still completes at $0 with them applied."""
     seen = {}
-    monkeypatch.setattr(
-        api, "decision_phases", lambda spec, **kw: seen.setdefault("phases", kw)
-    )
-    monkeypatch.setattr(
-        api,
-        "subagent_classification",
-        lambda spec, **kw: seen.setdefault("subagents", kw),
-    )
-    spec = Spec.model_validate({"phases": ["a"], "subagent_labels": ["r"]})
-    _scanners(
-        spec,
-        "mockllm/model",
+    for name in ["decision_phases", "subagent_classification"]:
+        real = getattr(api, name)
+
+        def capture(spec, _real=real, _name=name, **kw):
+            seen[_name] = kw
+            return _real(spec, **kw)
+
+        monkeypatch.setattr(api, name, capture)
+    results = transect(
+        logs=str(demo_log),
+        spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+        judge_models=demo_judge(),
+        verify=False,
         chunk=10,
         verify_chunk=4,
         narrate=False,
         subagent_activity=True,
     )
-    assert (seen["phases"]["chunk"], seen["phases"]["verify_chunk"]) == (10, 4)
-    assert seen["phases"]["narrate"] is False
-    assert seen["subagents"]["activity"] is True
+    assert not results.scan_status.has_failures
+    phases, subagents = seen["decision_phases"], seen["subagent_classification"]
+    assert (phases["chunk"], phases["verify_chunk"]) == (10, 4)
+    assert phases["narrate"] is False
+    assert subagents["activity"] is True
+    assert (results.phases["headline"] == "").all()
 
 
 def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):
