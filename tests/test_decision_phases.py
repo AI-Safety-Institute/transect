@@ -31,6 +31,8 @@ from transect.scanners.phases_common import (
 from transect.scanners.phases_verify import select_for_verify, verify_system_prompt
 from transect.spec import Spec
 
+COORDINATION = {"label": "coordination", "description": "Hand-offs."}
+
 
 def turns(n):
     return [model_turn(f"reasoning turn {i}") for i in range(n)]
@@ -50,7 +52,7 @@ def test_declared_ops_phase_replaces_the_reserved_bucket():
     """The declared phase named by phase_ops_label becomes the operational
     bucket; no extra reserved ops label is appended."""
     spec = Spec.model_validate(
-        {"phases": ["coordination", "experiment"], "phase_ops_label": "coordination"}
+        {"phases": [COORDINATION, "experiment"], "phase_ops_label": "coordination"}
     )
     system = system_prompt(spec)
     assert "coordination" in system
@@ -115,7 +117,7 @@ def test_delegation_rule_makes_an_authored_bucket_decisive_for_hand_offs():
         {
             "phases": [
                 "experiment",
-                {"label": "coordination", "description": "Hand-offs."},
+                COORDINATION,
             ],
             "phase_ops_label": "coordination",
         }
@@ -125,18 +127,6 @@ def test_delegation_rule_makes_an_authored_bucket_decisive_for_hand_offs():
     assert "every such turn belongs in 'coordination'" in rule
     assert "whatever the delegated task's purpose" in rule
     assert "prefer" not in rule and "not as" not in rule
-
-
-def test_an_undescribed_declared_bucket_gets_the_fixed_ops_rule():
-    """A declared bucket with no description cannot define itself, so the
-    judge gets the fixed operational wording, not a pointer to an empty
-    definition."""
-    spec = Spec.model_validate(
-        {"phases": ["experiment", "coordination"], "phase_ops_label": "coordination"}
-    )
-    system = system_prompt(spec)
-    assert "plumbing turns belong in 'coordination'" in system
-    assert "defined by its description above" not in system
 
 
 def test_verifier_without_a_bucket_shows_no_ops_rule():

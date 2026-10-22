@@ -57,7 +57,8 @@ classify against. The worked example is
   too - an escape hatch beats a forced wrong label.
 - `phase_ops_label` (default `ops`): the phase label that is the
   operational bucket (delegation mechanics, housekeeping). Name a
-  declared phase to define the bucket in your own words; with the
+  declared phase to define the bucket in your own words (it must have
+  a description: the judges treat it as the bucket's definition); with the
   default and no phase called `ops`, a reserved `ops` bucket is
   appended. `null` offers no bucket (an eval whose framework has no
   operational category). It is phase-only; the sub-agent surface has

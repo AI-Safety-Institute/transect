@@ -286,7 +286,7 @@ def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
         ops = next((p for p in phase_defs if p.label == ops_name), None)
         if ops is None:
             raise ValueError(f"ops bucket {ops_name!r} is not among the phases")
-        fixed = ops == _DEFAULT_OPS_PHASE or not ops.description
+        fixed = ops == _DEFAULT_OPS_PHASE
         rules.append(
             (_OPS_RULE_FIXED if fixed else _OPS_RULE_AUTHORED).format(ops=ops_name)
         )

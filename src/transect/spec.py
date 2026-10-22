@@ -112,10 +112,16 @@ class Spec(BaseModel):
             raise ValueError(
                 f"phase_ops_label {label!r} is the escape hatch, not a bucket"
             )
-        if label != DEFAULT_OPS_LABEL and all(p.label != label for p in self.phases):
+        bucket = next((p for p in self.phases if p.label == label), None)
+        if bucket is None and label != DEFAULT_OPS_LABEL:
             raise ValueError(
                 f"phase_ops_label {label!r} names no declared phase: "
                 f"{[p.label for p in self.phases]}"
+            )
+        if bucket is not None and not bucket.description:
+            raise ValueError(
+                f"the operational bucket {label!r} needs a description: the "
+                "judges are told the bucket is defined by it"
             )
         return self
 

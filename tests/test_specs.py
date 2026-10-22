@@ -14,12 +14,15 @@ from transect.scanners.phases_common import reserved_phase_labels, resolve_phase
 from transect.scanners.subagents import subagent_classification
 from transect.spec import Spec, load_spec
 
+OPS = {"label": "ops", "description": "Plumbing."}
+COORDINATION = {"label": "coordination", "description": "Hand-offs."}
+
 MINIMAL = {
     "context": "An AI R&D run.",
     "phases": [
         "planning",
         {"label": "experimentation", "description": "Runs experiments."},
-        "coordination",
+        COORDINATION,
     ],
     "phase_ops_label": "coordination",
     "subagent_labels": ["experiment_run", {"label": "result_review"}],
@@ -73,6 +76,22 @@ def test_a_phase_ops_label_must_name_a_declared_phase_that_is_not_the_escape_hat
         Spec.model_validate(
             {"phases": ["coordination", "none_of_the_above"], "phase_ops_label": label}
         )
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        {"phases": ["coordination", "experiment"], "phase_ops_label": "coordination"},
+        {"phases": ["ops", "experiment"]},
+    ],
+    ids=["named-bucket", "declared-ops-under-the-default"],
+)
+def test_a_declared_bucket_must_be_described(content):
+    """The judge is told the bucket is defined by its description, so a
+    declared bucket without one is refused, whether it is named by
+    phase_ops_label or is a phase called ops under the default."""
+    with pytest.raises(ValidationError, match="needs a description"):
+        Spec.model_validate(content)
 
 
 def test_a_null_phase_ops_label_resolves_no_operational_phase():
@@ -166,17 +185,17 @@ def test_subagent_label_must_be_its_own_key(label, key):
 @pytest.mark.parametrize(
     "content",
     [
-        {"phases": ["ops", "experiment"]},
-        {"phases": ["coordination", "experiment"], "phase_ops_label": "coordination"},
+        {"phases": [OPS, "experiment"]},
+        {"phases": [COORDINATION, "experiment"], "phase_ops_label": "coordination"},
         {
             "phases": [
                 {"label": "none_of_the_above", "description": "Authored fallback"},
                 "experiment",
             ]
         },
-        {"phases": ["ops", "none_of_the_above", "experiment"]},
+        {"phases": [OPS, "none_of_the_above", "experiment"]},
         {
-            "phases": ["ops", "coordination", "experiment"],
+            "phases": ["ops", COORDINATION, "experiment"],
             "phase_ops_label": "coordination",
         },
         {
@@ -214,8 +233,8 @@ def test_scramble_spec_preserves_the_resolved_phase_vocabulary(content):
 @pytest.mark.parametrize(
     "content, kept",
     [
-        ({"phases": ["ops", "experiment"]}, set()),
-        ({"phases": ["coordination"], "phase_ops_label": "coordination"}, set()),
+        ({"phases": [OPS, "experiment"]}, set()),
+        ({"phases": [COORDINATION], "phase_ops_label": "coordination"}, set()),
         ({"phases": ["none_of_the_above", "experiment"]}, {"none_of_the_above"}),
     ],
 )
@@ -263,7 +282,7 @@ def test_scrambled_subagent_vocabulary_is_isomorphic_to_the_original():
 def test_scrambled_run_stores_an_isomorphic_phase_vocabulary(demo_log, tmp_path):
     """The full phase pipeline records the scrambled rubric, and both the run
     and its reload descramble to the original categories."""
-    original = Spec.model_validate({"phases": ["ops", "experiment"]})
+    original = Spec.model_validate({"phases": [OPS, "experiment"]})
     scrambled, maps = scramble_spec(original, seed=7)
     result = _run(
         str(demo_log),
