@@ -106,12 +106,13 @@ def test_a_null_phase_ops_label_resolves_no_operational_phase():
 
 @pytest.mark.parametrize(
     "flag, message",
-    [(True, "phase_ops_label: 'coordination'"), (False, "drop it")],
+    [(True, "phase_ops_label: 'coordination'"), (False, "drop it .*default 'ops'")],
 )
 def test_the_removed_ops_flag_is_refused_with_the_migration(flag, message):
     """A phase still carrying the old ops flag fails validation: a true
-    flag is pointed at phase_ops_label, a false one (a no-op, as older
-    dumps wrote on every phase) is told to go."""
+    flag is pointed at phase_ops_label with its label, a false one (the
+    old default, as older dumps wrote on every phase) is told to go and
+    where the bucket is named now."""
     with pytest.raises(ValidationError, match=message):
         Spec.model_validate({"phases": [{"label": "coordination", "ops": flag}]})
 

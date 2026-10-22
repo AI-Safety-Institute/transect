@@ -31,12 +31,13 @@ class Phase(BaseModel):
     def _ops_flag_moved_to_the_spec(cls, value):
         if isinstance(value, dict) and "ops" in value:
             raise ValueError(
-                "the per-phase ops flag is gone: "
+                "the per-phase ops flag is gone"
                 + (
-                    "name the operational bucket with "
+                    ": name the operational bucket with "
                     f"phase_ops_label: {value.get('label')!r} on the spec"
                     if value["ops"]
-                    else "ops: false never did anything, drop it"
+                    else ", drop it (the bucket is named by phase_ops_label "
+                    f"on the spec, default {DEFAULT_OPS_LABEL!r})"
                 )
             )
         return value
