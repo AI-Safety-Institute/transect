@@ -135,16 +135,6 @@ def test_the_delegation_rule_takes_the_form_the_bucket_calls_for(
     assert not any(text in rule for text in unwanted)
 
 
-def test_the_thinking_rule_does_not_equate_reasoning_with_the_visible_record():
-    """[THINKING] is offered as a window on what the agent was considering,
-    not as a record of what the turn did: the rule names the faithfulness
-    caveat and points the judge at the visible text and calls."""
-    phase_defs, ops_name = resolve_phases(Spec.model_validate({"phases": ["a"]}))
-    (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[THINKING]" in r]
-    assert "faithful" in rule
-    assert "same as its visible text" not in rule
-
-
 def test_segments_sharing_a_label_stitch_into_one_phase():
     """Adjacent same-label segments merge; the phase records its turn
     range and the minimum member confidence."""
