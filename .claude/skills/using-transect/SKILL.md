@@ -53,10 +53,22 @@ classify against. The worked example is
 
 - `phases`: expected activity phases, each `label` + `description`
   (the description is rendered into the judge's rubric - write it as
-  you would brief a colleague). Mark one phase `ops: true` for
-  operational overhead (delegation mechanics, housekeeping); without
-  one a reserved `ops` bucket is appended. `none_of_the_above` is
-  always offered too - an escape hatch beats a forced wrong label.
+  you would brief a colleague). `none_of_the_above` is always offered
+  too - an escape hatch beats a forced wrong label.
+- `phase_ops_label` (default `ops`): which phase is the operational
+  bucket (delegation mechanics, housekeeping). Name a declared,
+  described phase to define it in your own words; with the default and
+  no phase called `ops`, a reserved `ops` bucket is appended; `null`
+  offers no bucket. Phase-only.
+- Your descriptions are not the whole rubric: the phase judge and its
+  verifier add a fixed rule set after the vocabulary (`label_rules` in
+  `src/transect/scanners/phases_common.py`). The rules that interact
+  with your text: the bucket is defined by its description (fixed
+  wording for the reserved one); a bucket whose description covers
+  hand-offs to sub-agents takes every `[DELEGATES]` turn, otherwise
+  such a turn goes to a phase covering sub-agent coordination, else
+  by the delegated task's purpose (never the reserved `ops`). Read
+  them before writing a description that overlaps one.
 - `subagent_labels`: expected sub-agent roles, same label +
   description shape.
 - `context`: additional context for phase prompts. It is not passed to the

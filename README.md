@@ -189,8 +189,11 @@ subagent_labels:
     description: Checks results and drafts before they are used.
 ```
 
-`none_of_the_above` and an operational bucket are always
-available to the judges.
+`none_of_the_above` is always available to the judges, and so is an
+operational bucket: the declared phase named by `phase_ops_label`
+(it must carry a description, which the judges are told defines the
+bucket), else (with the default, `ops`) a reserved `ops` phase;
+`phase_ops_label: null` offers no bucket.
 
 > [!TIP]
 > The shipped skills help here (see [Installation](#installation)):

@@ -146,10 +146,11 @@ record exposure and separate chosen conventions from corrected errors.
 Purpose: measure sensitivity to label names under a changed prompt. The
 helper preserves descriptions/context byte-for-byte, including any old label-name
 references: inspect the resulting prompt for coherence before using the comparison.
-A label a scanner recognises by name keeps it: a declared `none_of_the_above`
-on either surface, and a declared phase `ops` when no phase carries the ops
-flag. Kept labels map to themselves. Retain the mapping from the run; it is
-not stable across transect versions.
+A label a scanner recognises by a fixed name keeps it: a declared
+`none_of_the_above` on either surface. A declared ops bucket is renamed and
+`phase_ops_label` follows; the reserved `ops` bucket is not a declared label
+and stays `ops`. Kept labels map to themselves. Retain the mapping from the
+run; it is not stable across transect versions.
 
 1. Create and retain the mapping:
 

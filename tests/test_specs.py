@@ -14,13 +14,17 @@ from transect.scanners.phases_common import resolve_phases
 from transect.scanners.subagents import subagent_classification
 from transect.spec import Spec, load_spec
 
+OPS = {"label": "ops", "description": "Plumbing."}
+COORDINATION = {"label": "coordination", "description": "Hand-offs."}
+
 MINIMAL = {
     "context": "An AI R&D run.",
     "phases": [
         "planning",
         {"label": "experimentation", "description": "Runs experiments."},
-        {"label": "coordination", "ops": True},
+        COORDINATION,
     ],
+    "phase_ops_label": "coordination",
     "subagent_labels": ["experiment_run", {"label": "result_review"}],
 }
 
@@ -34,10 +38,64 @@ def test_plain_string_labels_normalise_to_full_entries():
     assert spec.subagent_labels[0].label == "experiment_run"
 
 
-def test_ops_flag_marks_the_operational_phase():
-    """A phase declared with ops: true carries the flag; others default off."""
-    spec = Spec.model_validate(MINIMAL)
-    assert [p.ops for p in spec.phases] == [False, False, True]
+@pytest.mark.parametrize(
+    "content, labels, bucket",
+    [
+        (
+            MINIMAL,
+            ["planning", "experimentation", "coordination", "none_of_the_above"],
+            "coordination",
+        ),
+        ({"phases": ["experiment"]}, ["experiment", "ops", "none_of_the_above"], "ops"),
+        (
+            {"phases": ["experiment"], "phase_ops_label": None},
+            ["experiment", "none_of_the_above"],
+            None,
+        ),
+    ],
+    ids=["named-bucket", "reserved-bucket", "no-bucket"],
+)
+def test_resolve_phases_places_the_bucket_the_spec_calls_for(content, labels, bucket):
+    """The declared phase named by phase_ops_label is the bucket and nothing
+    is appended; the default with no phase called ops appends the described
+    reserved bucket; null appends no bucket, and the escape hatch then stops
+    excluding operational work."""
+    phases, ops_name = resolve_phases(Spec.model_validate(content))
+    assert ([p.label for p in phases], ops_name) == (labels, bucket)
+    assert all(p.description for p in phases if p.label == ops_name)
+    assert ("operational" in phases[-1].description) == (bucket is not None)
+
+
+@pytest.mark.parametrize(
+    "content, message",
+    [
+        ({"phases": [COORDINATION], "phase_ops_label": "coordinaton"}, "no declared"),
+        (
+            {"phases": ["none_of_the_above"], "phase_ops_label": "none_of_the_above"},
+            "escape hatch",
+        ),
+        ({"phases": ["coordination"], "phase_ops_label": "coordination"}, "needs a"),
+        ({"phases": ["ops", "experiment"]}, "needs a description"),
+        ({"phases": [{"label": "x", "ops": True}]}, "phase_ops_label: 'x'"),
+        ({"phases": [{"label": "x", "ops": False}]}, "drop it .*default 'ops'"),
+    ],
+    ids=[
+        "typo",
+        "escape-hatch",
+        "bare-named-bucket",
+        "bare-ops-under-the-default",
+        "old-flag-true",
+        "old-flag-false",
+    ],
+)
+def test_a_spec_that_cannot_name_its_bucket_is_refused_with_the_fix(content, message):
+    """A label naming no declared phase, the escape hatch as the bucket, a
+    declared bucket without a description, and the removed per-phase ops
+    flag (true is pointed at phase_ops_label with its label; false, the
+    old default, is told to drop it and where the bucket is named) all
+    fail validation naming the fix."""
+    with pytest.raises(ValidationError, match=message):
+        Spec.model_validate(content)
 
 
 @pytest.mark.parametrize(
@@ -95,25 +153,35 @@ def test_subagent_label_must_be_its_own_key(label, key):
 
 
 @pytest.mark.parametrize(
-    "phases",
+    "content",
     [
-        ["ops", "experiment"],
-        [{"label": "coordination", "ops": True}, "experiment"],
-        [
-            {"label": "none_of_the_above", "description": "Authored fallback"},
-            "experiment",
-        ],
-        ["ops", "none_of_the_above", "experiment"],
-        ["ops", {"label": "coordination", "ops": True}, "experiment"],
-        [{"label": "setup", "description": "prepare", "ops": True}, "experiment"],
-        [],
+        {"phases": [OPS, "experiment"]},
+        {"phases": [COORDINATION, "experiment"], "phase_ops_label": "coordination"},
+        {
+            "phases": [
+                {"label": "none_of_the_above", "description": "Authored fallback"},
+                "experiment",
+            ]
+        },
+        {"phases": [OPS, "none_of_the_above", "experiment"]},
+        {
+            "phases": ["ops", COORDINATION, "experiment"],
+            "phase_ops_label": "coordination",
+        },
+        {
+            "phases": [{"label": "setup", "description": "prepare"}, "experiment"],
+            "phase_ops_label": "setup",
+        },
+        {"phases": ["ops", "experiment"], "phase_ops_label": None},
+        {"phases": []},
     ],
 )
-def test_scramble_spec_preserves_the_resolved_phase_vocabulary(phases):
-    """Scrambling renames labels only: definitions, flags, context and
-    the resolved vocabulary differ from the original by the mapping alone,
-    and descramble inverts it, passing unmapped and NaN values through."""
-    original = Spec.model_validate({"phases": phases, "context": "ctx"})
+def test_scramble_spec_preserves_the_resolved_phase_vocabulary(content):
+    """Scrambling renames labels only: definitions, the ops bucket, context
+    and the resolved vocabulary differ from the original by the mapping
+    alone, and descramble inverts it, passing unmapped and NaN values
+    through."""
+    original = Spec.model_validate({**content, "context": "ctx"})
     before, before_ops = resolve_phases(original)
     scrambled, maps = scramble_spec(original, seed=7)
     mapping = maps["phases"]
@@ -133,20 +201,25 @@ def test_scramble_spec_preserves_the_resolved_phase_vocabulary(phases):
 
 
 @pytest.mark.parametrize(
-    "phases, kept",
+    "content, kept",
     [
-        (["ops", "experiment"], {"ops"}),
-        (["ops", {"label": "coordination", "ops": True}], set()),
-        ([{"label": "ops", "ops": True}, "experiment"], set()),
-        (["none_of_the_above", "experiment"], {"none_of_the_above"}),
+        ({"phases": [OPS, "experiment"]}, set()),
+        ({"phases": [COORDINATION], "phase_ops_label": "coordination"}, set()),
+        ({"phases": ["ops", "experiment"], "phase_ops_label": None}, set()),
+        ({"phases": ["none_of_the_above", "experiment"]}, {"none_of_the_above"}),
     ],
 )
-def test_only_phase_labels_resolved_by_name_keep_their_names(phases, kept):
-    """A declared ops phase is renamed whenever a flag, not its name, selects
-    the bucket; a declared none_of_the_above always keeps its name."""
-    spec = Spec.model_validate({"phases": phases})
-    mapping = scramble_spec(spec, seed=7)[1]["phases"]
+def test_only_a_declared_none_of_the_above_keeps_its_name(content, kept):
+    """The ops bucket is renamed with its phase, since phase_ops_label
+    follows the mapping, and with no bucket a phase called ops is renamed
+    like any other; a declared none_of_the_above keeps its name."""
+    spec = Spec.model_validate(content)
+    scrambled, maps = scramble_spec(spec, seed=7)
+    mapping = maps["phases"]
     assert {label for label, token in mapping.items() if label == token} == kept
+    assert scrambled.phase_ops_label == mapping.get(
+        spec.phase_ops_label, spec.phase_ops_label
+    )
 
 
 def test_scrambled_subagent_vocabulary_is_isomorphic_to_the_original():
@@ -181,7 +254,7 @@ def test_scrambled_subagent_vocabulary_is_isomorphic_to_the_original():
 def test_scrambled_run_stores_an_isomorphic_phase_vocabulary(demo_log, tmp_path):
     """The full phase pipeline records the scrambled rubric, and both the run
     and its reload descramble to the original categories."""
-    original = Spec.model_validate({"phases": ["ops", "experiment"]})
+    original = Spec.model_validate({"phases": [OPS, "experiment"]})
     scrambled, maps = scramble_spec(original, seed=7)
     result = _run(
         str(demo_log),
