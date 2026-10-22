@@ -193,9 +193,7 @@ subagent_labels:
 operational bucket: the declared phase named by `phase_ops_label`
 (it must carry a description, which the judges are told defines the
 bucket), else (with the default, `ops`) a reserved `ops` phase;
-`phase_ops_label: null` offers no bucket. The phase judge and its
-verifier also follow a short fixed rule set beyond your descriptions
-(the using-transect skill lists it).
+`phase_ops_label: null` offers no bucket.
 
 > [!TIP]
 > The shipped skills help here (see [Installation](#installation)):
