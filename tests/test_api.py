@@ -7,6 +7,7 @@ from inspect_ai._util.registry import registry_info
 from inspect_ai.event import timeline_build
 from inspect_ai.log import read_eval_log, write_eval_log
 from inspect_ai.model import GenerateConfig
+from inspect_ai.model._model import Model
 
 import transect.api as api
 from transect import load, reliability, transect
@@ -139,6 +140,38 @@ def test_a_model_config_field_the_judges_never_see_is_refused(
             open_report=False,
             model_config=GenerateConfig(**{field: value}),
         )
+
+
+def test_the_scan_level_connection_limit_governs_every_judge_call(
+    demo_log, tmp_path, monkeypatch
+):
+    """The scan-level max_connections (Scout fills it from
+    max_transcripts) overrides a judge's own on every judged path, phase
+    judge, verifier, narrator and sub-agent judge alike, while the
+    judge's own sampling settings survive: the contract the docs state."""
+    resolved = []
+    real = Model._resolve_config
+
+    def record(self, config):
+        resolved.append(real(self, config))
+        return resolved[-1]
+
+    monkeypatch.setattr(Model, "_resolve_config", record)
+    judge = demo_judge()
+    judge.config = GenerateConfig(temperature=0.25, max_connections=1)
+    transect(
+        logs=str(demo_log),
+        spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+        judge_models=judge,
+        verify=True,
+        verify_sample=1.0,
+        max_transcripts=7,
+    )
+    assert len(resolved) > 10
+    assert {(c.max_connections, c.temperature) for c in resolved} == {(7, 0.25)}
 
 
 def test_judge_call_shaping_reaches_the_scanner_factories(
