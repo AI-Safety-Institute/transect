@@ -84,13 +84,10 @@ class Spec(BaseModel):
     """The sub-agent role vocabulary; empty disables classification."""
 
     phase_ops_label: str | None = DEFAULT_OPS_LABEL
-    """The phase label that is the operational bucket (setup /
-    coordination / plumbing). A declared phase with this label is the
-    bucket, defined by its description; with the default and no such
-    phase the reserved bucket is appended. Any other label must name a
-    declared phase. ``None`` offers no bucket, so operational turns take
-    a declared phase or ``none_of_the_above``. Phase-only: the sub-agent
-    surface has no operational role."""
+    """Which phase is the operational bucket: a declared phase with this
+    label, defined by its description; with the default and no such
+    phase, the reserved ``ops`` bucket. ``None`` offers no bucket.
+    Phase-only."""
 
     context: str = ""
     """Free-text task context for phase prompts; not passed to subagent judges."""
