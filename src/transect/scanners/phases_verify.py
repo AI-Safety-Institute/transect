@@ -18,6 +18,8 @@ from transect.scanners.phases_common import (
     context_blocks,
     gather_judge_calls,
     is_labelled,
+    label_rules,
+    numbered_rules,
     phase_evidence,
     resolve_phases,
     stitch_phases,
@@ -241,9 +243,10 @@ def verify_system_prompt(spec: Spec, task_prompt: str) -> str:
     Returns:
         The complete verifier system prompt string.
     """
-    phase_defs, _ = resolve_phases(spec)
+    phase_defs, ops_name = resolve_phases(spec)
     labels_line = ", ".join(p.label for p in phase_defs)
     prompt = _VERIFY_HEAD + vocab_lines(phase_defs)
+    prompt += numbered_rules(label_rules(phase_defs, ops_name))
     prompt += context_blocks(spec, task_prompt)
     prompt += (
         "\nReport your verdicts by calling the answer() tool: 'verdicts' "

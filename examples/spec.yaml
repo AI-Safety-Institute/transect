@@ -6,6 +6,8 @@ context: >
   to, and is evaluated on RMSE of the log sale price via a
   submission.csv of held-out predictions.
 
+phase_ops_label: coordination
+
 phases:
   - label: data_exploration
     description: >
@@ -36,12 +38,11 @@ phases:
       prediction distribution), reviewing the final metric, and
       submitting the answer.
   - label: coordination
-    ops: true
     description: >
-      Operational overhead rather than substantive work: handing
-      subtasks off to sub-agents and receiving their reports back,
-      workspace housekeeping, and the mechanics of submitting the
-      final answer.
+      Operational overhead rather than substantive work: environment
+      setup such as installing libraries, handing subtasks off to
+      sub-agents and receiving their reports back, and workspace
+      housekeeping.
 
 subagent_labels:
   - label: data_analysis

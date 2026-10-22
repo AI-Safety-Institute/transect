@@ -3445,7 +3445,7 @@ wheels = [
 
 [[package]]
 name = "transect"
-version = "0.3.5"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "inspect-ai" },

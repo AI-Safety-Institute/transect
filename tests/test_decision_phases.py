@@ -21,9 +21,17 @@ from inspect_ai.model import ContentReasoning, ContentText, get_model
 
 from transect.scanners.digests import DigestSettings, clip, digest_line, turn_digests
 from transect.scanners.phases import decision_phases, project_phase_turns, system_prompt
-from transect.scanners.phases_common import DigestJudgement, StitchedPhase, is_labelled
-from transect.scanners.phases_verify import select_for_verify
+from transect.scanners.phases_common import (
+    DigestJudgement,
+    StitchedPhase,
+    is_labelled,
+    label_rules,
+    resolve_phases,
+)
+from transect.scanners.phases_verify import select_for_verify, verify_system_prompt
 from transect.spec import Spec
+
+COORDINATION = {"label": "coordination", "description": "Hand-offs."}
 
 
 def turns(n):
@@ -41,14 +49,90 @@ def test_system_prompt_carries_the_vocabulary_and_escape_hatches():
 
 
 def test_declared_ops_phase_replaces_the_reserved_bucket():
-    """A spec phase flagged ops: true becomes the operational bucket;
-    no extra reserved ops label is appended."""
+    """The declared phase named by phase_ops_label becomes the operational
+    bucket; no extra reserved ops label is appended."""
     spec = Spec.model_validate(
-        {"phases": [{"label": "coordination", "ops": True}, "experiment"]}
+        {"phases": [COORDINATION, "experiment"], "phase_ops_label": "coordination"}
     )
     system = system_prompt(spec)
     assert "coordination" in system
     assert "- ops" not in system
+
+
+def test_a_null_phase_ops_label_drops_the_ops_rule():
+    """A spec with no ops bucket yields judge and verifier prompts with no
+    ops label and no rule sending operational turns anywhere, while the
+    delegation and marker rules and the escape hatch stay."""
+    spec = Spec.model_validate({"phases": ["experiment"], "phase_ops_label": None})
+    for prompt in [system_prompt(spec), verify_system_prompt(spec, "")]:
+        assert "- ops" not in prompt and "Operational" not in prompt
+        assert "operational bucket" not in prompt
+        assert "[DELEGATES]" in prompt and "[THINKING]" in prompt
+        assert "none_of_the_above" in prompt
+
+
+def test_declared_ops_rule_defers_to_the_authors_description():
+    """When the spec names its own ops phase, the ops rule points the judge
+    at that phase's description instead of the fixed wording."""
+    spec = Spec.model_validate(
+        {
+            "phases": [
+                {"label": "discussion", "description": "Talking to the operator."},
+                {"label": "coordination", "description": "Handoffs."},
+            ],
+            "phase_ops_label": "coordination",
+        }
+    )
+    system = system_prompt(spec)
+    assert "'coordination' is the operational bucket" in system
+    assert "Operational / setup / coordination / plumbing" not in system
+
+
+def test_verifier_sees_the_judges_label_rules():
+    """Every label rule the judge works under is rendered verbatim in the
+    verifier prompt; the judge-only segmentation rules are not."""
+    phase_defs, ops_name = resolve_phases(PHASES_SPEC)
+    judge = system_prompt(PHASES_SPEC)
+    verifier = verify_system_prompt(PHASES_SPEC, "")
+    rules = label_rules(phase_defs, ops_name)
+    assert len(rules) >= 4
+    assert all(rule in judge and rule in verifier for rule in rules)
+    assert "contiguous" in judge and "contiguous" not in verifier
+
+
+@pytest.mark.parametrize(
+    "content, wanted, unwanted",
+    [
+        (
+            {"phases": ["experiment"]},
+            ["not as 'ops' work", "another phase", "'none_of_the_above' (a mixed"],
+            ["every such turn"],
+        ),
+        (
+            {"phases": ["experiment", COORDINATION], "phase_ops_label": "coordination"},
+            ["every such turn belongs in 'coordination'", "whatever the delegated"],
+            ["not as"],
+        ),
+        (
+            {"phases": ["experiment"], "phase_ops_label": None},
+            ["It belongs to a phase whose description or name covers delegating"],
+            ["not as", "every such turn"],
+        ),
+    ],
+    ids=["reserved-bucket", "authored-bucket", "no-bucket"],
+)
+def test_the_delegation_rule_takes_the_form_the_bucket_calls_for(
+    content, wanted, unwanted
+):
+    """With the reserved bucket a hand-off goes by the delegated task's
+    purpose and is not ops work; with an authored bucket whose description
+    covers hand-offs every one belongs there; with no bucket a phase
+    covering delegation takes it, else purpose. The tie-break for a
+    mixed hand-off ends in none_of_the_above."""
+    phase_defs, ops_name = resolve_phases(Spec.model_validate(content))
+    (rule,) = [r for r in label_rules(phase_defs, ops_name) if "[DELEGATES]" in r]
+    assert all(text in rule for text in wanted)
+    assert not any(text in rule for text in unwanted)
 
 
 def test_segments_sharing_a_label_stitch_into_one_phase():
