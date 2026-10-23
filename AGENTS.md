@@ -167,8 +167,6 @@ scanner change take effect; run a new scan and retain both results for compariso
   chart in the browser. Read it before writing or reviewing any chart
   code; the long docstrings in `report/` encode these findings and
   should not be trimmed.
-- `embed.py`'s pixel constants are real-browser measurements; the
-  comments say what was measured and how to re-measure.
 - Verify report changes in a real browser, not only via tests: chart
   regressions typically produce zero Python errors. The $0 loop: run
   `transect()` on the committed demo log
@@ -184,10 +182,9 @@ scanner change take effect; run a new scan and retain both results for compariso
 - **Module layout.** Module docstring, imports, module constants,
   then classes (pydantic models and dataclasses), then public
   functions, then private `_`-prefixed helpers at the bottom.
-  Report modules (`report/charts.py`, `report/embed.py`)
-  are the one exception: their measured pixel and layout constants
-  stay next to the function that uses them, with the comment that
-  says what was measured.
+  `report/charts.py` is the one exception: its measured pixel and
+  layout constants stay next to the function that uses them, with the
+  comment that says what was measured.
 - **Comments state constraints the code cannot show** - no narration,
   no implementation history. No all-caps emphasis words in prose,
   comments, or docstrings (prompt strings exempt). No em dashes and no

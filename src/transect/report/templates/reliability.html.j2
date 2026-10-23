@@ -15,8 +15,8 @@
 {%- endmacro %}
 
 {#- One audit map: a plain HTML table (deliberately not an
-    inspect-viz chart - small text-heavy grids, no CDN dependency, no
-    tooltip height budget). Cell colours come precomputed from
+    inspect-viz chart - small text-heavy grids, no CDN dependency).
+    Cell colours come precomputed from
     sections.py's ramp helpers; the value is always in the cell text,
     so colour is never the only signal. -#}
 {% macro relmap(map) -%}
