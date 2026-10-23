@@ -71,17 +71,14 @@ tokens, `batch`) go on the judge: build it with Inspect's
 Connection settings go on the scan:
 `transect(..., model_config=GenerateConfig(max_connections=..., max_retries=...,
 timeout=...))`, plus `max_transcripts`, `results_buffer` and `fail_on_error`.
-inspect_ai passes only those operational fields of the scan-level config on to
-the judges, so `transect()` refuses a `model_config` carrying anything else
-rather than let it silently do nothing. Scout fills the scan-level
-`max_connections` (from `max_transcripts`) whenever it is unset, and inspect_ai
-merges the scan-level operational fields over a judge's own, so a connection
-limit set on the judge model alone does not take effect. Available settings depend on the
-provider/model; verify they are supported and inspect actual recorded requests
-before claiming a change took effect. Do not assume lower temperature, more
-reasoning, or more judges improves validity. Custom Scout runners must also bind
-their scan-level configuration; constructing a model object alone does not
-demonstrate the effective concurrency or output limit at the runtime boundary.
+A judge call resolves its config in layers, the later winning where set: the
+judge's own config, then the scan level's operational fields (connections,
+retries, timeout, cache). Scout always fills the scan-level `max_connections`
+(from `max_transcripts`), so a connection limit set on the judge alone is
+overridden; sampling fields never inherit, so `transect()` refuses a
+`model_config` carrying one. Available settings depend on the provider/model;
+verify they are supported and inspect actual recorded requests before claiming
+a change took effect.
 
 ## Caches, repeats and recovery
 
