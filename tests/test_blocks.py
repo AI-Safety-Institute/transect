@@ -113,4 +113,6 @@ def test_sections_validate_on_the_run(layered_run):
         Markdown,
         TurnChart,
         TurnBand,
+        Markdown,
+        Table,
     ]

@@ -261,32 +261,40 @@ _WIDGET_STYLE_CSS = (
     f"{{ font-family: {_FONT_STACK}; }}"
     # 0.85rem matches `_STYLE`'s `.meta`, the prose around these widgets
     ".mosaic-widget { font-size: 0.85rem; }"
-    ".mosaic-widget div:has(> fieldset) { margin-bottom: 1.25rem; }"
+    # `!important`: the rule must not depend on this `<style>` following
+    # the widget bundle's stylesheet in the template head, nor on the
+    # bundle's own row rules staying at or below (0,1,1) - the rows
+    # collapsing against the chart raises no error and no test checks
+    # spacing
+    ".mosaic-widget div:has(> fieldset) { margin-bottom: 1.25rem !important; }"
     # radio pills. The legend text is styled on `fieldset` itself:
     # `radio_group`'s JS leaves "Measure:" as a bare text node (no
     # `<legend>` element exists), so `fieldset > legend` matches
     # nothing; the `<label>` children are reset back to normal below.
     ".mosaic-widget fieldset { gap: 0.6rem !important; font-weight: 600; "
-    "color: rgba(33, 37, 41, 0.75); }"
-    ".mosaic-widget fieldset > label { font-weight: 400; color: #212529; "
-    "border: 1px solid #dee2e6; "
+    "color: var(--transect-color-muted); }"
+    ".mosaic-widget fieldset > label { font-weight: 400; "
+    "color: var(--transect-color-text); "
+    "border: 1px solid var(--transect-color-border); "
     "border-radius: 999px; padding: 2px 10px 2px 6px; "
     "transition: background-color .1s, border-color .1s; }"
-    ".mosaic-widget fieldset > label:hover { background: #f8f9fa; }"
+    ".mosaic-widget fieldset > label:hover "
+    "{ background: var(--transect-color-hover); }"
     ".mosaic-widget fieldset > label:has(> input:checked) "
-    "{ border-color: #104D6A; background: #e7f0f4; }"
+    "{ border-color: var(--transect-color-link); background: #e7f0f4; }"
     ".mosaic-widget fieldset > label > input[type=radio] "
-    "{ accent-color: #104D6A; }"
+    "{ accent-color: var(--transect-color-link); }"
     # tom-select's visible control: strip the vendor chrome, match the
     # page's `.filter-bar select` border/radius/font
     ".mosaic-widget label:has(.ts-wrapper) "
-    "{ font-weight: 600; color: rgba(33, 37, 41, 0.75); }"
-    ".mosaic-widget .ts-wrapper { font-weight: 400; color: #212529; "
-    "min-height: 26px !important; }"
+    "{ font-weight: 600; color: var(--transect-color-muted); }"
+    ".mosaic-widget .ts-wrapper { font-weight: 400; "
+    "color: var(--transect-color-text); min-height: 26px !important; }"
     ".mosaic-widget .ts-control, "
     ".mosaic-widget .ts-wrapper.single .ts-control { "
     "background: #fff !important; background-image: none !important; "
-    "box-shadow: none !important; border: 1px solid #dee2e6 !important; "
+    "box-shadow: none !important; "
+    "border: 1px solid var(--transect-color-border) !important; "
     "border-radius: 3px !important; padding: 2px 28px 2px 8px !important; "
     "font-family: inherit !important; font-size: 0.85rem !important; "
     # rem, not em: an em would compound against `.mosaic-widget`'s own
@@ -296,43 +304,55 @@ _WIDGET_STYLE_CSS = (
     "{ border-color: #b8c3cc !important; }"
     ".mosaic-widget .ts-wrapper.single.focus .ts-control, "
     ".mosaic-widget .ts-wrapper.single.dropdown-active .ts-control { "
-    "border-color: #09A4A7 !important; "
+    "border-color: var(--transect-color-accent) !important; "
     "box-shadow: 0 0 0 0.2rem rgba(9, 164, 167, 0.25) !important; }"
     # tom-select's dropdown popup: page-level, `dropdownParent: "body"`
     # escapes `.mosaic-widget`
     ".ts-dropdown { background: #fff !important; "
-    "border: 1px solid #dee2e6 !important; border-radius: 3px !important; "
+    "border: 1px solid var(--transect-color-border) !important; "
+    "border-radius: 3px !important; "
     "box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important; "
     f"font-family: {_FONT_STACK} !important; font-size: 0.85rem !important; }}"
     ".ts-dropdown .option, .ts-dropdown .optgroup-header, "
     ".ts-dropdown .no-results, .ts-dropdown .create "
     "{ padding: 4px 10px !important; }"
     ".ts-dropdown .active "
-    "{ background-color: #f8f9fa !important; color: #212529 !important; }"
+    "{ background-color: var(--transect-color-hover) !important; "
+    "color: var(--transect-color-text) !important; }"
     ".tippy-box[data-theme~='inspect'] { font-family: "
-    f"{_FONT_STACK} !important; background-color: #f8f9fa !important; "
-    "border: 1px solid #dee2e6 !important; border-radius: 4px !important; "
+    f"{_FONT_STACK} !important; "
+    "background-color: var(--transect-color-hover) !important; "
+    "border: 1px solid var(--transect-color-border) !important; "
+    "border-radius: 4px !important; "
     "box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important; "
     "filter: none !important; }"
     ".tippy-box[data-theme~='inspect'] .tippy-arrow:before "
-    "{ color: #f8f9fa !important; }"
+    "{ color: var(--transect-color-hover) !important; }"
 )
 
 
 # The chart boxes `embed.embed_section` wraps each fragment in, and the
 # rules that let a chart and its tooltips work inside them.
 #
+# - `.chart-scroll` scrolls horizontally in both views: whatever a
+#   fragment holds that is wider than the page (a `Table` block's grid,
+#   a row of input widgets on a narrow window) scrolls inside its box
+#   instead of forcing the page to scroll. A scroll container does not
+#   clip the tippy popover (verified: it shows whole over a chart at the
+#   page's top and bottom edge in both views).
 # - Default view: Plot's own ``max-width: 100%`` on each svg scales a
 #   chart wider than its box down to fit, keeping its aspect ratio.
 # - Zoomed view (the page's ``#transect-zoom-toggle``, read by `:has()`
 #   so a restored checkbox state needs no script): each svg renders at
 #   its authored width - `.mosaic-widget svg` wins on specificity (0,1,1
 #   against Plot's generated class's 0,1,0); `!important` guards against
-#   a future Plot stylesheet change, since the failure mode is silent -
-#   and `.chart-scroll` scrolls it horizontally. `.chart` sizes to the
-#   widest plot so the input rows (`vconcat` children holding a control)
-#   have room to stick to the wrapper's left edge while the chart
-#   scrolls under them.
+#   a future Plot stylesheet change, since the failure mode is silent.
+#   `.chart:has(svg)` sizes a plot's box to its widest plot so the input
+#   rows (`vconcat` children holding a control) have room to stick to
+#   the wrapper's left edge while the chart scrolls under them. A box
+#   with no svg (a `Table` block) keeps the page width: a `max-content`
+#   grid would stretch to its full column width instead of scrolling
+#   inside the box.
 # - Neither view may put a `transform`, or anything else that makes a
 #   containing block, on a chart's ancestors: inspect_viz keeps one tippy
 #   instance per page, bound to the widget whose svg it configured last,
@@ -353,8 +373,9 @@ _WIDGET_STYLE_CSS = (
 #   text is no longer selectable and a link inside it is no longer
 #   clickable; nothing here puts a link in a tooltip.
 _CHART_CSS = (
-    "body:has(#transect-zoom-toggle:checked) .chart-scroll { overflow-x: auto; }"
-    "body:has(#transect-zoom-toggle:checked) .chart { width: max-content; }"
+    ".chart-scroll { overflow-x: auto; }"
+    "body:has(#transect-zoom-toggle:checked) .chart:has(svg) "
+    "{ width: max-content; }"
     "body:has(#transect-zoom-toggle:checked) .mosaic-widget svg "
     "{ max-width: none !important; }"
     ".chart-scroll .mosaic-widget > div > div"

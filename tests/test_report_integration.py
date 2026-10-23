@@ -1,6 +1,7 @@
 """Report integration: render real scans of differently-shaped logs
 and check the HTML comes out whole."""
 
+import dataclasses
 import html as html_mod
 from pathlib import Path
 from typing import get_args
@@ -156,6 +157,9 @@ def test_judged_report_renders_all_sections_from_a_stored_scan(store, tmp_path):
     ):
         assert section in html
     assert "Traceback" not in html
+    # one widget runtime for the page: the bundle once, no per-section iframe
+    assert html.count('id="iv-esm"') == 1
+    assert "<iframe" not in html
     text = html_mod.unescape(html)
     for needle, at_least in _STORE_CONTENT[store]:
         assert text.count(needle) >= at_least, f"{needle!r} x{at_least} missing"
@@ -175,9 +179,10 @@ def _assert_no_page_errors(
     compaction_threshold: int | None = None,
 ) -> None:
     """Load the report in a real browser and require zero page errors,
-    one document, and a drawn svg in every chart box (inspect-viz widget
-    failures are console-only and blank charts silently). Skips without
-    playwright or without the CDN."""
+    one document, and a drawn chart in every chart box: a plot's svg, or a
+    `Table` block's mounted grid (inspect-viz widget failures are
+    console-only and blank charts silently). Skips without playwright or
+    without the CDN."""
     playwright = pytest.importorskip("playwright.sync_api")
     errors: list[str] = []
     cdn_failures: list[str] = []
@@ -222,7 +227,9 @@ def _assert_no_page_errors(
             playwright.expect(rule).to_have_count(1)
         n_frames = len(page.frames)
         n_charts = page.locator(".chart-scroll").count()
-        blank = page.locator(".chart-scroll:not(:has(svg))")
+        blank = page.locator(
+            ".chart-scroll:not(:has(svg, .inspect-viz-table .ag-root-wrapper))"
+        )
         try:  # a slow chart gets the expect timeout to draw
             playwright.expect(blank).to_have_count(0)
         except AssertionError:
@@ -235,6 +242,20 @@ def _assert_no_page_errors(
     assert n_frames == 1
     assert n_charts >= min_charts
     assert n_blank == 0
+
+
+def test_report_with_no_transcripts_carries_no_widget_runtime():
+    """A results set with nothing to chart renders the empty-report note
+    and inlines neither the widget bundle nor its stylesheet."""
+    scans = Path(__file__).parent / "fixtures" / "demo_scan"
+    results = load(str(scans))
+    empty = dataclasses.replace(
+        results, token_timeline=results.token_timeline.iloc[0:0]
+    )
+    html = render_report(empty)
+    assert "No transcripts in results." in html
+    assert 'id="iv-esm"' not in html
+    assert 'class="chart-scroll"' not in html
 
 
 def test_recorded_compaction_threshold_survives_replay_and_toggles(demo_log, tmp_path):
@@ -407,8 +428,8 @@ def test_custom_layer_section_renders_and_passes_the_browser(layered_run, tmp_pa
     assert html[section_start:section_end].count('class="chart-scroll"') >= 1
     # the $0 mechanical report has fewer sections than the judged one
     # the default floor is calibrated for: 3 built-in charts + the
-    # custom section's one
-    _assert_no_page_errors(path, min_charts=4)
+    # custom section's chart-and-band fragment and its table fragment
+    _assert_no_page_errors(path, min_charts=5)
 
 
 def test_tag_chips_and_selectors_ride_the_phase_cards(tmp_path):

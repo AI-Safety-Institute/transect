@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
+from inspect_viz import Component
 from inspect_viz.plot import HtmlPage
 from markupsafe import Markup
 
@@ -41,6 +42,19 @@ SECTION_KEYS = (
     "token_spend",
     "phase_cards",
 )
+
+
+class _ReportPage(HtmlPage):
+    """The report's one `HtmlPage`, counting the fragments taken from it
+    so the template can leave out the widget bundle when there are none."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.n_fragments = 0
+
+    def fragment(self, component: Component) -> str:
+        self.n_fragments += 1
+        return super().fragment(component)
 
 
 def render_report(
@@ -78,7 +92,7 @@ def render_report(
     # every chart is a fragment of this one page (`embed.embed_section`);
     # each fragment it produces must reach the template, since a fragment
     # waits without a timeout for a table an earlier one embeds
-    page = HtmlPage()
+    page = _ReportPage()
     transcripts = []
     for idx, transcript_id in enumerate(order):
         one = _mine(timeline, transcript_id)
@@ -397,7 +411,9 @@ def render_report(
     template = jinja_env().get_template("report.html.j2")
     return template.render(
         title=title,
-        chart_head=Markup(page.head()),
+        # a report with no chart (no transcripts, every transcript errored)
+        # carries no widget bundle and boots no runtime
+        chart_head=Markup(page.head() if page.n_fragments else ""),
         style=Markup(_STYLE + _WIDGET_STYLE_CSS + _CHART_CSS),
         scan_location=str(results.scan_location),
         scan_status_view=sections.scan_status_view(results.scan_status),
