@@ -73,6 +73,15 @@ from transect.tags import turn_tags_frame
 # model (Model._resolve_config inherits these, and fail_on_refusal when
 # the judge leaves it unset); any other field set there never reaches a
 # judge call.
+# The scanners every run executes; a store without their results is not
+# a transect scan but an interrupted one, and load() says so.
+_STRUCTURAL_SCANNERS = (
+    "token_timeline",
+    "context_flush",
+    "human_intervention",
+    "eval_setup",
+)
+
 _SCAN_CONFIG_FIELDS = frozenset(
     {
         "max_connections",
@@ -180,9 +189,13 @@ def transect(
             Python process (Ctrl+C to exit); without one (a coding
             agent, CI) it is left serving at the printed URL.
         open_report: Open the rendered HTML in the browser.
-        max_processes: Parallel scan worker processes (Scout's own
-            default is several; a scan of one transcript gains nothing
-            from more). Scheduling only.
+        max_processes: Parallel scan worker processes. Scout runs a
+            one-transcript scan in-process whatever the value, so this
+            binds only with several epochs selected. Above 1 Scout
+            spawns workers: call ``transect()`` under an
+            ``if __name__ == "__main__"`` guard, and know that a worker
+            has died mid-scan (EOFError) on a large transcript before,
+            which is why 1 is the default. Scheduling only.
         max_transcripts: Transcripts scanned concurrently (Scout's
             default 25); several transcripts are in a scan only when
             more than one epoch is selected. Also Scout's default for
@@ -204,10 +217,16 @@ def transect(
             passed is not written to. Scheduling only.
         results_buffer: Results synced to the scan store every N
             items, so a long run keeps partial results. Scheduling only.
-        fail_on_error: Raise out of ``transect()`` on the first scanner
-            error instead of recording it per transcript and rendering
-            (a bad judge configuration fails fast, with no report).
-            Scheduling only.
+        fail_on_error: Stop the scan at the first scanner error instead
+            of recording it per transcript and carrying on. Scout
+            returns the interrupted store rather than raising, so
+            ``transect()`` still loads and renders it: the structural
+            frames hold what completed, the judged frames are empty,
+            and ``scan_status`` shows the gap (not complete, nothing
+            scanned for the stopped scanners, no recorded error). A stop
+            before a structural scanner wrote its results leaves a store
+            ``load()`` refuses, naming the scanner: rerun. Scheduling
+            only.
         chunk: Orchestrator turns per phase-judge segmentation call.
             Changes every phase judge request.
         verify_chunk: Phases per verifier call. Changes the verifier's
@@ -329,6 +348,13 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     # input, its message/event pool, and the scan's own event log) are
     # left on disk
     results = scan_results_df(scan_location, exclude_columns=list(HEAVY_COLUMNS))
+    missing = [name for name in _STRUCTURAL_SCANNERS if name not in results.scanners]
+    if missing:
+        raise ValueError(
+            f"the scan at {scan_location} has no results for {', '.join(missing)}: "
+            "the scan stopped before they were written (fail_on_error, or an "
+            "interrupted run); rerun it"
+        )
     unclaimed = sorted(
         key
         for key, scanner in results.spec.scanners.items()

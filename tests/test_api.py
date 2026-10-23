@@ -12,6 +12,7 @@ from inspect_ai.model._model import Model
 import transect.api as api
 from transect import load, reliability, transect
 from transect.api import _run, _scanners, _viewer_exit_mode
+from transect.scanners import base
 from transect.spec import Spec
 
 
@@ -102,6 +103,29 @@ def test_scan_knobs_reach_scout(demo_log, tmp_path, monkeypatch):
     assert seen["max_transcripts"] == 3 and seen["model_config"] == config
     assert seen["results_buffer"] == 5 and seen["fail_on_error"] is True
     assert seen["max_processes"] == 1
+
+
+def test_fail_on_error_before_the_structural_scan_leaves_a_store_load_refuses(
+    demo_log, tmp_path, monkeypatch
+):
+    """With fail_on_error Scout stops at the first scanner error and hands
+    back the interrupted store instead of raising; when the stop lands
+    before a structural scanner wrote its results, load() refuses the
+    store, naming the scanner and the rerun, instead of a bare KeyError."""
+
+    def fail(uri):
+        raise RuntimeError("recorded setup failure")
+
+    monkeypatch.setattr(base, "_eval_header", fail)
+    with pytest.raises(ValueError, match=r"no results for eval_setup.*rerun"):
+        transect(
+            logs=str(demo_log),
+            spec=Spec(),
+            scans_dir=str(tmp_path / "scans"),
+            viewer=False,
+            open_report=False,
+            fail_on_error=True,
+        )
 
 
 def test_the_callers_model_config_is_not_written_to(demo_log, tmp_path):
