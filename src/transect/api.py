@@ -69,10 +69,6 @@ from transect.selection import read_index, select_transcripts
 from transect.spec import Spec, load_spec
 from transect.tags import turn_tags_frame
 
-# The scan-level GenerateConfig fields inspect_ai passes on to a judge
-# model (Model._resolve_config inherits these, and fail_on_refusal when
-# the judge leaves it unset); any other field set there never reaches a
-# judge call.
 # The scanners every run executes; a store without their results is not
 # a transect scan but an interrupted one, and load() says so.
 _STRUCTURAL_SCANNERS = (
@@ -82,6 +78,10 @@ _STRUCTURAL_SCANNERS = (
     "eval_setup",
 )
 
+# The scan-level GenerateConfig fields inspect_ai passes on to a judge
+# model (Model._resolve_config inherits these, and fail_on_refusal when
+# the judge leaves it unset); any other field set there never reaches a
+# judge call.
 _SCAN_CONFIG_FIELDS = frozenset(
     {
         "max_connections",
