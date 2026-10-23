@@ -87,10 +87,14 @@ def transect(
     epochs: int | list[int] | Literal["all"] | None = None,
     judge_models: str | Model | list[str | Model] | None = None,
     k_rolls: int = 1,
+    chunk: int = 40,
+    digest: DigestSettings | None = None,
     verify: bool | None = None,
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
-    digest: DigestSettings | None = None,
+    verify_chunk: int = 8,
+    narrate: bool = True,
+    subagent_activity: bool = False,
     scans_dir: str = "scans",
     report_path: str | None = None,
     title: str | None = None,
@@ -103,10 +107,6 @@ def transect(
     timeout: int | None = None,
     results_buffer: int | None = None,
     fail_on_error: bool = False,
-    chunk: int = 40,
-    verify_chunk: int = 8,
-    narrate: bool = True,
-    subagent_activity: bool = False,
     extra_layers: list[Layer] | None = None,
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
@@ -146,6 +146,12 @@ def transect(
             ``extra_layers`` may still call models and incur charges.
         k_rolls: Repeated rolls of one model (mutually exclusive with
             a multi-model list).
+        chunk: Orchestrator turns per segmentation call; changes the
+            phase judge's requests.
+        digest: What the phase judge, its verifier and the narrator
+            read per orchestrator turn (`DigestSettings`: the
+            character caps of each digest part and whether tool-call-
+            only turns are judged); ``None`` is the defaults.
         verify: The second-round verifier, a re-review of doubtful
             phase labels and sub-agent classifications. ``None`` =
             auto: on for a single judge model (solo and k-roll), off
@@ -161,10 +167,11 @@ def transect(
             per-span at that probability. No effect when the
             verifier is off (cohort regime, or ``verify=False``);
             values outside [0, 1] are rejected.
-        digest: What the phase judge, its verifier and the narrator
-            read per orchestrator turn (`DigestSettings`: the
-            character caps of each digest part and whether tool-call-
-            only turns are judged); ``None`` is the defaults.
+        verify_chunk: Phases per verifier call; changes its requests.
+        narrate: Headline and summary per phase; off removes those
+            calls.
+        subagent_activity: Also show the sub-agent judge each span's
+            recorded activity (experimental); changes its requests.
         scans_dir: Where the scan store (and report) live.
         report_path: Where the report lands. A ``.html`` file path;
             an existing directory gets ``report.html`` placed inside
@@ -176,49 +183,24 @@ def transect(
             Python process (Ctrl+C to exit); without one (a coding
             agent, CI) it is left serving at the printed URL.
         open_report: Open the rendered HTML in the browser.
-        max_processes: Parallel scan worker processes. Scout runs a
-            one-transcript scan in-process whatever the value, so this
-            binds only with several epochs selected. Above 1 Scout
-            spawns workers: call ``transect()`` under an
-            ``if __name__ == "__main__"`` guard, and know that a worker
-            has died mid-scan (EOFError) on a large transcript before,
-            which is why 1 is the default. Scheduling only.
-        max_transcripts: Transcripts scanned concurrently (Scout's
-            default 25); several transcripts are in a scan only when
-            more than one epoch is selected. Also Scout's default for
-            the judges' ``max_connections``, so a low value caps
-            k-roll and cohort calls on a single transcript too.
-            Scheduling only.
-        max_connections: Concurrent requests per judge model (Scout's
-            default: ``max_transcripts``). Applied at the scan level to
-            every judge, so a limit on a judge's own ``get_model``
-            config is overridden. Scheduling only.
-        max_retries: Retries per judge request, scan-level, over a
-            judge's own. Scheduling only.
-        timeout: Seconds per judge request, scan-level, over a judge's
-            own. Scheduling only.
-        results_buffer: Results synced to the scan store every N
-            items, so a long run keeps partial results. Scheduling only.
-        fail_on_error: Stop the scan at the first scanner error instead
-            of recording it per transcript and carrying on. Scout
-            returns the interrupted store rather than raising, so
-            ``transect()`` still loads and renders it: the structural
-            frames hold what completed, the judged frames are empty,
-            and ``scan_status`` shows the gap (not complete, nothing
-            scanned for the stopped scanners, no recorded error). A stop
-            before a structural scanner wrote its results leaves a store
-            ``load()`` refuses, naming the scanner: rerun. Scheduling
-            only.
-        chunk: Orchestrator turns per phase-judge segmentation call.
-            Changes every phase judge request.
-        verify_chunk: Phases per verifier call. Changes the verifier's
-            requests.
-        narrate: Narrate each phase (headline and summary) after
-            judging. Off removes those calls.
-        subagent_activity: Also show the sub-agent judge a digest of
-            each span's recorded activity and ask it to judge by what
-            the sub-agent did, not only by the task it was given;
-            experimental. Changes the sub-agent judge's requests.
+        max_processes: Scout worker processes. Binds only with several
+            epochs selected; above 1 Scout spawns workers, which needs
+            a ``__main__`` guard, and a worker has died mid-scan on a
+            large transcript before, hence 1.
+        max_transcripts: Transcripts in flight (Scout's default 25,
+            several only with several epochs); also the default
+            ``max_connections``.
+        max_connections: Concurrent requests per judge model (default
+            ``max_transcripts``); a limit on a judge's own config wins
+            for that judge.
+        max_retries: Retries per judge request; a judge's own setting
+            wins.
+        timeout: Seconds per judge request; a judge's own setting wins.
+        results_buffer: Sync partial results to the store every N items.
+        fail_on_error: Stop at the first scanner error. Scout hands back
+            the interrupted store, loaded and rendered with the gap in
+            ``scan_status``; a stop before the structural scanners wrote
+            anything makes ``load()`` refuse it.
         extra_layers: User-injected `Layer` additions: each layer's
             scanner joins the scan batch and its frame mounts at
             ``results.layer_frames[name]``.

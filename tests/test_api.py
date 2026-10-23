@@ -132,22 +132,31 @@ def test_fail_on_error_before_the_structural_scan_leaves_a_store_load_refuses(
         )
 
 
-def test_the_scan_level_connection_limit_governs_every_judge_call(
-    demo_log, tmp_path, monkeypatch
+@pytest.mark.parametrize(
+    "own, expected",
+    [
+        (GenerateConfig(temperature=0.25, max_connections=1, timeout=11), (1, 11)),
+        (GenerateConfig(temperature=0.25), (7, None)),
+    ],
+    ids=["judge-sets-its-own", "judge-leaves-them-unset"],
+)
+def test_a_judges_own_operational_settings_win_over_the_scan_level(
+    demo_log, tmp_path, monkeypatch, own, expected
 ):
-    """transect(max_connections=...) overrides a judge's own limit on every
-    judged path, phase judge, verifier, narrator and sub-agent judge
-    alike, while the judge's own sampling settings survive."""
+    """A connection limit or timeout set on the judge Model wins on every
+    judged path (phase judge, verifier, narrator, sub-agent judge and its
+    verifier); a judge that sets none takes transect()'s, and the judge's
+    sampling settings survive either way. Transect's rule, not Scout's."""
     resolved = []
-    real = Model._resolve_config
+    real = Model._generate
 
-    def record(self, config):
-        resolved.append(real(self, config))
-        return resolved[-1]
+    async def record(self, prepared, config, *args, **kwargs):
+        resolved.append(config)
+        return await real(self, prepared, config, *args, **kwargs)
 
-    monkeypatch.setattr(Model, "_resolve_config", record)
+    monkeypatch.setattr(Model, "_generate", record)
     judge = demo_judge()
-    judge.config = GenerateConfig(temperature=0.25, max_connections=1)
+    judge.config = own
     transect(
         logs=str(demo_log),
         spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
@@ -159,8 +168,10 @@ def test_the_scan_level_connection_limit_governs_every_judge_call(
         verify_sample=1.0,
         max_connections=7,
     )
-    assert len(resolved) > 10
-    assert {(c.max_connections, c.temperature) for c in resolved} == {(7, 0.25)}
+    assert len(resolved) >= 5
+    assert {(c.max_connections, c.timeout, c.temperature) for c in resolved} == {
+        (*expected, 0.25)
+    }
 
 
 def test_judge_call_shaping_reaches_the_scanner_factories(

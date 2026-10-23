@@ -70,12 +70,11 @@ tokens, `batch`) go on the judge: build it with Inspect's
 `get_model(..., config=GenerateConfig(...))` and pass it as `judge_models`.
 Connection settings go on the scan: `transect(..., max_connections=...,
 max_retries=..., timeout=...)`, plus `max_transcripts`, `results_buffer` and
-`fail_on_error`. A judge call resolves its config in layers, the later winning
-where set: the judge's own config, then the scan level's operational fields
-(connections, retries, timeout). Scout always fills the scan-level
-`max_connections` (from `max_transcripts` when not given), so a connection
-limit set on the judge alone is overridden, and one limit applies to every
-judge model. Available settings depend on the provider/model;
+`fail_on_error`; a judge that sets its own `max_connections`, `max_retries` or
+`timeout` keeps them, so a cohort can carry a limit per provider. This is
+transect's rule, not Scout's: Scout lets the scan level override a model's
+own, and transect passes each judge's own settings back per call. Available
+settings depend on the provider/model;
 verify they are supported and inspect actual recorded requests before claiming
 a change took effect.
 

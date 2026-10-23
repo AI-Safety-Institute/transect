@@ -139,12 +139,7 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
   passed as `digest=` to `transect()`.
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
-  an optional verifier that re-checks doubtful judgements. Call
-  shaping (`chunk`, `verify_chunk`, `narrate`) changes the judge
-  requests; Scout's scheduling knobs (`max_transcripts`,
-  `max_connections`, `max_retries`, `timeout`, `results_buffer`,
-  `fail_on_error`) pass through
-  `transect()` and change only how the same requests are run.
+  an optional verifier that re-checks doubtful judgements.
 - **Frames**: the results as pandas dataframes.
 - **Report + viewer**: an HTML report with embedded report data; interactive
   charts load JavaScript assets from a CDN. Full-source links require a running
