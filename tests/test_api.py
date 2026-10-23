@@ -87,7 +87,6 @@ def test_scan_knobs_reach_scout(demo_log, tmp_path, monkeypatch):
         return real(**kwargs)
 
     monkeypatch.setattr(api, "scout_scan", capture)
-    config = GenerateConfig(max_connections=2, timeout=30)
     results = transect(
         logs=str(demo_log),
         spec=Spec(),
@@ -95,12 +94,17 @@ def test_scan_knobs_reach_scout(demo_log, tmp_path, monkeypatch):
         viewer=False,
         open_report=False,
         max_transcripts=3,
-        model_config=config,
+        max_connections=2,
+        max_retries=4,
+        timeout=30,
         results_buffer=5,
         fail_on_error=True,
     )
     assert not results.scan_status.has_failures
-    assert seen["max_transcripts"] == 3 and seen["model_config"] == config
+    assert seen["max_transcripts"] == 3
+    assert seen["model_config"] == GenerateConfig(
+        max_connections=2, max_retries=4, timeout=30
+    )
     assert seen["results_buffer"] == 5 and seen["fail_on_error"] is True
     assert seen["max_processes"] == 1
 
@@ -128,51 +132,12 @@ def test_fail_on_error_before_the_structural_scan_leaves_a_store_load_refuses(
         )
 
 
-def test_the_callers_model_config_is_not_written_to(demo_log, tmp_path):
-    """Scout fills max_connections on the scan-level config it is handed;
-    the object the caller passed stays as they built it, so reusing it
-    across runs cannot carry one run's limit into the next."""
-    config = GenerateConfig(timeout=30)
-    transect(
-        logs=str(demo_log),
-        spec=Spec(),
-        scans_dir=str(tmp_path / "scans"),
-        viewer=False,
-        open_report=False,
-        max_transcripts=4,
-        model_config=config,
-    )
-    assert config.max_connections is None
-
-
-@pytest.mark.parametrize(
-    "field, value", [("batch", True), ("temperature", 0.5), ("max_tokens", 100)]
-)
-def test_a_model_config_field_the_judges_never_see_is_refused(
-    demo_log, tmp_path, field, value
-):
-    """inspect_ai passes only the connection, retry, timeout and cache
-    settings of the scan-level config on to the judge models, so a
-    sampling or batching field there would silently do nothing: it is
-    refused up front, naming the field and where it belongs."""
-    with pytest.raises(ValueError, match=f"{field}.*on the judge"):
-        transect(
-            logs=str(demo_log),
-            spec=Spec(),
-            scans_dir=str(tmp_path / "scans"),
-            viewer=False,
-            open_report=False,
-            model_config=GenerateConfig(**{field: value}),
-        )
-
-
 def test_the_scan_level_connection_limit_governs_every_judge_call(
     demo_log, tmp_path, monkeypatch
 ):
-    """The scan-level max_connections (Scout fills it from
-    max_transcripts) overrides a judge's own on every judged path, phase
-    judge, verifier, narrator and sub-agent judge alike, while the
-    judge's own sampling settings survive: the contract the docs state."""
+    """transect(max_connections=...) overrides a judge's own limit on every
+    judged path, phase judge, verifier, narrator and sub-agent judge
+    alike, while the judge's own sampling settings survive."""
     resolved = []
     real = Model._resolve_config
 
@@ -192,7 +157,7 @@ def test_the_scan_level_connection_limit_governs_every_judge_call(
         judge_models=judge,
         verify=True,
         verify_sample=1.0,
-        max_transcripts=7,
+        max_connections=7,
     )
     assert len(resolved) > 10
     assert {(c.max_connections, c.temperature) for c in resolved} == {(7, 0.25)}

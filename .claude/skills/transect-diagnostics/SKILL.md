@@ -68,15 +68,14 @@ Use [procedures.md](references/procedures.md) for dataframe recipes. The sibling
 Sampling and batching settings for one judge (temperature, reasoning, max
 tokens, `batch`) go on the judge: build it with Inspect's
 `get_model(..., config=GenerateConfig(...))` and pass it as `judge_models`.
-Connection settings go on the scan:
-`transect(..., model_config=GenerateConfig(max_connections=..., max_retries=...,
-timeout=...))`, plus `max_transcripts`, `results_buffer` and `fail_on_error`.
-A judge call resolves its config in layers, the later winning where set: the
-judge's own config, then the scan level's operational fields (connections,
-retries, timeout, cache). Scout always fills the scan-level `max_connections`
-(from `max_transcripts`), so a connection limit set on the judge alone is
-overridden; sampling fields never inherit, so `transect()` refuses a
-`model_config` carrying one. Available settings depend on the provider/model;
+Connection settings go on the scan: `transect(..., max_connections=...,
+max_retries=..., timeout=...)`, plus `max_transcripts`, `results_buffer` and
+`fail_on_error`. A judge call resolves its config in layers, the later winning
+where set: the judge's own config, then the scan level's operational fields
+(connections, retries, timeout). Scout always fills the scan-level
+`max_connections` (from `max_transcripts` when not given), so a connection
+limit set on the judge alone is overridden, and one limit applies to every
+judge model. Available settings depend on the provider/model;
 verify they are supported and inspect actual recorded requests before claiming
 a change took effect.
 

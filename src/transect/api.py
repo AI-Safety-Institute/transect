@@ -78,21 +78,6 @@ _STRUCTURAL_SCANNERS = (
     "eval_setup",
 )
 
-# The scan-level GenerateConfig fields inspect_ai passes on to a judge
-# model (Model._resolve_config inherits these, and fail_on_refusal when
-# the judge leaves it unset); any other field set there never reaches a
-# judge call.
-_SCAN_CONFIG_FIELDS = frozenset(
-    {
-        "max_connections",
-        "adaptive_connections",
-        "max_retries",
-        "timeout",
-        "cache",
-        "fail_on_refusal",
-    }
-)
-
 
 def transect(
     logs: str | list[str],
@@ -113,7 +98,9 @@ def transect(
     open_report: bool = True,
     max_processes: int = 1,
     max_transcripts: int | None = None,
-    model_config: GenerateConfig | None = None,
+    max_connections: int | None = None,
+    max_retries: int | None = None,
+    timeout: int | None = None,
     results_buffer: int | None = None,
     fail_on_error: bool = False,
     chunk: int = 40,
@@ -202,19 +189,14 @@ def transect(
             the judges' ``max_connections``, so a low value caps
             k-roll and cohort calls on a single transcript too.
             Scheduling only.
-        model_config: A ``GenerateConfig`` applied to every judge call
-            at the scan level. inspect_ai passes only its operational
-            fields on to the judges: ``max_connections``,
-            ``adaptive_connections``, ``max_retries``, ``timeout``,
-            ``cache`` and ``fail_on_refusal``; any other field set here
-            (``batch``, ``temperature``, ``max_tokens``, ...) would be
-            dropped without a word, so it is refused: those go on the
-            judge itself, via ``get_model(..., config=...)``. Scout
-            always fills ``max_connections`` here, and inspect_ai
-            merges this scan-level value over a judge's own
-            ``get_model(config=...)`` setting, so set the connection
-            limit here rather than on the judge model. The object
-            passed is not written to. Scheduling only.
+        max_connections: Concurrent requests per judge model (Scout's
+            default: ``max_transcripts``). Applied at the scan level to
+            every judge, so a limit on a judge's own ``get_model``
+            config is overridden. Scheduling only.
+        max_retries: Retries per judge request, scan-level, over a
+            judge's own. Scheduling only.
+        timeout: Seconds per judge request, scan-level, over a judge's
+            own. Scheduling only.
         results_buffer: Results synced to the scan store every N
             items, so a long run keeps partial results. Scheduling only.
         fail_on_error: Stop the scan at the first scanner error instead
@@ -301,7 +283,9 @@ def transect(
         scans_dir=scans_dir,
         max_processes=max_processes,
         max_transcripts=max_transcripts,
-        model_config=model_config,
+        max_connections=max_connections,
+        max_retries=max_retries,
+        timeout=timeout,
         results_buffer=results_buffer,
         fail_on_error=fail_on_error,
         chunk=chunk,
@@ -559,7 +543,9 @@ def _run(
     scans_dir: str = "scans",
     max_processes: int = 1,
     max_transcripts: int | None = None,
-    model_config: GenerateConfig | None = None,
+    max_connections: int | None = None,
+    max_retries: int | None = None,
+    timeout: int | None = None,
     results_buffer: int | None = None,
     fail_on_error: bool = False,
     chunk: int = 40,
@@ -629,7 +615,9 @@ def _run(
         scans=scans_dir,
         max_processes=max_processes,
         max_transcripts=max_transcripts,
-        model_config=_scan_model_config(model_config),
+        model_config=GenerateConfig(
+            max_connections=max_connections, max_retries=max_retries, timeout=timeout
+        ),
         results_buffer=results_buffer,
         fail_on_error=fail_on_error,
     )
@@ -694,28 +682,6 @@ def _scanners(
                 )
             )
     return scanners
-
-
-def _scan_model_config(config: GenerateConfig | None) -> GenerateConfig | None:
-    """The scan-level config Scout is handed: a copy, since Scout fills
-    ``max_connections`` on the object it receives, refusing any set field
-    inspect_ai would not pass on to the judges."""
-    if config is None:
-        return None
-    stray = sorted(
-        name
-        for name, value in config.model_dump().items()
-        if value is not None and name not in _SCAN_CONFIG_FIELDS
-    )
-    if stray:
-        raise ValueError(
-            f"model_config sets {', '.join(stray)}, which inspect_ai never "
-            "passes on to the judge models; set it on the judge with "
-            "get_model(..., config=GenerateConfig(...)) and pass that as "
-            "judge_models. The scan-level config carries only "
-            f"{', '.join(sorted(_SCAN_CONFIG_FIELDS))}."
-        )
-    return config.model_copy()
 
 
 def _openclaw_files(logs: str | list[str]) -> list[Path]:
