@@ -6,7 +6,7 @@ from helpers import JSON_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
 from inspect_ai.event import timeline_build
 from inspect_ai.log import read_eval_log, write_eval_log
-from inspect_ai.model import GenerateConfig
+from inspect_ai.model import GenerateConfig, ModelOutput
 from inspect_ai.model._model import Model
 
 import transect.api as api
@@ -75,6 +75,58 @@ def test_structural_scanners_read_logs_with_stored_timelines(demo_log, tmp_path)
     )
     assert len(stored.transcript_info) == 1
     assert stored.transcript_info["scan_error"].isna().all()
+
+
+def test_a_model_event_without_choices_is_a_turn_not_a_scan_error(demo_log, tmp_path):
+    """A model event whose output records no choices (a converter's
+    placeholder) is a turn like any other model event wherever it lands:
+    no structural scanner records an IndexError from ``ModelOutput.message``,
+    the orchestrator axis gains exactly the orchestrator-lane ones, a
+    sub-agent lane's stays off the axis, and one standing where the
+    summarization call would be records no compaction prompt."""
+    log = read_eval_log(str(demo_log))
+    for sample in log.samples or []:
+        events = sample.events
+        model_at = [i for i, e in enumerate(events) if e.event == "model"]
+        main = events[model_at[-1]].span_id
+        compaction = next(i for i, e in enumerate(events) if e.event == "compaction")
+        slots = {
+            model_at[-1],  # the closing event
+            max(i for i in model_at if i < compaction),  # the summarization slot
+            next(i for i in model_at if events[i].span_id != main),  # a sub-agent
+        }
+        for slot in sorted(slots, reverse=True):
+            empty = events[slot].model_copy(
+                update={"output": ModelOutput(model="none", choices=[]), "uuid": None}
+            )
+            events.insert(slot + 1, empty)
+    logs_dir = tmp_path / "logs"
+    logs_dir.mkdir()
+    write_eval_log(log, str(logs_dir / "empty_output.eval"))
+    converted, plain = (
+        transect(
+            logs=str(source),
+            spec=Spec(),
+            scans_dir=str(tmp_path / f"scans_{name}"),
+            viewer=False,
+            open_report=False,
+        )
+        for name, source in [("converted", logs_dir), ("plain", demo_log)]
+    )
+    assert not converted.scan_status.has_failures, converted.scan_status.errors
+    assert [s.errors for s in converted.scan_status.scanners] == [0] * 4
+    axis = {
+        name: r.token_timeline["turn"] for name, r in [("c", converted), ("p", plain)]
+    }
+    assert axis["c"].dropna().tolist() == list(range(axis["p"].notna().sum() + 2))
+    assert axis["c"].isna().sum() == axis["p"].isna().sum() + 1
+    assert plain.flushes["compaction_prompt"].notna().all()
+    assert len(converted.flushes) == len(plain.flushes)
+    assert converted.flushes["compaction_prompt"].isna().all()
+    assert (
+        converted.interventions["channel"].tolist()
+        == plain.interventions["channel"].tolist()
+    )
 
 
 def test_scan_knobs_reach_scout(demo_log, tmp_path, monkeypatch):

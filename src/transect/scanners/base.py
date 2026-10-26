@@ -8,7 +8,12 @@ from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
 from transect.scanners.compaction import compaction_texts
-from transect.scanners.helpers import Lanes, all_model_turns, is_model_turn
+from transect.scanners.helpers import (
+    Lanes,
+    all_model_turns,
+    is_model_turn,
+    turn_message,
+)
 
 # inspect-ai ModelUsage attribute names, used verbatim as dataframe columns
 _USAGE_FIELDS = (
@@ -289,12 +294,15 @@ def human_intervention() -> Scanner[Transcript]:
         # handoff appends a sub-agent's to the parent thread, where they
         # must not advance the orchestrator axis
         sub_outputs = {
-            event.output.message.id
+            sub_message.id
             for _, event in lanes.events_before_turn()
-            if is_model_turn(event) and event.output.message.id
+            if is_model_turn(event)
+            and (sub_message := turn_message(event)) is not None
+            and sub_message.id
         }
         for turn, event, _calls in lanes.turns():
-            output_id = event.output.message.id
+            output_message = turn_message(event)
+            output_id = output_message.id if output_message is not None else None
             for seen in event.input:
                 combined = (getattr(seen, "metadata", None) or {}).get("combined_from")
                 for seen_id in (seen.id, *(combined or [])):
