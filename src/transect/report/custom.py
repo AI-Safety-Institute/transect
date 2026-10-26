@@ -459,11 +459,11 @@ def _event_marks(block: b.EventMarks, frame: pd.DataFrame, ctx: SectionContext):
 
 
 def _markdown(block: b.Markdown, ctx: SectionContext) -> Markup:
-    """Markdown -> HTML: raw HTML escaped (html=False - the text may
-    interpolate transcript-derived strings), user headings demoted
-    below the section title."""
+    """Markdown -> HTML: raw HTML escaped and images disabled (html=False
+    and no `image` rule - the text may interpolate transcript-derived
+    strings), user headings demoted below the section title."""
     text = block.text(ctx) if callable(block.text) else block.text
-    html = MarkdownIt("commonmark", {"html": False}).render(str(text))
+    html = MarkdownIt("commonmark", {"html": False}).disable("image").render(str(text))
     for level in (4, 3, 2, 1):  # h1..h4 -> h5..h6 (capped)
         demoted = min(level + 4, 6)
         html = html.replace(f"<h{level}>", f"<h{demoted}>").replace(
