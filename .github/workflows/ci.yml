@@ -17,10 +17,6 @@ env:
   # uv resolution in CI, including the isolated wheel smoke test below, only
   # sees distributions uploaded at least 7 days ago.
   UV_EXCLUDE_NEWER: "7 days"
-  # uv itself is a dependency; keep it at a release that is at least 7 days
-  # old (the one uv.lock was produced with) rather than setup-uv's default of
-  # the latest release. Bump by hand.
-  UV_VERSION: "0.11.14"
 
 jobs:
   check:
@@ -30,7 +26,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: ${{ env.UV_VERSION }}
+          version: "0.11.14"
           enable-cache: true
       - name: Sync dependencies (exactly the committed lockfile)
         run: uv sync --locked
@@ -56,7 +52,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: ${{ env.UV_VERSION }}
+          version: "0.11.14"
       - name: Build wheel + sdist
         run: uv build
       - name: Smoke-import the built wheel in a clean environment
