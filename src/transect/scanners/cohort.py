@@ -628,6 +628,16 @@ def ci_half_width(values: list[float]) -> float:
     return 1.96 * sd / len(values) ** 0.5
 
 
+def label_literal(labels: Sequence[str]) -> Any:
+    """A ``Literal`` of the run's label vocabulary, built at runtime.
+
+    Static checkers see a runtime-built ``Literal`` as a bare special
+    form, not a type form, so it does not typecheck as a ``create_model``
+    field (typed ``TypeForm`` from pydantic 2.14). The ``Any`` return
+    absorbs that here, once."""
+    return Literal[tuple(labels)]
+
+
 def _batch_llm_scanner(
     question: str,
     labels: list[str],
@@ -794,16 +804,6 @@ def _split_batch_content(text: str) -> dict[int, str]:
     return {
         int(n): body.strip() for n, body in zip(parts[1::2], parts[2::2], strict=True)
     }
-
-
-def label_literal(labels: Sequence[str]) -> Any:
-    """A ``Literal`` of the run's label vocabulary, built at runtime.
-
-    Static checkers see a runtime-built ``Literal`` as a bare typing form,
-    not a type, so it cannot be passed to pydantic's ``create_model``
-    directly (its fields are typed ``TypeForm`` from pydantic 2.14); the
-    ``Any`` return is the one place that is said."""
-    return Literal[tuple(labels)]
 
 
 def _structured_batch_answer(labels: list[str]) -> AnswerStructured:
