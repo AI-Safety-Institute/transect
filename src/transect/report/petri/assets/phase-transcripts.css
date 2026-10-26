@@ -1,0 +1,50 @@
+/* Layout additions inherit Transect's type and colour palette. */
+.full-conversation, .full-unclassified, .full-original, .full-turn, .full-detail {
+  border: 1px solid var(--transect-color-border);
+  border-radius: var(--transect-radius); padding: 10px 12px; margin: 10px 0;
+  font-size: var(--transect-font-size-smaller); overflow-wrap: anywhere;
+}
+.full-conversation > summary, .full-unclassified > summary, .full-original > summary,
+.full-turn > summary, .full-detail > summary { cursor: pointer; }
+.full-turn > summary { font-weight: 600; }
+.full-target { border-left: 3px solid var(--transect-color-accent); }
+.full-auditor { border-left: 3px solid var(--transect-color-border); }
+.full-prose, .full-message pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.full-message { margin: 10px 0; }
+.full-message + .full-message { padding-top: 10px; border-top: 1px solid var(--transect-color-border-subtle); }
+.full-tool { margin-top: 10px; }
+.full-transcript-intro { margin-top: 16px; }
+.full-original { margin-bottom: 16px; }
+.full-turn:target { outline: 2px solid var(--transect-color-accent); }
+.full-continuation-label { margin: 12px 0 6px; }
+.full-rollback { border-top: 1px dashed var(--transect-color-border); padding: 10px 0; overflow-wrap: anywhere; }
+.full-rollback p { margin: 4px 0; }
+.full-branch-badge { font-weight: normal; }
+@media (max-width: 650px) {
+  body:has(script[data-petri-config]), body:has(#phase-transcript-config) {
+    padding: 0 12px; margin: 1rem auto; overflow-wrap: anywhere;
+  }
+  .full-conversation, .full-turn, .full-detail { padding: 8px; }
+}
+
+.full-search-controls { margin: 16px 0; padding: 12px; border: 1px solid var(--transect-color-border); border-radius: var(--transect-radius); }
+.full-search-controls h4 { margin-top: 0; }
+.full-search-fields { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.full-search-fields label[hidden] { display: none; }
+.full-search-fields label { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: 100%; }
+.full-search-fields input[type="search"], .full-search-fields select { max-width: 100%; min-width: 0; font: inherit; }
+.full-search-fields input[type="search"] { width: 320px; }
+.full-search-hidden { display: none !important; }
+.full-search-match { outline: 2px solid var(--transect-color-accent); outline-offset: 1px; }
+.full-search-links { display: flex; flex-wrap: wrap; gap: 8px 16px; padding-top: 10px; }
+.full-target-phase { overflow-wrap: anywhere; }
+.full-target-phase > summary { cursor: pointer; }
+.full-phase-classification { display: block; margin-top: 4px; }
+.full-alternatives { border-style: dashed; padding: 10px 0; }
+.full-alternatives > summary, .full-alternatives > p { margin-left: 12px; margin-right: 12px; }
+.full-alternatives > .full-target-phase { margin-left: 0; margin-right: 0; }
+.full-path-flags { display: inline-flex; flex-wrap: wrap; gap: 4px 8px; margin-left: 8px; font-weight: normal; }
+.full-evidence-flag, .full-awareness-flag { border: 1px solid var(--transect-color-border); border-radius: 3px; padding: 1px 6px; font-size: var(--transect-font-size-smaller); }
+.full-evidence-flag { color: #8b321e; border-color: #b64a2d; }
+.full-awareness-flag { color: var(--transect-color-link); }
+.full-attempt-ancestry { margin-top: 18px; }

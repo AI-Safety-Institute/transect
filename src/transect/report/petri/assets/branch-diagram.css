@@ -1,0 +1,30 @@
+/* Native Transect typography and palette; only the diagram layout is new. */
+.branch-overview { margin-top: 1rem; }
+.branch-verdict { overflow-wrap: anywhere; }
+.branch-flags { font-size: var(--transect-font-size-smaller); margin: 10px 0; overflow-wrap: anywhere; }
+.branch-flags summary { cursor: pointer; }
+.branch-quote { white-space: pre-wrap; margin: 10px 0; padding-left: 12px; border-left: 2px solid var(--transect-color-border); }
+.branch-viewport { overflow: auto; max-height: 480px; border: 1px solid var(--transect-color-border); border-radius: var(--transect-radius); background: #fff; }
+.branch-viewport.branch-expanded { max-height: none; }
+.branch-viewport svg { display: block; font-family: inherit; }
+.branch-axis { font-size: 11px; fill: var(--transect-color-muted); }
+.branch-row-label { font-size: 12px; fill: var(--transect-color-link); }
+.branch-connector { fill: none; stroke: #8c9caa; stroke-width: 1.5; }
+.branch-track { stroke: #a8b5c0; stroke-width: 2; }
+.branch-fork { stroke: var(--transect-color-link); stroke-width: 1.5; fill: white; }
+.branch-block { fill: var(--transect-color-link); stroke: white; stroke-width: 1; }
+.branch-phase-label { font-size: 11px; fill: white; pointer-events: none; }
+.branch-flagged { fill: #b64a2d; stroke: #8b321e; stroke-width: 2; }
+.branch-viewport a:hover .branch-block, .branch-viewport a:focus .branch-block { fill: var(--transect-color-accent); }
+.branch-viewport a:hover .branch-flagged, .branch-viewport a:focus .branch-flagged { fill: #973b24; }
+.branch-viewport a:focus { outline: 2px solid var(--transect-color-accent); outline-offset: 2px; }
+.branch-swatch { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; }
+.branch-swatch-phase { background: var(--transect-color-link); }
+.branch-swatch-evidence { background: #b64a2d; }
+.branch-controls { flex-wrap: wrap; }
+.branch-surviving-connector { stroke: var(--transect-color-link); stroke-width: 2.5; }
+.branch-surviving-track { stroke: var(--transect-color-link); stroke-width: 3; }
+.branch-discarded .branch-block:not(.branch-flagged) { fill: #8896a2; }
+.branch-discarded .branch-phase-label { fill: white; }
+.branch-surviving .branch-block:not(.branch-flagged) { stroke: var(--transect-color-link); }
+@media(max-width:650px) { .branch-viewport { max-height: 380px; } }
