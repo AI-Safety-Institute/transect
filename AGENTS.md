@@ -113,15 +113,22 @@ scanner change take effect; run a new scan and retain both results for compariso
 - **Orchestrator turn axis.** `turn` is the 0-based ordinal of the
   orchestrator's (main lane's) model turns, from
   `scanners.helpers.orchestrator_turns`, in every scanner value, frame,
-  judge digest and chart. Sub-agent turns are off the axis: they carry
-  `agent_span_id` and `lane_turn`, never a turn number. The subagents
-  frame records the orchestrator turns active at each span's start and
-  end by wall-clock (`frames/spine.py`), and the swimlane chart maps the
-  same timestamps to fractional positions when it draws; frames hold
-  timestamps and integer turns only. A custom scanner numbers turns with
-  the same helper. The main lane
-  is the span Scout would scan at depth 1; a transcript with model turns
-  but no single orchestrator agent raises rather than guessing.
+  judge digest and chart. Lane turns are off the axis: they carry
+  `agent_span_id` and `lane_turn`, never a turn number. A lane is a
+  sub-agent span, or the conversation span of another model role when
+  the main span interleaves several (`scanners.helpers.orchestrator_role`
+  puts the tool-calling role on the axis: an auditor driving a target
+  is the orchestrator and each target trajectory span is a lane). The
+  subagents frame records the orchestrator turns active at each span's
+  start and end by wall-clock (`frames/spine.py`), and the swimlane
+  chart maps the same timestamps to fractional positions when it draws;
+  frames hold timestamps and integer turns only. A custom scanner
+  numbers turns with the same helper. The main lane is the span Scout
+  would scan at depth 1, resolved from the event stream
+  (`timeline_build`), never from a stored timeline (a scaffold's stored
+  timelines are its own per-role or branch-tree views); a transcript
+  with model turns but no single orchestrator agent raises rather than
+  guessing.
 - **Judge digests.** `scanners.digests.turn_digests` is the one builder
   of what the phase judge, its verifier, the narrator and the
   `digest_turns` loader read per orchestrator turn, and one

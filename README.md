@@ -338,9 +338,9 @@ erDiagram
         string compaction_prompt "configured Inspect template, if recorded"
     }
     token_timeline["token_timeline (one row per model turn, any lane)"] {
-        int turn PK "orchestrator turn; NA on a sub-agent's own turns"
+        int turn PK "orchestrator turn; NA on other lanes"
         int lane_turn "ordinal within the turn's own lane"
-        string agent_span_id FK "sub-agent lane; NA on the orchestrator"
+        string agent_span_id FK "lane span; NA on the orchestrator"
         string timestamp "model call start, ISO"
         string completed "model call completion, ISO"
         int output_tokens
@@ -349,7 +349,7 @@ erDiagram
     }
     flushes["flushes (one row per context compaction)"] {
         int turn FK
-        string agent_span_id "sub-agent lane; NA on the orchestrator"
+        string agent_span_id "lane span; NA on the orchestrator"
         int lane_turn "first post-flush turn of the compacted lane"
         string type
         int tokens_before

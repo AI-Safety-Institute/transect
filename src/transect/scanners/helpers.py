@@ -34,25 +34,45 @@ class SpanActivity:
 class Lanes:
     """The lanes of one transcript, resolved once.
 
-    ``main`` is the orchestrator's span (`main_span`). ``begins`` are the
-    sub-agent span_begin events (`subagent_span_begins`, the shared
-    definition) and ``first_models`` each one's first model event.
-    ``events`` is the transcript's event list. Every scanner that
-    attributes events to lanes starts from one of these.
+    ``main`` is the orchestrator's span (`main_span`); its model turns of
+    the orchestrator role (`orchestrator_role`) are the axis. ``begins``
+    are the lane span_begin events (`subagent_span_begins`, the shared
+    definition): sub-agent spans, plus the conversation spans of any
+    other model role the main span interleaves (an auditor driving a
+    target: each target trajectory is a lane). ``first_models`` is each
+    lane's first model event. ``events`` is the transcript's event list.
+    Every scanner that attributes events to lanes starts from one of
+    these.
     """
 
     def __init__(self, transcript: Any) -> None:
         self.main = main_span(transcript)
-        self.begins, self.first_models = subagent_span_begins(transcript, self.main)
         self.events: list[Any] = list(transcript.events)
         self._transcript = transcript
-        self.sub_ids = frozenset(begin.id for begin in self.begins)
-        self._main_events = frozenset(
-            id(item.event)
+        self._spans = {e.id: e for e in self.events if e.event == "span_begin"}
+        main_models = [
+            item.event
             for item in self.main.content
             if isinstance(item, TimelineEvent) and is_model_turn(item.event)
+        ]
+        self.orchestrator_role = orchestrator_role(
+            main_models, getattr(transcript, "model", None)
         )
-        self._spans = {e.id: e for e in self.events if e.event == "span_begin"}
+        self._main_events = frozenset(
+            id(event)
+            for event in main_models
+            if getattr(event, "role", None) == self.orchestrator_role
+        )
+        self.begins = subagent_span_begins(
+            transcript, self.main, self.orchestrator_role
+        )
+        self.sub_ids = frozenset(begin.id for begin in self.begins)
+        self.first_models: dict[str, Any] = {}
+        for event in self.events:
+            if is_model_turn(event):
+                sub = self.sub_agent_of(event)
+                if sub is not None:
+                    self.first_models.setdefault(sub.id, event)
         self._positions = {id(e): i for i, e in enumerate(self.events)}
 
     def is_main(self, event: Any) -> bool:
@@ -60,15 +80,16 @@ class Lanes:
         return id(event) in self._main_events
 
     def sub_agent_of(self, event: Any) -> Any | None:
-        """The sub-agent span_begin an event belongs to: its nearest
-        enclosing agent span, when that is a sub-agent. None when the
-        event is the orchestrator's (a folded spawn call, ``agent_span_id``
-        set, included), a utility or wrapper span's, or off the axis (an
-        init or scorer call)."""
+        """The lane span_begin an event belongs to: the nearest enclosing
+        lane span (`nearest_lane_span`). None when the event is the
+        orchestrator's (a folded spawn call, ``agent_span_id`` set,
+        included), a utility or wrapper span's, or off the axis (an init
+        or scorer call)."""
         if getattr(event, "agent_span_id", None) is not None:
             return None
-        span = nearest_agent_span(self._spans, getattr(event, "span_id", None))
-        return span if span is not None and span.id in self.sub_ids else None
+        return nearest_lane_span(
+            self._spans, getattr(event, "span_id", None), self.sub_ids
+        )
 
     def position(self, event: Any) -> int:
         """An event's index in the transcript's event list."""
@@ -94,6 +115,39 @@ class Lanes:
                 turn += 1
                 continue
             yield turn, event
+
+
+def orchestrator_role(main_models: list[Any], transcript_model: Any) -> str | None:
+    """The model role on the axis when the main span's calls carry
+    several: the role that acts through tools (the most tool calls
+    requested across its turns - an auditor driving a target through
+    send_message / rollback tools, an agent beside a critic), else the
+    role-less calls (the agent's own ``generate()``), else the role whose
+    calls ran the transcript's recorded model, else the first call's
+    role. A span of one role keeps that role."""
+    roles: list[str | None] = []
+    calls_by_role: dict[str | None, int] = {}
+    for event in main_models:
+        role = getattr(event, "role", None)
+        if role not in roles:
+            roles.append(role)
+        message = event.output.message if event.output is not None else None
+        n_calls = len(getattr(message, "tool_calls", None) or []) if message else 0
+        calls_by_role[role] = calls_by_role.get(role, 0) + n_calls
+    if len(roles) <= 1:
+        return roles[0] if roles else None
+    ranked = sorted(roles, key=lambda role: calls_by_role[role], reverse=True)
+    if calls_by_role[ranked[0]] > 0 and (
+        len(ranked) == 1 or calls_by_role[ranked[0]] > calls_by_role[ranked[1]]
+    ):
+        return ranked[0]
+    if None in roles:
+        return None
+    if transcript_model is not None:
+        for event in main_models:
+            if getattr(event, "model", None) == transcript_model:
+                return getattr(event, "role", None)
+    return roles[0]
 
 
 def is_model_turn(event: Any) -> TypeGuard[ModelEvent]:
@@ -137,8 +191,10 @@ def main_span(transcript: Any) -> TimelineSpan:
     The span Scout's ``timeline_messages(..., depth=1)`` would scan: the
     outermost non-utility span holding a direct model event, container
     spans (the synthetic root, a solvers wrapper) being transparent.
-    Uses the transcript's stored timeline when present, else builds one
-    in place - importer/database sources arrive with ``timelines`` empty.
+    Built from the event stream (`timeline_build`), never from a stored
+    timeline: a scaffold's stored timelines are views of its own (one
+    per model role, or a branch tree of a rolled-back conversation),
+    not the lane tree over every call this transcript recorded.
 
     Args:
         transcript: The transcript whose timeline is resolved.
@@ -158,9 +214,7 @@ def main_span(transcript: Any) -> TimelineSpan:
             number; the error is recorded per transcript and shown in
             the scan status section.
     """
-    timelines = getattr(transcript, "timelines", None)
-    timeline = timelines[0] if timelines else timeline_build(transcript.events)
-    span = timeline.root
+    span = timeline_build(transcript.events).root
     while True:
         if any(
             isinstance(item, TimelineEvent) and is_model_turn(item.event)
@@ -204,49 +258,78 @@ def _holds_model_events(span: TimelineSpan) -> bool:
 
 
 def subagent_span_begins(
-    transcript: Any, main: TimelineSpan
-) -> tuple[list[Any], dict[str, Any]]:
-    """Sub-agent span_begin events + each span's first model event.
+    transcript: Any, main: TimelineSpan, orchestrator_role: str | None = None
+) -> list[Any]:
+    """The lane span_begin events, in event order.
 
-    The shared definition of "sub-agent" (decision_phases, the
-    token_timeline span record and the agent_spans loader must agree):
-    an agent-type span_begin that is neither the main lane's own span,
-    nor an ancestor of it (a wrapper the timeline treats as a
-    container), nor a timeline utility span (auto-classified helper
-    calls). Discovery is span_begin-based: metadata-only spawn spans
-    are pruned from the timeline tree, which supplies only the utility
-    exclusion and each surviving span's first model event.
+    The shared definition of "lane" (decision_phases, the token_timeline
+    span record and the agent_spans loader must agree). Two kinds:
+
+    - a sub-agent: an agent-type span_begin that is neither the main
+      lane's own span, nor an ancestor of it (a wrapper the timeline
+      treats as a container), nor a timeline utility span
+      (auto-classified helper calls);
+    - another role's conversation: a span that directly holds a model
+      turn whose role is not ``orchestrator_role`` (an auditing
+      scaffold's target trajectories, one span per attempt), again
+      excluding the main span and its ancestors, and anything under
+      Inspect's ``init`` and ``scorers`` phase spans (a scorer's judge
+      calls are off the axis, not a lane).
+
+    Discovery is span_begin-based: metadata-only spawn spans are pruned
+    from the timeline tree, which supplies only the utility exclusion.
 
     Args:
         transcript: The transcript whose events are scanned.
         main: The main lane's span (see ``main_span``).
+        orchestrator_role: The axis role (see ``orchestrator_role``).
 
     Returns:
-        ``(span_begins, first_models)`` in event order.
+        The lane ``span_begin`` events in event order.
     """
-    first_models, utility_ids = _span_details(main)
+    utility_ids = _utility_ids(main)
     by_id = {e.id: e for e in transcript.events if e.event == "span_begin"}
     ancestors: set[str] = set()
     parent = getattr(by_id.get(main.id), "parent_id", None)
     while parent is not None and parent not in ancestors:
         ancestors.add(parent)
         parent = getattr(by_id.get(parent), "parent_id", None)
-    begins = [
+    conversation_ids = {
+        event.span_id
+        for event in transcript.events
+        if is_model_turn(event)
+        and event.span_id is not None
+        and getattr(event, "role", None) != orchestrator_role
+        and not _under_phase_span(by_id, event.span_id)
+    }
+    return [
         e
         for e in transcript.events
         if e.event == "span_begin"
-        and getattr(e, "type", None) == "agent"
         and e.id != main.id
         and e.id not in ancestors
         and e.id not in utility_ids
+        and (getattr(e, "type", None) == "agent" or e.id in conversation_ids)
     ]
-    return begins, first_models
 
 
-def _span_details(main: TimelineSpan) -> tuple[dict[str, Any], set[str]]:
-    """Each descendant span's first model event with output, and the ids
-    of utility spans, from the tree below ``main``."""
-    first_models: dict[str, Any] = {}
+_PHASE_SPAN_TYPES = frozenset({"init", "scorers", "scorer"})
+
+
+def _under_phase_span(spans: dict[str, Any], span_id: str | None) -> bool:
+    """Whether a span sits in Inspect's init or scoring phase."""
+    seen: set[str] = set()
+    current = span_id
+    while current is not None and current in spans and current not in seen:
+        seen.add(current)
+        if getattr(spans[current], "type", None) in _PHASE_SPAN_TYPES:
+            return True
+        current = getattr(spans[current], "parent_id", None)
+    return False
+
+
+def _utility_ids(main: TimelineSpan) -> set[str]:
+    """The ids of utility spans in the tree below ``main``."""
     utility_ids: set[str] = set()
 
     def _walk(span: TimelineSpan) -> None:
@@ -255,25 +338,28 @@ def _span_details(main: TimelineSpan) -> tuple[dict[str, Any], set[str]]:
                 continue
             if item.utility:
                 utility_ids.add(item.id)
-            for sub in item.content:
-                if isinstance(sub, TimelineEvent) and is_model_turn(sub.event):
-                    first_models.setdefault(item.id, sub.event)
-                    break
             _walk(item)
 
     _walk(main)
-    return first_models, utility_ids
+    return utility_ids
 
 
-def nearest_agent_span(spans: dict[str, Any], span_id: str | None) -> Any | None:
-    """Walk up the span tree to the nearest agent-type span."""
+def nearest_lane_span(
+    spans: dict[str, Any], span_id: str | None, lane_ids: frozenset[str]
+) -> Any | None:
+    """Walk up the span tree to the nearest lane span: the first ancestor
+    that is a lane (in ``lane_ids``) or an agent-type span, returned when
+    it is a lane and None otherwise - an event inside a utility agent
+    span nested in a lane is the utility span's, not the lane's."""
     seen: set[str] = set()
     current = span_id
     while current is not None and current in spans and current not in seen:
         seen.add(current)
         span = spans[current]
-        if getattr(span, "type", None) == "agent":
+        if current in lane_ids:
             return span
+        if getattr(span, "type", None) == "agent":
+            return None
         current = getattr(span, "parent_id", None)
     return None
 

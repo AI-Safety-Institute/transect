@@ -37,6 +37,11 @@ def token_timeline() -> Scanner[Transcript]:
     (ISO strings; None when unrecorded), and the ModelUsage fields
     (None = not reported, never 0).
 
+    Lanes are `helpers.Lanes`: sub-agent spans, plus the conversation
+    spans of any other model role the main span interleaves (an auditor
+    driving a target: the auditor's tool-calling turns are the axis and
+    each target trajectory span is a lane).
+
     ``spans``: one entry per sub-agent span (`helpers.subagent_span_begins`'
     definition): ``agent_span_id`` / ``agent_lane`` (the span's id and
     name), ``spawn_turn`` (the orchestrator turn preceding the
