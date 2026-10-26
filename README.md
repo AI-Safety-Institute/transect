@@ -255,6 +255,40 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
 - **Custom layers**: user layers' own sections; `section_order` rearranges the report.
 - **Reliability & provenance audit**: per judged surface, how every label was produced.
 
+### Petri conversations
+
+Reports with explicit `auditor` and `target` model roles automatically include
+**Target conversation branches**, immediately before the phase cards. The
+clickable diagram follows Inspect's recorded branch parents and anchors.
+The main conversation follows the exact final `store.target_messages` endpoint
+back through those anchors, preserving pre-compaction history. Discarded target
+calls are folded at their divergence points, with auditor context available
+alongside them. Every retained call remains readable and searchable.
+
+The coloured phase labels, confidence and reliability badges are the saved
+**auditor** judgments. They are references on target sections, not new judgments
+of the target. Complete original narration remains in the folded auditor phase
+assessments. Structural reports work without phase labels. No additional judge
+calls are made.
+
+Petri text, recorded reasoning summaries, tool arguments/results and full model
+context are embedded once in pooled JSON, with no text truncation. Opening cards
+creates their contents lazily. Petri browsing needs JavaScript but no sidecar
+server; the existing charts retain their CDN requirements. Redacted reasoning
+and non-text attachments are not reconstructed.
+
+Rendering reads the original sample for its final target context, which Scout
+does not retain. Keep the source `.eval` log accessible. Missing sources, final
+context or exact anchors produce an explicit recorded-order fallback; the
+renderer never substitutes the last target call for the final surviving path.
+The section key is `target_branches`; include it before `phase_cards` when
+specifying a custom `section_order`.
+
+The generic implementation lives in `transect.report.petri`. Integrations can
+reuse `build_config` and the packaged assets with retained message pools, and
+supply optional evidence/category annotations. Supply-chain and evaluation
+awareness rubrics remain external custom scanners.
+
 ### Building your own UI
 
 The shipped report is the reference rendering: build your own

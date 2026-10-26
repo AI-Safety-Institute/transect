@@ -16,7 +16,8 @@ This module preserves:
 - **Bounded page size.** A real run's groups span more than a thousand
   turns, so the whole store is never inlined: only turns inside a turn
   group, at `TEXT_CHARS` each, under a per-card budget
-  (`card_excerpts`), with the remainder counted.
+  (`card_excerpts`), with the remainder counted. Petri reports instead pool
+  complete text in inert JSON and create transcript elements on expansion.
 
 Excerpt text is agent/user content: untrusted. It is carried as plain
 ``str`` and rendered through the templates' autoescape, never as
@@ -34,6 +35,7 @@ from typing import Any
 
 from inspect_scout import TranscriptContent, transcripts_from
 
+from transect.report.petri.transcript import PetriData, read_petri
 from transect.scanners.helpers import (
     Lanes,
     message_reasoning,
@@ -112,14 +114,15 @@ class SpawnPrompt:
 @dataclass(frozen=True)
 class TranscriptExtras:
     """One transcript's render-time store-derived extras: several
-    derived views of the same already-read transcript, so no view costs
-    a second store fetch (see `read_transcript_extras`).
+    derived views of one Scout read. Petri also reads the original sample
+    to recover its final store (not retained by Scout).
 
     Attributes:
         excerpts: `_turn_excerpts` output - the phase cards' own
             per-turn transcript text.
         spawn_prompts: `_spawn_prompts` output - the sub-agent activity
             section's own per-span spawn-task text.
+        petri: Complete Petri text and exact tree, if auditor/target roles exist.
         tool_counts: `_tool_call_counts` output - the phase cards'
             tool-call sort key + tag.
     """
@@ -127,6 +130,7 @@ class TranscriptExtras:
     excerpts: dict[int, Excerpt] = field(default_factory=dict)
     spawn_prompts: dict[str, SpawnPrompt] = field(default_factory=dict)
     tool_counts: dict[int, int] = field(default_factory=dict)
+    petri: PetriData | None = None
 
 
 def mark_compaction_turns(
@@ -157,7 +161,8 @@ def read_transcript_extras(
     Called once per render (`render.render_report`), so each
     transcript's store read happens exactly once no matter how many
     report surfaces consume its extras: `_read` derives every view from
-    the one `Transcript` object each `reader.read` call produced.
+    the one `Transcript` object each `reader.read` call produced. Petri reads
+    the original sample once more for its final context and complete tree.
 
     Args:
         location: ``TransectResults.transcripts_location`` - a
@@ -259,7 +264,9 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
     every transcript that could be read and omits only those that could
     not (each named on stderr).
     """
-    content = TranscriptContent(events=["model", "span_begin", "span_end"])
+    content = TranscriptContent(
+        events=["model", "span_begin", "span_end", "tool", "anchor", "branch"]
+    )
     found: dict[str, TranscriptExtras] = {}
     async with transcripts_from(location).reader() as reader:
         infos = [info async for info in reader.index() if info.transcript_id in wanted]
@@ -276,6 +283,7 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
                     excerpts=_turn_excerpts(transcript),
                     spawn_prompts=_spawn_prompts(transcript),
                     tool_counts=_tool_call_counts(transcript),
+                    petri=await read_petri(transcript),
                 )
             except Exception as failure:
                 print(

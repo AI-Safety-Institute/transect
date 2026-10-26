@@ -165,6 +165,16 @@ scanner change take effect; run a new scan and retain both results for compariso
   this run-wide status outside optional sections. Keep it in custom UIs,
   including when an epoch filter hides other scan transcripts.
 
+- **Petri reports.** Explicit auditor/target model roles enable the native
+  `report/petri/` viewer by default, including without judged phases. Branches
+  come from the saved target timeline; the surviving endpoint comes from
+  `store.target_messages`, read from the original sample via Inspect. Missing
+  evidence falls back explicitly to recorded order. Full pooled text is inert
+  escaped JSON; rendering is lazy. Discarded actions remain readable. Phase
+  colours and badges refer to original auditor judgments, not new target
+  classifications. Scanner-specific evidence/category annotations stay outside
+  the built-in viewer. Keep multiple-transcript anchors and filters independently scoped.
+
 ## Report code: read before touching
 
 - The module docstring of `src/transect/report/charts.py` is a

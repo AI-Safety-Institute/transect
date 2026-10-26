@@ -18,7 +18,7 @@ from inspect_viz.plot import HtmlPage
 from markupsafe import Markup
 
 from transect.frames import TransectResults, spine
-from transect.report import charts, custom, sections
+from transect.report import charts, custom, petri, sections
 from transect.report._jinja import jinja_env
 from transect.report.colors import _UNJUDGED_GREY, _label_colors, _phase_colors
 from transect.report.display import MEMBER_NO_VOTE, member_display, multi_roll_models
@@ -40,6 +40,7 @@ SECTION_KEYS = (
     "token_telemetry",
     "subagents",
     "token_spend",
+    "target_branches",
     "phase_cards",
 )
 
@@ -94,6 +95,7 @@ def render_report(
     # waits without a timeout for a table an earlier one embeds
     page = _ReportPage()
     transcripts = []
+    has_petri = False
     for idx, transcript_id in enumerate(order):
         one = _mine(timeline, transcript_id)
         # the orchestrator's rows: the turn axis every chart draws on
@@ -122,6 +124,7 @@ def render_report(
             else None
         )
         my_extras = transcript_extras.get(transcript_id)
+        petri_data = my_extras.petri if my_extras else None
         # sections collect keyed in default reading order; a section
         # with no data is skipped entirely, so the count varies by
         # transcript. section_order rearranges them at assembly below.
@@ -221,7 +224,7 @@ def render_report(
                             my_extras.excerpts,
                             my_flushes.turn[my_flushes.compaction_prompt.notna()] - 1,
                         )
-                        if my_extras
+                        if my_extras and petri_data is None
                         else None,
                         tool_counts=tool_counts,
                         turn_tags=my_tags,
@@ -351,6 +354,29 @@ def render_report(
                 )
         if spend_blocks:
             add(("token_spend", sections.section("Token spend", spend_blocks)))
+        if petri_data is not None:
+            has_petri = True
+            prefix = f"petri-{idx}-" if len(order) > 1 else ""
+            add(
+                (
+                    "target_branches",
+                    Markup(
+                        '<section class="section branch-overview" '
+                        f'id="{prefix}branch-overview">'
+                        "<h3>Target conversation branches</h3>"
+                        '<p class="meta">Enable JavaScript to display '
+                        "the saved Petri tree.</p></section>"
+                    ),
+                )
+            )
+            if phase_cards_section is None:
+                phase_cards_section = sections.section(
+                    "Target conversation",
+                    [Markup(f'<div id="phase-cards-{idx}"></div>')],
+                )
+            phase_cards_section += petri.native_section(
+                petri_data, my_phase_turns, idx, multiple=len(order) > 1
+            )
         if phase_cards_section is not None:
             add(("phase_cards", phase_cards_section))
 
@@ -423,6 +449,7 @@ def render_report(
         logo_uri=_brand_asset("logo.svg", "image/svg+xml"),
         favicon_uri=_brand_asset("favicon-32.png", "image/png"),
         package_version=_package_version(),
+        petri_assets=petri.assets_html() if has_petri else "",
     )
 
 
