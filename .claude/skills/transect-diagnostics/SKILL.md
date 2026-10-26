@@ -65,13 +65,18 @@ Use [procedures.md](references/procedures.md) for dataframe recipes. The sibling
 
 ## Sampling and runtime controls
 
-Build a judge with Inspect's `get_model(..., config=GenerateConfig(...))` and pass
-it as `judge_models`. Available settings depend on the provider/model; verify they
-are supported and inspect actual recorded requests before claiming a change took
-effect. Do not assume lower temperature, more reasoning, or more judges improves
-validity. Custom Scout runners must also bind their scan-level configuration;
-constructing a model object alone does not demonstrate the effective concurrency
-or output limit at the runtime boundary.
+Sampling and batching settings for one judge (temperature, reasoning, max
+tokens, `batch`) go on the judge: build it with Inspect's
+`get_model(..., config=GenerateConfig(...))` and pass it as `judge_models`.
+Connection settings go on the scan: `transect(..., max_connections=...,
+max_retries=..., timeout=...)`, plus `max_transcripts`, `results_buffer` and
+`fail_on_error`; a judge that sets its own `max_connections`, `max_retries` or
+`timeout` keeps them, so a cohort can carry a limit per provider. This is
+transect's rule, not Scout's: Scout lets the scan level override a model's
+own, and transect passes each judge's own settings back per call. Available
+settings depend on the provider/model;
+verify they are supported and inspect actual recorded requests before claiming
+a change took effect.
 
 ## Caches, repeats and recovery
 
