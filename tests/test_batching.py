@@ -2,14 +2,21 @@
 
 import re
 from collections.abc import AsyncIterator
+from typing import Literal
 
 import pandas as pd
+import pytest
 from inspect_ai.model import ChatMessageUser, ModelOutput, get_model
 from inspect_scout import Loader, Transcript, loader, scanner as scout_scanner
+from pydantic import ValidationError, create_model
 
 import transect
 from transect.reliability import detect_regime, label_stats
-from transect.scanners.cohort import _split_batch_content, batch_item_content
+from transect.scanners.cohort import (
+    _split_batch_content,
+    batch_item_content,
+    label_literal,
+)
 
 RISK = ["risky", "safe"]
 
@@ -272,3 +279,17 @@ def test_batching_is_unit_neutral(demo_log, tmp_path):
     assert detect_regime(frame).kind == "solo"
     html = open(results.report_paths[0]).read()
     assert "<h4>half_risk" in html
+
+
+@pytest.mark.parametrize("labels", [["a", "b"], ["only"]])
+def test_label_literal_builds_the_vocabulary_create_model_fields_enforce(
+    labels: list[str],
+) -> None:
+    """The runtime-built Literal rejects undeclared labels and schemas as an enum."""
+    assert label_literal(labels) == Literal[tuple(labels)]
+    model = create_model("_Answer", label=(label_literal(labels), ...))
+    assert model(label=labels[0]).label == labels[0]  # type: ignore[call-arg]
+    with pytest.raises(ValidationError, match="literal_error"):
+        model(label="undeclared")  # type: ignore[call-arg]
+    schema = model.model_json_schema()["properties"]["label"]
+    assert schema.get("enum", [schema.get("const")]) == labels
