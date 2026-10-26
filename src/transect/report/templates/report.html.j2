@@ -2,6 +2,8 @@
 <html><head><meta charset="utf-8">
 <title>{{ title }}</title>
 <link rel="icon" type="image/png" href="{{ favicon_uri }}">
+{#- the chart runtime first, so the page's own rules below win ties -#}
+{{ chart_head }}
 <style>{{ style }}</style>
 </head><body{% if sensitivity %} class="classified"{% endif %}>
 {%- if sensitivity %}
@@ -19,7 +21,7 @@
 {#- Fit-to-window is the default view; this checkbox opts into the
     zoomed-in, horizontally-scrollable variant - full per-turn pixel
     resolution for laptop-screen reading. -#}
-<p class="meta"><label title="Renders each chart at its full authored width (higher per-turn resolution) inside a horizontal scroll box, instead of scaling it down to fit the window."><input type="checkbox" id="transect-zoom-toggle" onchange="_transectApplyFit()"> zoomed-in charts (scroll horizontally)</label></p>
+<p class="meta"><label title="Renders each chart at its full authored width (higher per-turn resolution) inside a horizontal scroll box, instead of scaling it down to fit the window."><input type="checkbox" id="transect-zoom-toggle"> zoomed-in charts (scroll horizontally)</label></p>
 {% if not transcripts %}<p>No transcripts in results.</p>{% endif %}
 {% for t in transcripts %}
 <div class="transcript">
@@ -37,8 +39,8 @@
     screen. -#}
 <button id="transect-back-top" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Back to the top of the page">&uarr; Back to top</button>
 <script>
-// Band chunks link to their phase card (href target="_parent", ids
-// transcript-scoped "#phase-<idx>-<n>"). Fragment navigation scrolls;
+// Band chunks link to their phase card (href, ids transcript-scoped
+// "#phase-<idx>-<n>"). Fragment navigation scrolls;
 // this additionally opens the target <details> (native auto-open is
 // not yet universal). The "#phase-" prefix check matches either id
 // shape without parsing it.
@@ -48,8 +50,7 @@ function _transectOpenPhaseFromHash() {
   var target = document.getElementById(hash.slice(1));
   if (!target) return;
   // A card filter may have hidden the target (a hidden anchor is a
-  // link to nowhere): clear that card scope's filters first. Done on
-  // hashchange because the click originates inside the band's iframe.
+  // link to nowhere): clear that card scope's filters first.
   if (target.style.display === "none") {
     var scope = target.closest(".phase-cards");
     if (scope) _transectClearCardFilters(scope.id);
@@ -187,114 +188,6 @@ function _transectInitCardFilters() {
 }
 document.addEventListener("DOMContentLoaded", _transectInitCardFilters);
 
-// Publish each chart iframe's visible box ("left,top,right,bottom",
-// in the iframe's own coordinates) so the in-iframe tooltip clamp can
-// keep popovers inside what the reader actually sees: a scrolled
-// wrapper shows only a sub-box of the iframe. The outer page owns the
-// wrapper and window, so it measures; the child reads the attribute.
-// Absent or stale, the child falls back to its whole viewport.
-function _transectChartVisibleBounds() {
-  document.querySelectorAll("div.chart-scroll > iframe").forEach(function(frame) {
-    var scroller = frame.parentElement;
-    var f = frame.getBoundingClientRect();
-    var s = scroller.getBoundingClientRect();
-    // Under the fit transform, getBoundingClientRect is in scaled
-    // screen px but the child reads unscaled coordinates: divide the
-    // screen-space terms by the effective scale (rect/layout width;
-    // exactly 1 untransformed).
-    var k = frame.clientWidth ? f.width / frame.clientWidth : 1;
-    var box = [
-      Math.max(0, (s.left - f.left) / k, -f.left / k),
-      Math.max(0, (s.top - f.top) / k, -f.top / k),
-      Math.min(frame.clientWidth, (s.right - f.left) / k,
-               (window.innerWidth - f.left) / k),
-      Math.min(frame.clientHeight, (s.bottom - f.top) / k,
-               (window.innerHeight - f.top) / k)
-    ];
-    frame.setAttribute("data-transect-visible", box.map(Math.round).join(","));
-    // Keep each chart's input widgets visible while the zoomed view
-    // scrolls horizontally. Widgets live inside the iframe document (a
-    // Mosaic Param/Selection cannot cross the boundary) and the whole
-    // document is moved by the wrapper's scroll, so position:sticky is
-    // inert - translate the widget rows by scrollLeft instead (0 in
-    // the default fit view).
-    var inner = frame.contentDocument;
-    if (inner) {
-      var shift = scroller.scrollLeft / (k || 1);
-      // a widget ROW is the ancestor of a control (radio fieldset,
-      // tom-select, checkbox) sitting directly under the container
-      // that also holds the plot svgs - the .mosaic-widget root is
-      // one element wrapping everything, so climb instead of class-match
-      var rows = [];
-      inner.querySelectorAll("fieldset, .ts-wrapper, input[type=checkbox]")
-        .forEach(function(el) {
-          var n = el;
-          while (n.parentElement && !n.parentElement.querySelector("svg")) {
-            n = n.parentElement;
-          }
-          if (n.parentElement && rows.indexOf(n) < 0) rows.push(n);
-        });
-      rows.forEach(function(row) {
-        row.style.transform = shift > 0.5 ? "translateX(" + shift + "px)" : "";
-      });
-    }
-  });
-}
-
-// Every chart iframe optically scales down to its wrapper's width
-// (default view; the zoom checkbox restores authored width + h-scroll).
-// A transform does not change layout, so the wrapper gets an explicit
-// height and hides both overflow axes (hidden-x flips visible-y to
-// auto, which grew phantom scrollbars). Charts that already fit stay
-// at authored size (k caps at 1). Re-applied on resize.
-function _transectApplyFit() {
-  var zoom = document.getElementById("transect-zoom-toggle");
-  var zoomed = !!(zoom && zoom.checked);
-  document.querySelectorAll("div.chart-scroll > iframe").forEach(function(frame) {
-    var wrap = frame.parentElement;
-    var k = !zoomed && frame.clientWidth
-      ? Math.min(1, wrap.clientWidth / frame.clientWidth) : 1;
-    if (k >= 1) {
-      frame.style.transform = "";
-      frame.style.transformOrigin = "";
-      wrap.style.height = "";
-      // restore, not clear: the wrapper's overflow-x:auto is an INLINE
-      // style from charts.embed, so writing "" here would erase it and
-      // leave the default (visible) - wide charts would then overflow
-      // the page body itself.
-      wrap.style.overflowX = "auto";
-      wrap.style.overflowY = "";
-      return;
-    }
-    wrap.scrollLeft = 0;
-    wrap.scrollTop = 0;
-    frame.style.transformOrigin = "0 0";
-    frame.style.transform = "scale(" + k + ")";
-    wrap.style.height = (frame.clientHeight * k) + "px";
-    // both axes: the iframe's LAYOUT box keeps its unscaled size (a
-    // transform is visual-only), so with only overflow-x hidden the
-    // wrapper grows a vertical scrollbar for layout the reader can
-    // never see (hidden on one axis computes the other's visible to
-    // auto) - hide both; the scaled chart fits the wrapper's own box
-    // exactly by construction.
-    wrap.style.overflowX = "hidden";
-    wrap.style.overflowY = "hidden";
-  });
-  _transectQueueVisibleBounds();
-}
-var _transectFitPending = false;
-function _transectQueueFit() {
-  if (_transectFitPending) return;
-  _transectFitPending = true;
-  requestAnimationFrame(function() {
-    _transectFitPending = false;
-    _transectApplyFit();
-  });
-}
-document.addEventListener("DOMContentLoaded", _transectApplyFit);
-window.addEventListener("load", _transectApplyFit);
-window.addEventListener("resize", _transectQueueFit);
-
 // "Back to top" visibility: appears once the reader is a screen down
 // (covers both plain scrolling and a band click-to-card jump).
 function _transectBackTopVisibility() {
@@ -303,22 +196,5 @@ function _transectBackTopVisibility() {
 }
 window.addEventListener("scroll", _transectBackTopVisibility);
 document.addEventListener("DOMContentLoaded", _transectBackTopVisibility);
-// coalesced to one pass per frame: scroll/resize fire far faster than
-// layout needs re-measuring, and this runs in the top document where
-// requestAnimationFrame is never throttled.
-var _transectBoundsPending = false;
-function _transectQueueVisibleBounds() {
-  if (_transectBoundsPending) return;
-  _transectBoundsPending = true;
-  requestAnimationFrame(function() {
-    _transectBoundsPending = false;
-    _transectChartVisibleBounds();
-  });
-}
-document.addEventListener("DOMContentLoaded", _transectChartVisibleBounds);
-window.addEventListener("load", _transectChartVisibleBounds);
-// capture phase: a wrapper's own scroll event does not bubble to window
-window.addEventListener("scroll", _transectQueueVisibleBounds, true);
-window.addEventListener("resize", _transectQueueVisibleBounds);
 </script>
 </body></html>

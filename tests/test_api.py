@@ -6,10 +6,13 @@ from helpers import JSON_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
 from inspect_ai.event import timeline_build
 from inspect_ai.log import read_eval_log, write_eval_log
+from inspect_ai.model import GenerateConfig
+from inspect_ai.model._model import Model
 
 import transect.api as api
 from transect import load, reliability, transect
 from transect.api import _run, _scanners, _viewer_exit_mode
+from transect.scanners import base
 from transect.spec import Spec
 
 
@@ -72,6 +75,139 @@ def test_structural_scanners_read_logs_with_stored_timelines(demo_log, tmp_path)
     )
     assert len(stored.transcript_info) == 1
     assert stored.transcript_info["scan_error"].isna().all()
+
+
+def test_scan_knobs_reach_scout(demo_log, tmp_path, monkeypatch):
+    """The Scout scheduling knobs transect() exposes are passed to the scan
+    call as given, and the scan still completes at $0."""
+    real, seen = api.scout_scan, {}
+
+    def capture(**kwargs):
+        seen.update(kwargs)
+        return real(**kwargs)
+
+    monkeypatch.setattr(api, "scout_scan", capture)
+    results = transect(
+        logs=str(demo_log),
+        spec=Spec(),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+        max_transcripts=3,
+        max_connections=2,
+        max_retries=4,
+        timeout=30,
+        results_buffer=5,
+        fail_on_error=True,
+    )
+    assert not results.scan_status.has_failures
+    assert seen["max_transcripts"] == 3
+    assert seen["model_config"] == GenerateConfig(
+        max_connections=2, max_retries=4, timeout=30
+    )
+    assert seen["results_buffer"] == 5 and seen["fail_on_error"] is True
+    assert seen["max_processes"] == 1
+
+
+def test_fail_on_error_before_the_structural_scan_leaves_a_store_load_refuses(
+    demo_log, tmp_path, monkeypatch
+):
+    """With fail_on_error Scout stops at the first scanner error and hands
+    back the interrupted store instead of raising; when the stop lands
+    before a structural scanner wrote its results, load() refuses the
+    store, naming the scanner and the rerun, instead of a bare KeyError."""
+
+    def fail(uri):
+        raise RuntimeError("recorded setup failure")
+
+    monkeypatch.setattr(base, "_eval_header", fail)
+    with pytest.raises(ValueError, match=r"no results for eval_setup.*rerun"):
+        transect(
+            logs=str(demo_log),
+            spec=Spec(),
+            scans_dir=str(tmp_path / "scans"),
+            viewer=False,
+            open_report=False,
+            fail_on_error=True,
+        )
+
+
+@pytest.mark.parametrize(
+    "own, expected",
+    [
+        (GenerateConfig(temperature=0.25, max_connections=1, timeout=11), (1, 11)),
+        (GenerateConfig(temperature=0.25), (7, None)),
+    ],
+    ids=["judge-sets-its-own", "judge-leaves-them-unset"],
+)
+def test_a_judges_own_operational_settings_win_over_the_scan_level(
+    demo_log, tmp_path, monkeypatch, own, expected
+):
+    """A connection limit or timeout set on the judge Model wins on every
+    judged path (phase judge, verifier, narrator, sub-agent judge and its
+    verifier); a judge that sets none takes transect()'s, and the judge's
+    sampling settings survive either way. Transect's rule, not Scout's."""
+    resolved = []
+    real = Model._generate
+
+    async def record(self, prepared, config, *args, **kwargs):
+        resolved.append(config)
+        return await real(self, prepared, config, *args, **kwargs)
+
+    monkeypatch.setattr(Model, "_generate", record)
+    judge = demo_judge()
+    judge.config = own
+    transect(
+        logs=str(demo_log),
+        spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+        judge_models=judge,
+        verify=True,
+        verify_sample=1.0,
+        max_connections=7,
+    )
+    assert len(resolved) >= 5
+    assert {(c.max_connections, c.timeout, c.temperature) for c in resolved} == {
+        (*expected, 0.25)
+    }
+
+
+def test_judge_call_shaping_reaches_the_scanner_factories(
+    demo_log, tmp_path, monkeypatch
+):
+    """chunk, verify_chunk, narrate and subagent_activity travel from
+    transect() to decision_phases and subagent_classification by name,
+    and the judged scan still completes at $0 with them applied."""
+    seen = {}
+    for name in ["decision_phases", "subagent_classification"]:
+        real = getattr(api, name)
+
+        def capture(spec, _real=real, _name=name, **kw):
+            seen[_name] = kw
+            return _real(spec, **kw)
+
+        monkeypatch.setattr(api, name, capture)
+    results = transect(
+        logs=str(demo_log),
+        spec=str(demo_log.parents[2] / "examples" / "spec.yaml"),
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+        judge_models=demo_judge(),
+        verify=False,
+        chunk=10,
+        verify_chunk=4,
+        narrate=False,
+        subagent_activity=True,
+    )
+    assert not results.scan_status.has_failures
+    phases, subagents = seen["decision_phases"], seen["subagent_classification"]
+    assert (phases["chunk"], phases["verify_chunk"]) == (10, 4)
+    assert phases["narrate"] is False
+    assert subagents["activity"] is True
+    assert (results.phases["headline"] == "").all()
 
 
 def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):

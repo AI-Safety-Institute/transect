@@ -167,8 +167,6 @@ scanner change take effect; run a new scan and retain both results for compariso
   chart in the browser. Read it before writing or reviewing any chart
   code; the long docstrings in `report/` encode these findings and
   should not be trimmed.
-- `embed.py`'s pixel constants are real-browser measurements; the
-  comments say what was measured and how to re-measure.
 - Verify report changes in a real browser, not only via tests: chart
   regressions typically produce zero Python errors. The $0 loop: run
   `transect()` on the committed demo log
@@ -184,10 +182,9 @@ scanner change take effect; run a new scan and retain both results for compariso
 - **Module layout.** Module docstring, imports, module constants,
   then classes (pydantic models and dataclasses), then public
   functions, then private `_`-prefixed helpers at the bottom.
-  Report modules (`report/charts.py`, `report/embed.py`)
-  are the one exception: their measured pixel and layout constants
-  stay next to the function that uses them, with the comment that
-  says what was measured.
+  `report/charts.py` is the one exception: its measured pixel and
+  layout constants stay next to the function that uses them, with the
+  comment that says what was measured.
 - **Comments state constraints the code cannot show** - no narration,
   no implementation history. No all-caps emphasis words in prose,
   comments, or docstrings (prompt strings exempt). No em dashes and no
@@ -237,6 +234,24 @@ scanner change take effect; run a new scan and retain both results for compariso
   (anthropic/openai) belong to the `dev` group, never to runtime
   dependencies - the README instructs users to install their own
   provider. New runtime deps need discussion.
+- **Dependency cooldown.** A package release must be at least 7 days
+  old before it can enter this repo, so a compromised release has time
+  to be caught and yanked first. `[tool.uv] exclude-newer = "7 days"`
+  in pyproject.toml enforces it for every uv resolution (`uv lock`,
+  `uv lock --upgrade`, `uv add`, `uv sync`), the span is recorded in
+  `uv.lock`, and CI installs with `uv sync --locked` under the same
+  `UV_EXCLUDE_NEWER` (the two values must match). Only the Inspect
+  packages and `certifi` are exempt (`exclude-newer-package`, mirrored
+  in Dependabot's `cooldown.exclude`); a provider SDK is not. Never disable the
+  cutoff (`--exclude-newer`, `UV_EXCLUDE_NEWER`, `exclude-newer =
+  false`) or hand-edit the lockfile to reach a newer release; if a fix
+  is needed sooner, say so in the PR and wait, or exempt that package
+  in both places as a reviewed change. Other upgrades arrive as weekly
+  grouped Dependabot PRs or by hand with `uv lock --upgrade-package`.
+  GitHub Actions are pinned to commit SHAs with a `# vX.Y.Z` comment
+  and Dependabot proposes bumps after the same cooldown; the uv version
+  CI installs is pinned in `ci.yml` and bumped by hand (a uv security
+  fix skips the cooldown, as Dependabot security updates do).
 - `make sync` / `format` / `lint` / `test` / `check` / `hooks` are the
   canonical entry points. Note pre-commit runs the writing variants
   (`ruff check --fix`, `ruff format`) - it mutates the commit rather

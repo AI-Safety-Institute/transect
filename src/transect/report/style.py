@@ -1,8 +1,7 @@
-"""The report's CSS: the outer page's stylesheet and the widget-styling
-head splice for the embedded chart documents. Values are captured
-literals from Inspect View's ts-mono theme (stock bootstrap 5.3.8 plus
-its ~20 overrides), each with its provenance recorded next to the
-declaration.
+"""The report's CSS: the page's stylesheet, the chart widgets' styling,
+and the chart boxes' layout rules. Values are captured literals from
+Inspect View's ts-mono theme (stock bootstrap 5.3.8 plus its ~20
+overrides), each with its provenance recorded next to the declaration.
 """
 
 # [bootstrap] --bs-font-sans-serif (ts-mono adds no font override).
@@ -26,8 +25,7 @@ _STYLE = f"""
   --transect-color-border: #dee2e6;        /* [bootstrap] --bs-border-color */
   --transect-color-border-subtle: #e9ecef; /* [bootstrap] --bs-light-border-subtle */
   --transect-color-hover: #f8f9fa;         /* [bootstrap] --bs-light; the one hover
-                                          wash, restated as a literal in the
-                                          widget CSS (iframes can't see it) */
+                                          wash */
   --transect-color-link: #104D6A;          /* steel - links + controls */
   --transect-color-link-hover: #0E2841;    /* navy */
   --transect-color-accent: #09A4A7;        /* teal - focus rings */
@@ -243,62 +241,60 @@ body.classified {{ padding-top: 30px; padding-bottom: 30px; }}
 # font-size must stay pinned: an unstyled h3 (~1.17em browser default)
 # would render larger than the explicit `h2` rule.
 
-# Spliced into every embedded chart document's head (`embed._embed`'s
-# `extra_head`) - inert in a document with no widget. Constraints
-# (browser-verified):
+# The chart widgets' inputs and popovers. Follows inspect_viz's own
+# stylesheet (`HtmlPage.head()`) in the page, so a rule here wins a
+# specificity tie. Constraints (browser-verified):
 #
 # - `vconcat` renders one `.mosaic-widget` whose rows are class-less
 #   `<div>` siblings with zero margin; `div:has(> fieldset)` is the only
-#   way to target the input rows. The spacing rule needs `!important`:
-#   inspect_viz writes its stylesheet into `<body>`, which follows
-#   `<head>` and so wins on source order.
-# - `embed._WIDGET_ROW_HEIGHT` and the `margin-bottom` here came from one
-#   measurement; change them together.
-# - Literal hex, not `var(--transect-*)`: an embedded document cannot see the
-#   outer page's `:root`.
-# - tom-select's dropdown (`dropdownParent: "body"`) and the tippy
-#   popover escape `.mosaic-widget`, hence the page-level selectors.
+#   way to target the input rows.
+# - tom-select's dropdown (`dropdownParent: "body"`) escapes
+#   `.mosaic-widget`, and the tippy popover sits in whichever chart's
+#   widget hosts it (`_CHART_CSS`), hence the page-level selectors.
 # - inspect_viz's `select()` always wraps in Tom Select; a
 #   `.mosaic-widget select` rule paints nothing.
 # - The radios stay real visible inputs (no Bootstrap `.btn-check`
 #   hiding): browser automation clicks `input[type="radio"]` directly.
-# - The tippy box's font-size stays untouched: `embed.py`'s measured
-#   tooltip-row heights were derived against the unset size.
 _WIDGET_STYLE_CSS = (
-    "<style>.mosaic-widget, .mosaic-widget input, .mosaic-widget label, "
+    ".mosaic-widget, .mosaic-widget input, .mosaic-widget label, "
     ".mosaic-widget fieldset, .mosaic-widget legend "
     f"{{ font-family: {_FONT_STACK}; }}"
     # 0.85rem matches `_STYLE`'s `.meta`, the prose around these widgets
     ".mosaic-widget { font-size: 0.85rem; }"
+    # `!important`: the rule must not depend on this `<style>` following
+    # the widget bundle's stylesheet in the template head, nor on the
+    # bundle's own row rules staying at or below (0,1,1) - the rows
+    # collapsing against the chart raises no error and no test checks
+    # spacing
     ".mosaic-widget div:has(> fieldset) { margin-bottom: 1.25rem !important; }"
     # radio pills. The legend text is styled on `fieldset` itself:
     # `radio_group`'s JS leaves "Measure:" as a bare text node (no
     # `<legend>` element exists), so `fieldset > legend` matches
     # nothing; the `<label>` children are reset back to normal below.
     ".mosaic-widget fieldset { gap: 0.6rem !important; font-weight: 600; "
-    "color: rgba(33, 37, 41, 0.75); }"
-    ".mosaic-widget fieldset > label { font-weight: 400; color: #212529; "
-    "border: 1px solid #dee2e6; "
+    "color: var(--transect-color-muted); }"
+    ".mosaic-widget fieldset > label { font-weight: 400; "
+    "color: var(--transect-color-text); "
+    "border: 1px solid var(--transect-color-border); "
     "border-radius: 999px; padding: 2px 10px 2px 6px; "
     "transition: background-color .1s, border-color .1s; }"
-    ".mosaic-widget fieldset > label:hover { background: #f8f9fa; }"
+    ".mosaic-widget fieldset > label:hover "
+    "{ background: var(--transect-color-hover); }"
     ".mosaic-widget fieldset > label:has(> input:checked) "
-    "{ border-color: #104D6A; background: #e7f0f4; }"
+    "{ border-color: var(--transect-color-link); background: #e7f0f4; }"
     ".mosaic-widget fieldset > label > input[type=radio] "
-    "{ accent-color: #104D6A; }"
+    "{ accent-color: var(--transect-color-link); }"
     # tom-select's visible control: strip the vendor chrome, match the
-    # outer page's `.filter-bar select` border/radius/font
+    # page's `.filter-bar select` border/radius/font
     ".mosaic-widget label:has(.ts-wrapper) "
-    "{ font-weight: 600; color: rgba(33, 37, 41, 0.75); }"
-    ".mosaic-widget .ts-wrapper { font-weight: 400; color: #212529; "
-    "min-height: 26px !important; }"
-    # the dropdown's max-height cap lives in embed._embed, computed per
-    # document from the iframe's own height (a page-level rule - the
-    # dropdownParent: "body" popup escapes .mosaic-widget)
+    "{ font-weight: 600; color: var(--transect-color-muted); }"
+    ".mosaic-widget .ts-wrapper { font-weight: 400; "
+    "color: var(--transect-color-text); min-height: 26px !important; }"
     ".mosaic-widget .ts-control, "
     ".mosaic-widget .ts-wrapper.single .ts-control { "
     "background: #fff !important; background-image: none !important; "
-    "box-shadow: none !important; border: 1px solid #dee2e6 !important; "
+    "box-shadow: none !important; "
+    "border: 1px solid var(--transect-color-border) !important; "
     "border-radius: 3px !important; padding: 2px 28px 2px 8px !important; "
     "font-family: inherit !important; font-size: 0.85rem !important; "
     # rem, not em: an em would compound against `.mosaic-widget`'s own
@@ -308,25 +304,82 @@ _WIDGET_STYLE_CSS = (
     "{ border-color: #b8c3cc !important; }"
     ".mosaic-widget .ts-wrapper.single.focus .ts-control, "
     ".mosaic-widget .ts-wrapper.single.dropdown-active .ts-control { "
-    "border-color: #09A4A7 !important; "
+    "border-color: var(--transect-color-accent) !important; "
     "box-shadow: 0 0 0 0.2rem rgba(9, 164, 167, 0.25) !important; }"
     # tom-select's dropdown popup: page-level, `dropdownParent: "body"`
     # escapes `.mosaic-widget`
     ".ts-dropdown { background: #fff !important; "
-    "border: 1px solid #dee2e6 !important; border-radius: 3px !important; "
+    "border: 1px solid var(--transect-color-border) !important; "
+    "border-radius: 3px !important; "
     "box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important; "
     f"font-family: {_FONT_STACK} !important; font-size: 0.85rem !important; }}"
     ".ts-dropdown .option, .ts-dropdown .optgroup-header, "
     ".ts-dropdown .no-results, .ts-dropdown .create "
     "{ padding: 4px 10px !important; }"
     ".ts-dropdown .active "
-    "{ background-color: #f8f9fa !important; color: #212529 !important; }"
+    "{ background-color: var(--transect-color-hover) !important; "
+    "color: var(--transect-color-text) !important; }"
     ".tippy-box[data-theme~='inspect'] { font-family: "
-    f"{_FONT_STACK} !important; background-color: #f8f9fa !important; "
-    "border: 1px solid #dee2e6 !important; border-radius: 4px !important; "
+    f"{_FONT_STACK} !important; "
+    "background-color: var(--transect-color-hover) !important; "
+    "border: 1px solid var(--transect-color-border) !important; "
+    "border-radius: 4px !important; "
     "box-shadow: 0 2px 10px rgba(0,0,0,0.25) !important; "
     "filter: none !important; }"
     ".tippy-box[data-theme~='inspect'] .tippy-arrow:before "
-    "{ color: #f8f9fa !important; }"
-    "</style>"
+    "{ color: var(--transect-color-hover) !important; }"
+)
+
+
+# The chart boxes `embed.embed_section` wraps each fragment in, and the
+# rules that let a chart and its tooltips work inside them.
+#
+# - `.chart-scroll` scrolls horizontally in both views: whatever a
+#   fragment holds that is wider than the page (a `Table` block's grid,
+#   a row of input widgets on a narrow window) scrolls inside its box
+#   instead of forcing the page to scroll. A scroll container does not
+#   clip the tippy popover (verified: it shows whole over a chart at the
+#   page's top and bottom edge in both views).
+# - Default view: Plot's own ``max-width: 100%`` on each svg scales a
+#   chart wider than its box down to fit, keeping its aspect ratio.
+# - Zoomed view (the page's ``#transect-zoom-toggle``, read by `:has()`
+#   so a restored checkbox state needs no script): each svg renders at
+#   its authored width - `.mosaic-widget svg` wins on specificity (0,1,1
+#   against Plot's generated class's 0,1,0); `!important` guards against
+#   a future Plot stylesheet change, since the failure mode is silent.
+#   `.chart:has(svg)` sizes a plot's box to its widest plot so the input
+#   rows (`vconcat` children holding a control) have room to stick to
+#   the wrapper's left edge while the chart scrolls under them. A box
+#   with no svg (a `Table` block) keeps the page width: a `max-content`
+#   grid would stretch to its full column width instead of scrolling
+#   inside the box.
+# - Neither view may put a `transform`, or anything else that makes a
+#   containing block, on a chart's ancestors: inspect_viz keeps one tippy
+#   instance per page, bound to the widget whose svg it configured last,
+#   and mounts every popover inside that widget (tippy's `interactive`
+#   default), so such an ancestor of that widget mispositions every
+#   popover on the page and lets its wrapper clip them. The same binding
+#   is why a chart under `hidden` (an unselected spend tag family) would
+#   hide every tooltip if it were the last to render; on the reports
+#   checked, the token telemetry chart renders last.
+# - inspect_viz creates its one tippy instance with `interactive: true`,
+#   so the popover takes pointer events; appearing under the pointer it
+#   becomes the hit target, the chart svg fires `pointerleave`, and
+#   Mosaic's `Nearest` interactor clears its selection on `pointerleave`
+#   - so the hover line vanishes the instant its own tooltip appears, and
+#   a popover left over the chart absorbs every later hover (measured: 1
+#   of 8 exact-centre hovers resolved the cursor without the
+#   `pointer-events` rule, 8 of 8 with it). The tradeoff is that tooltip
+#   text is no longer selectable and a link inside it is no longer
+#   clickable; nothing here puts a link in a tooltip.
+_CHART_CSS = (
+    ".chart-scroll { overflow-x: auto; }"
+    "body:has(#transect-zoom-toggle:checked) .chart:has(svg) "
+    "{ width: max-content; }"
+    "body:has(#transect-zoom-toggle:checked) .mosaic-widget svg "
+    "{ max-width: none !important; }"
+    ".chart-scroll .mosaic-widget > div > div"
+    ":has(fieldset, .ts-wrapper, input[type=checkbox]) "
+    "{ position: sticky; left: 0; }"
+    "[data-tippy-root], [data-tippy-root] * { pointer-events: none !important; }"
 )

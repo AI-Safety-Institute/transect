@@ -9,17 +9,33 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  # Supply-chain cooldown for the uv runs outside the project (the isolated
+  # wheel smoke test below reads no pyproject.toml). Must equal `exclude-newer`
+  # in pyproject.toml: the env var takes precedence, and `uv sync --locked`
+  # fails on a span that differs from the one recorded in uv.lock.
+  UV_EXCLUDE_NEWER: "7 days"
+  # uv is a dependency too; pin it rather than take setup-uv's default of the
+  # latest release. Needs >= 0.13.4, which drops the compromised emSign root
+  # from uv's certificate store (GHSA-hq85-5cpj-mr62); a security fix skips
+  # the 7-day cooldown, as Dependabot's security updates do. Bump by hand.
+  UV_VERSION: "0.13.5"
+
 jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
+          version: ${{ env.UV_VERSION }}
           enable-cache: true
-      - name: Sync dependencies
-        run: uv sync
+      - name: Sync dependencies (exactly the committed lockfile)
+        run: uv sync --locked
       - name: Lint + typecheck + tests
         run: make check
       - name: Install chromium for the browser test
@@ -39,8 +55,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
       - name: Build wheel + sdist
         run: uv build
       - name: Smoke-import the built wheel in a clean environment
@@ -63,7 +81,7 @@ jobs:
     env:
       BASE_REF: ${{ github.base_ref }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Require a version bump when src/transect changes

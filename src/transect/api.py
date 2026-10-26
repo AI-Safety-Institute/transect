@@ -18,7 +18,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import pandas as pd
-from inspect_ai.model import Model
+from inspect_ai.model import GenerateConfig, Model
 from inspect_scout import (
     HEAVY_COLUMNS,
     columns,
@@ -69,6 +69,15 @@ from transect.selection import read_index, select_transcripts
 from transect.spec import Spec, load_spec
 from transect.tags import turn_tags_frame
 
+# The scanners every run executes; a store without their results is not
+# a transect scan but an interrupted one, and load() says so.
+_STRUCTURAL_SCANNERS = (
+    "token_timeline",
+    "context_flush",
+    "human_intervention",
+    "eval_setup",
+)
+
 
 def transect(
     logs: str | list[str],
@@ -78,16 +87,26 @@ def transect(
     epochs: int | list[int] | Literal["all"] | None = None,
     judge_models: str | Model | list[str | Model] | None = None,
     k_rolls: int = 1,
+    chunk: int = 40,
+    digest: DigestSettings | None = None,
     verify: bool | None = None,
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
-    digest: DigestSettings | None = None,
+    verify_chunk: int = 8,
+    narrate: bool = True,
+    subagent_activity: bool = False,
     scans_dir: str = "scans",
     report_path: str | None = None,
     title: str | None = None,
     viewer: bool = True,
     open_report: bool = True,
     max_processes: int = 1,
+    max_transcripts: int | None = None,
+    max_connections: int | None = None,
+    max_retries: int | None = None,
+    timeout: int | None = None,
+    results_buffer: int | None = None,
+    fail_on_error: bool = False,
     extra_layers: list[Layer] | None = None,
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
@@ -127,6 +146,12 @@ def transect(
             ``extra_layers`` may still call models and incur charges.
         k_rolls: Repeated rolls of one model (mutually exclusive with
             a multi-model list).
+        chunk: Orchestrator turns per segmentation call; changes the
+            phase judge's requests.
+        digest: What the phase judge, its verifier and the narrator
+            read per orchestrator turn (`DigestSettings`: the
+            character caps of each digest part and whether tool-call-
+            only turns are judged); ``None`` is the defaults.
         verify: The second-round verifier, a re-review of doubtful
             phase labels and sub-agent classifications. ``None`` =
             auto: on for a single judge model (solo and k-roll), off
@@ -142,10 +167,11 @@ def transect(
             per-span at that probability. No effect when the
             verifier is off (cohort regime, or ``verify=False``);
             values outside [0, 1] are rejected.
-        digest: What the phase judge, its verifier and the narrator
-            read per orchestrator turn (`DigestSettings`: the
-            character caps of each digest part and whether tool-call-
-            only turns are judged); ``None`` is the defaults.
+        verify_chunk: Phases per verifier call; changes its requests.
+        narrate: Headline and summary per phase; off removes those
+            calls.
+        subagent_activity: Also show the sub-agent judge each span's
+            recorded activity (experimental); changes its requests.
         scans_dir: Where the scan store (and report) live.
         report_path: Where the report lands. A ``.html`` file path;
             an existing directory gets ``report.html`` placed inside
@@ -157,7 +183,24 @@ def transect(
             Python process (Ctrl+C to exit); without one (a coding
             agent, CI) it is left serving at the printed URL.
         open_report: Open the rendered HTML in the browser.
-        max_processes: Parallel scan worker processes.
+        max_processes: Scout worker processes. Binds only with several
+            epochs selected; above 1 Scout spawns workers, which needs
+            a ``__main__`` guard, and a worker has died mid-scan on a
+            large transcript before, hence 1.
+        max_transcripts: Transcripts in flight (Scout's default 25,
+            several only with several epochs); also the default
+            ``max_connections``.
+        max_connections: Concurrent requests per judge model (default
+            ``max_transcripts``); a limit on a judge's own config wins
+            for that judge.
+        max_retries: Retries per judge request; a judge's own setting
+            wins.
+        timeout: Seconds per judge request; a judge's own setting wins.
+        results_buffer: Sync partial results to the store every N items.
+        fail_on_error: Stop at the first scanner error. Scout hands back
+            the interrupted store, loaded and rendered with the gap in
+            ``scan_status``; a stop before the structural scanners wrote
+            anything makes ``load()`` refuse it.
         extra_layers: User-injected `Layer` additions: each layer's
             scanner joins the scan batch and its frame mounts at
             ``results.layer_frames[name]``.
@@ -215,12 +258,22 @@ def transect(
         epochs=epochs,
         judge_models=judge_models,
         k_rolls=k_rolls,
+        chunk=chunk,
+        digest=digest,
         verify=verify,
         verifier_model=verifier_model,
         verify_sample=verify_sample,
-        digest=digest,
+        verify_chunk=verify_chunk,
+        narrate=narrate,
+        subagent_activity=subagent_activity,
         scans_dir=scans_dir,
         max_processes=max_processes,
+        max_transcripts=max_transcripts,
+        max_connections=max_connections,
+        max_retries=max_retries,
+        timeout=timeout,
+        results_buffer=results_buffer,
+        fail_on_error=fail_on_error,
         extra_layers=extra_layers,
     )
     return render(
@@ -261,6 +314,13 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     # input, its message/event pool, and the scan's own event log) are
     # left on disk
     results = scan_results_df(scan_location, exclude_columns=list(HEAVY_COLUMNS))
+    missing = [name for name in _STRUCTURAL_SCANNERS if name not in results.scanners]
+    if missing:
+        raise ValueError(
+            f"the scan at {scan_location} has no results for {', '.join(missing)}: "
+            "the scan stopped before they were written (fail_on_error, or an "
+            "interrupted run); rerun it"
+        )
     unclaimed = sorted(
         key
         for key, scanner in results.spec.scanners.items()
@@ -458,12 +518,22 @@ def _run(
     epochs: int | list[int] | Literal["all"] | None = None,
     judge_models: str | Model | list[str | Model] | None = None,
     k_rolls: int = 1,
+    chunk: int = 40,
+    digest: DigestSettings | None = None,
     verify: bool | None = None,
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
-    digest: DigestSettings | None = None,
+    verify_chunk: int = 8,
+    narrate: bool = True,
+    subagent_activity: bool = False,
     scans_dir: str = "scans",
     max_processes: int = 1,
+    max_transcripts: int | None = None,
+    max_connections: int | None = None,
+    max_retries: int | None = None,
+    timeout: int | None = None,
+    results_buffer: int | None = None,
+    fail_on_error: bool = False,
     extra_layers: list[Layer] | None = None,
 ) -> TransectResults:
     """Scan the logs with the Transect scanner set and return the frames.
@@ -492,10 +562,14 @@ def _run(
         spec,
         judge_models,
         k_rolls=k_rolls,
+        chunk=chunk,
+        digest=digest,
         verify=verify,
         verifier_model=verifier_model,
         verify_sample=verify_sample,
-        digest=digest,
+        verify_chunk=verify_chunk,
+        narrate=narrate,
+        subagent_activity=subagent_activity,
     )
     if jsonl:
         # Keep new snapshots outside an existing database's recursive search root.
@@ -522,6 +596,12 @@ def _run(
         transcripts=transcripts,
         scans=scans_dir,
         max_processes=max_processes,
+        max_transcripts=max_transcripts,
+        model_config=GenerateConfig(
+            max_connections=max_connections, max_retries=max_retries, timeout=timeout
+        ),
+        results_buffer=results_buffer,
+        fail_on_error=fail_on_error,
     )
     return load(status.location, extra_layers=extra_layers)
 
@@ -530,15 +610,20 @@ def _scanners(
     spec,
     judge_models: str | Model | list[str | Model] | None,
     k_rolls: int = 1,
+    chunk: int = 40,
+    digest: DigestSettings | None = None,
     verify: bool | None = None,
     verifier_model: str | Model | None = None,
     verify_sample: float | None = None,
-    digest: DigestSettings | None = None,
+    verify_chunk: int = 8,
+    narrate: bool = True,
+    subagent_activity: bool = False,
 ) -> list:
     """The scanner set for a run: structural always; judge scanners when a
     model is given - decision_phases additionally needs a phase vocab.
     subagent_classification additionally needs subagent_labels. The
-    digest settings are passed resolved, so Scout records them."""
+    digest settings and the per-scanner knobs are passed resolved, so
+    Scout records them with the scanner's arguments."""
     scanners = [
         token_timeline(),
         context_flush(),
@@ -561,6 +646,9 @@ def _scanners(
                     verifier_model=verifier_model,
                     verify_sample=verify_sample,
                     digest=digest,
+                    chunk=chunk,
+                    verify_chunk=verify_chunk,
+                    narrate=narrate,
                 )
             )
         if spec.subagent_labels:
@@ -572,6 +660,7 @@ def _scanners(
                     verify=verify,
                     verifier_model=verifier_model,
                     verify_sample=verify_sample,
+                    activity=subagent_activity,
                 )
             )
     return scanners
