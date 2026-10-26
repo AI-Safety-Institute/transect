@@ -245,6 +245,11 @@ the shared turn axis where applicable:
 | `Table(columns=...)` | sortable table of the frame (scrolls internally) | - |
 | `Component(fn)` | escape hatch: your fn gets a `SectionContext` (transcript_id, the layer's frame slice, n_turns) and returns an inspect_viz component | - |
 
+Every chart on a report is a fragment of one page, and inspect_viz shares
+a `Param` or `Selection` by id across the page: create them inside your
+`Component` fn, never at module level, or one transcript's input drives
+every transcript's copy of the chart.
+
 Block shapes are validated loudly at `transect()` - the error names the
 block, layer, and column. Every viz block also takes a ``frame=``
 DataFrame override (default: the layer's own frame), cut to the

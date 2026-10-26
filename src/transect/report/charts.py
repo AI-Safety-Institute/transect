@@ -1,6 +1,6 @@
 """Chart builders for the report's chart sections.
 
-One chart section, one component tree, one iframe (`embed_section`).
+One chart section, one component tree, one page fragment (`embed_section`).
 Charts of one transcript share an x-domain (`turn_xlim`) and a width
 (`chart_width`), so the same turn sits in the same pixel column in every
 section; they share no Mosaic selection, and each chart carries its own
@@ -61,12 +61,6 @@ Constraints ledger (detail sits on each named function or constant):
   literal on `inspect_viz.mark.dot`'s signature (`_END_MARKER_SYMBOL`).
 - **A tooltip channel named `label` collides with Plot's own mark/scale
   option and blanks the chart** (`_RESERVED_TIP_CHANNELS`).
-
-`inspect_viz` tracks every `Data` object in a module-global registry
-that only grows, and its `to_html` inlines every registry entry rather
-than scoping to the component tree it was handed. `embed._document`
-scopes each section's document to the tables it reads until the upstream
-fix (meridianlabs-ai/inspect_viz#40) is released.
 """
 
 from typing import Any
@@ -96,16 +90,6 @@ from transect.report.display import (
     MEMBER_NO_VOTE,
     member_display,
     multi_roll_models,
-)
-from transect.report.embed import (
-    _LANE_WORST_CHARS_PER_LINE,
-    _TIP_EXTRA_LINE_PX,
-    _TIP_SHORT_ROW_PX,
-    _section_height,
-    _tip_floor,
-    _tip_rows,
-    tip_fit_height,
-    wrap_row_px,
 )
 
 
@@ -138,7 +122,7 @@ def phase_band(
     colors: dict[str, tuple[str, str | None]],
     card_id_prefix: str,
     turn_votes: pd.DataFrame,
-) -> tuple[list[Component], int]:
+) -> list[Component]:
     """The phase-timeline band: one continuous rect per contiguous run of
     the dense per-turn phase assignment (`phase_runs`), plus an optional
     per-turn agreement strip.
@@ -197,7 +181,7 @@ def phase_band(
 
     Two plots, not one: the band and the agreement strip are visually
     distinct rows (110px vs 24px), `vconcat`-ed into this section's one
-    iframe and sharing an x-domain and margins. The strip stays per-turn
+    fragment and sharing an x-domain and margins. The strip stays per-turn
     - ``judge_agreement`` varies turn-to-turn within one phase, which is
     the point of it - so it was never a candidate for the band's
     per-phase chunking. Each row is named in the left margin
@@ -243,20 +227,17 @@ def phase_band(
 
     A second rect, drawn last (after `highlight`, so it is not the mark
     `highlight` binds to), carries the click-to-card behaviour: ``href``
-    (`_phase_anchor`) plus ``target="_parent"``, so a click anywhere in a
-    phase's chunk opens its card. It is fully transparent and
+    (`_phase_anchor`), so a click anywhere in a phase's chunk opens its
+    card. It is fully transparent and
     geometrically identical to the visible rect beneath it. Two marks,
     not one, because ``href`` on the mark `highlight` targets stops
     `highlight` reacting to the `Selection` entirely (module docstring).
 
-    ``target="_parent"`` rather than a document-head ``<base>`` tag: a
-    srcdoc iframe with no ``sandbox`` attribute is same-origin with its
-    parent and free to navigate it, and the fragment resolves against
-    the parent's URL, so the href needs no absolute prefix. A cell with
-    no resolvable ``phase_index`` gets a ``None`` anchor, which Plot
-    renders without the `<a>` wrapper rather than as a link to nowhere.
-    The outer page's hash-navigation script (`templates/report.html.j2`)
-    turns the resulting hash change into an opened, scrolled-to card.
+    A cell with no resolvable ``phase_index`` gets a ``None`` anchor,
+    which Plot renders without the `<a>` wrapper rather than as a link
+    to nowhere. The page's hash-navigation script
+    (`templates/report.html.j2`) turns the resulting hash change into an
+    opened, scrolled-to card.
 
     ``card_id_prefix`` is the id namespace this transcript's anchors
     resolve into, matching whatever prefix `sections.phase_cards` was
@@ -436,9 +417,7 @@ def phase_band(
         label="Filter phase:",
     )
 
-    # Named rather than inline so this section's height floor can count
-    # its rows (`_section_height`). "phase label", not "label" - see
-    # `_RESERVED_TIP_CHANNELS`.
+    # "phase label", not "label" - see `_RESERVED_TIP_CHANNELS`.
     band_channels = {
         "phase": "phase_index",
         "phase label": "phase_label",
@@ -478,7 +457,6 @@ def phase_band(
             # visible mark would break highlight's reactivity
             href="anchor",  # -> that phase's card, None when the cell
             # owns no resolvable phase
-            target="_parent",  # navigate the outer page, not this iframe
         ),
         width=width,
         height=_BAND_BODY + _BAND_MARGIN_TOP,
@@ -498,10 +476,6 @@ def phase_band(
         # substituting Observable's palette for `colors.py`'s
     )
     components = [hconcat(filter_select, conf_checkbox), band]
-    # height is computed after the strip block below: the strip's
-    # per-member tooltip rows can make it the section's tallest, so the
-    # floor takes the max of the two charts' row counts
-    strip_tip_rows = 0
     member_assign: dict = {}
 
     # the agreement strip, per-turn (see docstring "Two plots, not one").
@@ -534,8 +508,8 @@ def phase_band(
         # one "member votes" tooltip row joining every cohort member's
         # own per-turn vote + stated confidence (`phase_turn_votes_df`) -
         # a single wrapping row, not one row per member, so a bigger
-        # cohort widens the row instead of raising every chart's
-        # tooltip-height floor. Absent on solo scans.
+        # cohort lengthens one row instead of adding rows. Absent on
+        # solo scans.
         member_channels: dict[str, str] = {}
         if len(turn_votes):
             members = sorted(
@@ -646,7 +620,6 @@ def phase_band(
             "label source": "label_source_text",
             "label basis": "basis_text",
         }
-        strip_tip_rows = _tip_rows(strip_channels)
         columns = [
             "turn",
             "x1",
@@ -698,31 +671,7 @@ def phase_band(
             # than the authored 0.8
         )
         components.append(strip)
-
-    # The taller of this section's two tooltips floors the iframe. The
-    # strip's rows are single-line values, so they get the single-line
-    # allowance rather than `_TIP_ROW_PX`'s two-line budget; its one
-    # wrapping row is "label basis", ~3 lines at its longest phrase.
-    strip_floor = 0
-    if strip_tip_rows:
-        votes_px = 0
-        if "member_votes" in member_assign:
-            longest = member_assign["member_votes"].astype("string").str.len().max()
-            votes_px = wrap_row_px(int(longest)) if pd.notna(longest) else 0
-        strip_floor = _tip_floor(
-            strip_tip_rows,
-            _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX,
-            second_tall_row_px=votes_px,
-        )
-    height = _section_height(
-        _BAND_BODY + _BAND_MARGIN_TOP,
-        tip_rows=_tip_rows(band_channels),
-        widget_rows=1,
-        floor=max(tip_fit_height(_tip_rows(band_channels)), strip_floor),
-    )
-    if strip_tip_rows:
-        height += _STRIP_HEIGHT
-    return components, height
+    return components
 
 
 def phase_runs(
@@ -922,7 +871,7 @@ def token_stack(
     one: pd.DataFrame,
     flushes: pd.DataFrame | None,
     compaction_threshold: int | None = None,
-) -> tuple[list[Component], int]:
+) -> list[Component]:
     """Token telemetry for one transcript: a continuous-x bar chart (up
     to three selectable measures plus a linear/log scale toggle) and,
     when the derived columns support it, a second always-visible
@@ -948,11 +897,9 @@ def token_stack(
     legal `nearest_x` target; it resolves its own tooltip regardless of
     the interactor.
 
-    Everything this function returns lands in one iframe: a `Param` bound
-    to a radio cannot cross an iframe boundary, so the radios have to
-    share a document with the bars chart, and the "one channel-key set
-    per plot" rule is scoped to a `plot()` call rather than a document,
-    so the context chart costs nothing extra there.
+    Everything this function returns lands in one fragment, and the "one
+    channel-key set per plot" rule is scoped to a `plot()` call rather
+    than a fragment, so the context chart costs nothing extra there.
 
     Mark order on the bars chart is load-bearing (module docstring):
     ``rule_x`` (the bars), `nearest_x`, `highlight`, then the hover rule.
@@ -994,7 +941,7 @@ def token_stack(
     """
     per_turn = one.sort_values("turn")
     if not len(per_turn):
-        return [], 0
+        return []
     n_turns = int(per_turn.turn.max()) + 1
     width = chart_width(n_turns)
     bar_width = _bar_stroke_width(width, n_turns)
@@ -1056,11 +1003,7 @@ def token_stack(
             "context flush": "flush",
         }
         chart = build_bars(Data.from_dataframe(raw), "output_tokens", raw_channels)
-        # one widget row (this fallback path has no measure radio)
-        raw_height = _section_height(
-            _TOKEN_HEIGHT, tip_rows=_tip_rows(raw_channels), widget_rows=1
-        )
-        return [scale_selector, chart], raw_height
+        return [scale_selector, chart]
 
     wide = per_turn[["turn", "turn_total", "new_work", "billable", "context"]].copy()
     wide["cum_billable"] = wide.billable.cumsum()
@@ -1142,23 +1085,13 @@ def token_stack(
         x_domain=turn_xlim(n_turns),
         x_label="turn",
     )
-    # two widget rows (measure + scale); the height floor counts the bars
-    # chart's tooltip, the taller of this section's two
-    derived_height = _section_height(
-        _TOKEN_HEIGHT + _CONTEXT_HEIGHT,
-        tip_rows=_tip_rows(bars_channels),
-        widget_rows=2 + len(threshold_controls),
-    )
-    return (
-        [
-            measure_selector,
-            scale_selector,
-            bars_chart,
-            *threshold_controls,
-            context_chart,
-        ],
-        derived_height,
-    )
+    return [
+        measure_selector,
+        scale_selector,
+        bars_chart,
+        *threshold_controls,
+        context_chart,
+    ]
 
 
 # measure column -> radio-button label, in the order the radio buttons
@@ -1219,7 +1152,7 @@ _TOKEN_MARGIN_BOTTOM = 30
 _BAR_Y1_FALLBACK_FLOOR = "1"
 
 
-# The context-window step chart's height budget: markedly shorter than
+# The context-window step chart's height: markedly shorter than
 # the bars (secondary view, one step line, no radios above it - the
 # space-efficiency alternative to overlaying it on the bars, which
 # would need a second y-scale), margins explicit for the same reason
@@ -1382,7 +1315,7 @@ def _event_hit_rect(
     )
 
 
-def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int]:
+def interventions_chart(act: pd.DataFrame, n_turns: int) -> Component:
     """Human interventions: a dedicated timeline of their own.
 
     One navy solid `rule_x` per intervention turn, offset by the shared
@@ -1426,7 +1359,7 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
         "content": "preview",
         "outcome": "outcome",
     }
-    component = plot(
+    return plot(
         _event_hit_rect(
             frame,
             -1,
@@ -1446,19 +1379,9 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> tuple[Component, int
         margin_left=_INTERVENTION_MARGIN_LEFT,
         margin_right=_INTERVENTION_MARGIN_RIGHT,
     )
-    # the two preview rows wrap at tippy's 350px cap; the other three are
-    # single-line, so the floor prices each row for what it is rather
-    # than `tip_fit_height`'s two-lines-everywhere allowance, which left
-    # a hundred blank pixels under the strip
-    preview_px = wrap_row_px(_PREVIEW_CHARS)
-    return component, _section_height(
-        _INTERVENTION_HEIGHT,
-        _tip_rows(hit_channels),
-        floor=_tip_floor(_tip_rows(hit_channels), preview_px, preview_px),
-    )
 
 
-# The interventions chart's height budget. The body - height minus these
+# The interventions chart's height. The body - height minus these
 # two explicit margins - is what the navy event rules get, and is the
 # number worth reading: Plot reserves ~20px top / ~30px bottom by default
 # even with no axis needing tick-label room, so a 70px total left the
@@ -1471,8 +1394,7 @@ _INTERVENTION_MARGIN_BOTTOM = 30
 
 # A tooltip preview's character cap: enough to identify a message (the
 # list under the chart carries the full text) and, at tippy's 350px
-# width, at most two wrapped lines, which is what the interventions
-# chart's tooltip-fit floor prices each preview row at.
+# width, at most two wrapped lines.
 _PREVIEW_CHARS = 60
 
 
@@ -1506,7 +1428,7 @@ def swimlanes(
     colors: dict[str, str],
     titles: list[dict[str, str]],
     tip_fields: tuple[str, ...],
-) -> tuple[Component, int]:
+) -> Component:
     """Sub-agent activity swimlanes: one mark per placed span, packed
     into sub-lane rows by `lanes_layout.pack_lanes`.
 
@@ -1592,8 +1514,6 @@ def swimlanes(
     """
     n_rows = int(max(row[1] for row in rows)) + 1 if rows else 1
     marks: list[Mark] = []
-    max_lane_chars = 0
-    max_votes_chars = 0
     if rows:
         frame = pd.DataFrame(
             rows,
@@ -1611,14 +1531,6 @@ def swimlanes(
         fields = list(tip_fields)
         for index, field in enumerate(fields):
             frame[f"tip_{index}"] = [title.get(field) for title in titles]
-        lane_values = [str(title.get("lane") or "") for title in titles]
-        # this chart's worst "lane" and "member votes" tooltip values,
-        # for the tip-fit floor (its two wrapping rows)
-        max_lane_chars = max((len(v) for v in lane_values), default=0)
-        max_votes_chars = max(
-            (len(str(title.get("member votes") or "")) for title in titles),
-            default=0,
-        )
         channels = {field: f"tip_{index}" for index, field in enumerate(fields)}
 
         frame = span_geometry(frame, n_turns)
@@ -1699,11 +1611,10 @@ def swimlanes(
             )
         )
 
-    height_px = max(90, 40 + 30 * n_rows)
-    component = plot(
+    return plot(
         *marks,
         width=chart_width(n_turns),
-        height=height_px,
+        height=max(90, 40 + 30 * n_rows),
         y_axis=False,  # not None - see module docstring
         y_domain=(n_rows - 0.5, -0.5),
         x_domain=turn_xlim(n_turns),
@@ -1711,19 +1622,6 @@ def swimlanes(
         margin_left=_SWIMLANE_MARGIN_LEFT,  # also what the row-label
         # text marks above are drawn into
         color_scale=_IDENTITY_SCALE,  # load-bearing - see docstring
-    )
-    # No widget row here. This chart's tooltip is the report's tallest -
-    # `SPAN_TIP_FIELDS` is a fixed row count however few lanes the scan
-    # has, so a 1-row chart can pop a tooltip taller than itself and the
-    # `_section_height` floor is what covers that. The floor is
-    # `_swimlane_tip_fit_height`, not the default `tip_fit_height`, since
-    # the "lane" row's wrap height is data-dependent.
-    # no spans -> no tip-bearing mark and nothing to fit
-    tip_rows = len(tip_fields) if rows else 0
-    return component, _section_height(
-        height_px,
-        tip_rows,
-        floor=_swimlane_tip_fit_height(tip_rows, max_lane_chars, max_votes_chars),
     )
 
 
@@ -1765,11 +1663,9 @@ def swimlane_min_footprint(n_turns: int) -> float:
 # "turns" is the span's first-last observed activity range, in the same
 # name and en-dash format `phase_band`'s tooltip uses. On a source that
 # records real span ends, `sections.span_titles` appends "(observed
-# activity extent)" to this same cell rather than adding a field: the
-# field count is the height budget's ceiling
-# (`_swimlane_tip_fit_height`); reliability cells (confidence /
-# agreement / label source / verifier) are None - and so absent rows -
-# where their fact does not apply.
+# activity extent)" to this same cell rather than adding a field.
+# Reliability cells (confidence / agreement / label source / verifier)
+# are None - and so absent rows - where their fact does not apply.
 SPAN_TIP_FIELDS = (
     "lane",
     "turns",
@@ -1818,40 +1714,6 @@ _RESERVED_TIP_CHANNELS = frozenset(
 # grows a label leftward, so an over-long one loses its leading
 # characters first, keeping the "(N)" suffix visible longest.
 _SWIMLANE_MARGIN_LEFT = 160
-
-
-# The swimlanes "lane" row's own, larger allowance: unlike this chart's
-# other `SPAN_TIP_FIELDS` rows (short bounded structured values), a lane
-# name is free text up to `lanes_layout.LANE_NAME_MAX_CHARS`, so how
-# many lines it wraps to is data-dependent.
-#
-# Real-browser measurement, not a formula: the value column renders
-# ~254.6px wide (tippy caps the popover at 350px, minus the label
-# column), so word length decides line count. Short words pack tightly;
-# a single very long token overflows its one line rather than wrapping
-# tall. The worst packing is ~19-character words: 100px (6 lines) for a
-# 121-character value. This adds one wrap-line of headroom over that
-# measured peak. A more adversarial construction could still exceed it.
-_SWIMLANE_LANE_ROW_PX = 115
-
-
-def _swimlane_tip_fit_height(
-    tip_rows: int, max_lane_chars: int, max_votes_chars: int = 0
-) -> int:
-    """swimlanes' own tooltip-fit floor: the fixed `SPAN_TIP_FIELDS`
-    rows are single-line by construction and get `_TIP_SHORT_ROW_PX`
-    each; the two variable-length rows get scaled allowances - "lane"
-    from ``max_lane_chars`` (worst observed word packing, capped at
-    `_SWIMLANE_LANE_ROW_PX`) and the joined "member votes" row from
-    ``max_votes_chars`` via `embed.wrap_row_px` (0 = no such row).
-    """
-    lane_lines = max(1, -(-min(max_lane_chars, 121) // _LANE_WORST_CHARS_PER_LINE))
-    lane_px = min(
-        _SWIMLANE_LANE_ROW_PX,
-        _TIP_SHORT_ROW_PX + _TIP_EXTRA_LINE_PX * (lane_lines - 1),
-    )
-    votes_px = wrap_row_px(max_votes_chars) if max_votes_chars else 0
-    return _tip_floor(tip_rows, lane_px, second_tall_row_px=votes_px)
 
 
 # The minimum drawn width of a swimlane box, in pixels, converted to turn
@@ -1942,7 +1804,7 @@ _END_MARKER_SYMBOL = "times"
 _END_MARKER_GLYPH = "×"
 
 
-def spend_bars(bars: list[dict]) -> tuple[Component, int]:
+def spend_bars(bars: list[dict]) -> Component:
     """Horizontal token-spend bars: one per bucket, top-down in the
     caller's (descending-spend) order, category name in the left margin,
     the formatted value at the bar's end, and a tooltip carrying bucket /
@@ -1995,8 +1857,7 @@ def spend_bars(bars: list[dict]) -> tuple[Component, int]:
         ]
     )
     max_value = float(frame.value.max())
-    height_px = _SPEND_MARGIN_TOP + len(bars) * _SPEND_ROW_PX + _SPEND_MARGIN_BOTTOM
-    component = plot(
+    return plot(
         rect(
             data,
             x1="x1",
@@ -2005,15 +1866,13 @@ def spend_bars(bars: list[dict]) -> tuple[Component, int]:
             y2="y2",
             fill="color",
             tip=TipOptions(pointer="y"),
-            channels=(
-                channels := {
-                    "bucket": "bucket",
-                    "new-work tokens": "tokens_text",
-                    "output tokens": "output",
-                    "tokens excluding cache reads": "billable",
-                    "share": "share",
-                }
-            ),
+            channels={
+                "bucket": "bucket",
+                "new-work tokens": "tokens_text",
+                "output tokens": "output",
+                "tokens excluding cache reads": "billable",
+                "share": "share",
+            },
         ),
         text(
             data,
@@ -2033,7 +1892,7 @@ def spend_bars(bars: list[dict]) -> tuple[Component, int]:
             dx=-8,
         ),
         width=_SPEND_WIDTH,
-        height=height_px,
+        height=_SPEND_MARGIN_TOP + len(bars) * _SPEND_ROW_PX + _SPEND_MARGIN_BOTTOM,
         y_axis=False,  # not None - see module docstring
         y_domain=(len(bars) - 0.5, -0.5),
         # headroom on the right for the value text
@@ -2043,10 +1902,6 @@ def spend_bars(bars: list[dict]) -> tuple[Component, int]:
         margin_top=_SPEND_MARGIN_TOP,
         margin_bottom=_SPEND_MARGIN_BOTTOM,
         color_scale=_IDENTITY_SCALE,
-    )
-    floor = _tip_floor(_tip_rows(channels), _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
-    return component, _section_height(
-        height_px, tip_rows=_tip_rows(channels), floor=floor
     )
 
 

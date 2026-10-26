@@ -7,7 +7,7 @@ from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
 import transect
-from transect.report import Markdown, TurnBand, TurnChart
+from transect.report import Markdown, Table, TurnBand, TurnChart
 from transect.scanners.helpers import orchestrator_turns
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -75,6 +75,8 @@ def layered_run(tmp_path_factory):
                     Markdown("Per-turn *chars*, an e2e fixture layer."),
                     TurnChart(y="chars"),
                     TurnBand(label="band"),
+                    Markdown("A `Table` fragment: no svg, an AG-grid."),
+                    Table(columns=["turn", "chars"]),
                 ],
             ),
             transect.Layer(name="raw_counts", scanner=message_counter()),

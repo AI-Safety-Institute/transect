@@ -998,8 +998,7 @@ def spend_family_group(scope: str, family: str, chart: Markup, hidden: bool) -> 
 
 def spend_group_heading(text: str) -> Markup:
     """One spend group's own sub-heading ("By phase label" / "By
-    sub-agent label") - outside the chart iframe, so the two groups'
-    charts stay independently-sized documents."""
+    sub-agent label"), above that group's chart."""
     return _notes.group_heading(text)
 
 

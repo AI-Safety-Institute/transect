@@ -53,10 +53,22 @@ classify against. The worked example is
 
 - `phases`: expected activity phases, each `label` + `description`
   (the description is rendered into the judge's rubric - write it as
-  you would brief a colleague). Mark one phase `ops: true` for
-  operational overhead (delegation mechanics, housekeeping); without
-  one a reserved `ops` bucket is appended. `none_of_the_above` is
-  always offered too - an escape hatch beats a forced wrong label.
+  you would brief a colleague). `none_of_the_above` is always offered
+  too - an escape hatch beats a forced wrong label.
+- `phase_ops_label` (default `ops`): which phase is the operational
+  bucket (delegation mechanics, housekeeping). Name a declared,
+  described phase to define it in your own words; with the default and
+  no phase called `ops`, a reserved `ops` bucket is appended; `null`
+  offers no bucket. Phase-only.
+- Your descriptions are not the whole rubric: the phase judge and its
+  verifier add a fixed rule set after the vocabulary (`label_rules` in
+  `src/transect/scanners/phases_common.py`). The rules that interact
+  with your text: the bucket is defined by its description (fixed
+  wording for the reserved one); a bucket whose description covers
+  hand-offs to sub-agents takes every `[DELEGATES]` turn, otherwise
+  such a turn goes to a phase covering sub-agent coordination, else
+  by the delegated task's purpose (never the reserved `ops`). Read
+  them before writing a description that overlaps one.
 - `subagent_labels`: expected sub-agent roles, same label +
   description shape.
 - `context`: additional context for phase prompts. It is not passed to the
@@ -150,6 +162,9 @@ Key arguments and what they mean:
 | `scans_dir` | parent for new scan stores and retained OpenClaw snapshots; `load()` reads a saved scan |
 | `viewer` | spawns a Scout viewer and wires the report's deep links; with no TTY (coding agent, CI) it detaches and prints its URL |
 | `report_path`, `open_report`, `title` | where the report lands (default `<scans_dir>/report.html`), whether to open it in a browser, and its title. `viewer=True` and `open_report=True` are the defaults - in a coding agent or script, pass both as `False` |
+| `chunk`, `verify_chunk`, `narrate` | phase-judge call shaping: orchestrator turns per segmentation call (default 40), phases per verifier call (8), and whether phases are narrated. Each changes the judge requests (and so the cache keys), not only the schedule; `chunk` is the only wall-clock lever on the segmentation path, which runs its chunks in sequence |
+| `subagent_activity` | classify sub-agents by what they did rather than the task they were given; experimental, changes the sub-agent judge's requests |
+| `max_transcripts`, `max_connections`, `max_retries`, `timeout`, `results_buffer`, `fail_on_error`, `max_processes` | Scout scheduling passed through as given: transcripts in flight (several only when more than one epoch is selected; also the default `max_connections`), concurrent requests per judge model, retries and seconds per request (a judge whose own `get_model(config=...)` sets one keeps its own; sampling and `batch` settings live on the judge only), partial-result sync interval, stop at the first scanner error (the interrupted store is still loaded and reported with the gap in `scan_status`; only a stop before the structural scanners wrote anything makes `load()` refuse the store), worker processes (default 1: above 1 Scout spawns workers, which needs a `__main__` guard and has crashed mid-scan on large transcripts). |
 | `extra_layers` | user-injected `Layer` additions (own judged classification, sections, tags, audit block) - authoring them is the add-a-layer skill's subject |
 | `section_order` | report section order: listed sections first in the given order, unlisted follow in default order, the audit always last. Keys are `transect.report.SECTION_KEYS` plus each custom layer's name; also on `render()` |
 

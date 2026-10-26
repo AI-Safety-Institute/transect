@@ -65,13 +65,18 @@ Use [procedures.md](references/procedures.md) for dataframe recipes. The sibling
 
 ## Sampling and runtime controls
 
-Build a judge with Inspect's `get_model(..., config=GenerateConfig(...))` and pass
-it as `judge_models`. Available settings depend on the provider/model; verify they
-are supported and inspect actual recorded requests before claiming a change took
-effect. Do not assume lower temperature, more reasoning, or more judges improves
-validity. Custom Scout runners must also bind their scan-level configuration;
-constructing a model object alone does not demonstrate the effective concurrency
-or output limit at the runtime boundary.
+Sampling and batching settings for one judge (temperature, reasoning, max
+tokens, `batch`) go on the judge: build it with Inspect's
+`get_model(..., config=GenerateConfig(...))` and pass it as `judge_models`.
+Connection settings go on the scan: `transect(..., max_connections=...,
+max_retries=..., timeout=...)`, plus `max_transcripts`, `results_buffer` and
+`fail_on_error`; a judge that sets its own `max_connections`, `max_retries` or
+`timeout` keeps them, so a cohort can carry a limit per provider. This is
+transect's rule, not Scout's: Scout lets the scan level override a model's
+own, and transect passes each judge's own settings back per call. Available
+settings depend on the provider/model;
+verify they are supported and inspect actual recorded requests before claiming
+a change took effect.
 
 ## Caches, repeats and recovery
 
@@ -111,10 +116,11 @@ provenance and the source evidence.
 ## Label-name sensitivity
 
 `transect.diagnostics.scramble_spec` renames labels, keeps definition order
-fixed and preserves text and ops flags. A label a scanner recognises by name
-keeps it, so the effective category set does not grow: a declared
-`none_of_the_above` on either surface, and a declared phase `ops` when no phase
-carries the ops flag (a flagged ops phase is renamed and keeps its role). Retain
+fixed and preserves text; a declared ops bucket is renamed and
+`phase_ops_label` follows, so it keeps its role under a neutral token (the
+reserved `ops` bucket is not a declared label and stays `ops`). A label a scanner recognises
+by a fixed name keeps it, so the effective category set does not grow: a
+declared `none_of_the_above` on either surface. Retain
 the mapping from the run; it is not stable across transect versions. Text can
 contain label-name references, so first inspect prompt coherence.
 Compare any renamed condition with unchanged-setup fresh-response repeats; account

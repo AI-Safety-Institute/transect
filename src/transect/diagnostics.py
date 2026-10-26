@@ -23,8 +23,9 @@ def scramble_spec(spec: Spec, seed: int) -> tuple[Spec, dict[str, dict[str, str]
     (``phase_a`` / ``role_a``, ..., neutral-token assignment shuffled by ``seed``),
     except the labels a scanner recognises by name (`reserved_phase_labels`,
     `reserved_subagent_labels`): renaming those would change the resolved
-    vocabulary, so they keep their names. Descriptions, ``context``, and the
-    ``ops`` flag are untouched, so the judges see identical definitions.
+    vocabulary, so they keep their names. Descriptions and ``context`` are
+    untouched and ``phase_ops_label`` follows its phase's new name, so the
+    judges see identical definitions.
 
     Returns:
         ``(scrambled, mapping)`` - mapping has one dict per surface
@@ -59,8 +60,10 @@ def scramble_spec(spec: Spec, seed: int) -> tuple[Spec, dict[str, dict[str, str]
         [r.label for r in spec.subagent_labels],
         reserved_subagent_labels(spec),
     )
+    ops = spec.phase_ops_label
     scrambled = spec.model_copy(
         update={
+            "phase_ops_label": phase_map.get(ops, ops) if ops is not None else None,
             "phases": [
                 p.model_copy(update={"label": phase_map[p.label]}) for p in spec.phases
             ],
