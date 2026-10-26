@@ -76,43 +76,6 @@ _BATCH_QUESTION_SUFFIX = (
 JUDGE_OPERATIONAL_FIELDS = ("max_connections", "max_retries", "timeout")
 
 
-def judge_operational_config(judge: Model) -> GenerateConfig:
-    """The judge's own operational settings as a per-call config: the layer
-    inspect_ai applies last, so a limit set on the judge beats the scan
-    level's; one the judge leaves unset falls through to the scan level."""
-    return GenerateConfig(
-        **{field: getattr(judge.config, field) for field in JUDGE_OPERATIONAL_FIELDS}
-    )
-
-
-class JudgeModel(Model):
-    """A judge whose own operational settings win on every call, for the
-    paths that reach the model through Scout's ``llm_scanner`` and so pass
-    no per-call config. Applied at run time by ``judge_model``, inside the
-    scanner, because Scout rebuilds a judge from its name and config in
-    each worker process and a wrapped instance would not survive the trip."""
-
-    async def generate(self, input: Any, *args: Any, **kwargs: Any) -> ModelOutput:
-        own = judge_operational_config(self)
-        if len(args) >= 3:
-            args = (*args[:2], own.merge(args[2]), *args[3:])
-        else:
-            kwargs["config"] = own.merge(kwargs.get("config") or GenerateConfig())
-        return await super().generate(input, *args, **kwargs)
-
-
-def judge_model(model: str | Model | None) -> Model | None:
-    """Resolve a judge as given (a name or a Model) into the instance the
-    judged paths call, its own operational settings winning per call;
-    ``None`` stays ``None`` (Scout's default model)."""
-    if model is None:
-        return None
-    resolved = model if isinstance(model, Model) else get_model(model)
-    if isinstance(resolved, JudgeModel):
-        return resolved
-    return JudgeModel(resolved.api, resolved.config)
-
-
 @dataclass(frozen=True)
 class Member:
     """One cohort member: a judge model at one roll index.
@@ -200,6 +163,22 @@ class VerifierReview(BaseModel):
     """The review call's outcome: ok / no_answer / refusal / error."""
 
 
+class JudgeModel(Model):
+    """A judge whose own operational settings win on every call, for the
+    paths that reach the model through Scout's ``llm_scanner`` and so pass
+    no per-call config. Applied at run time by ``judge_model``, inside the
+    scanner, because Scout rebuilds a judge from its name and config in
+    each worker process and a wrapped instance would not survive the trip."""
+
+    async def generate(self, input: Any, *args: Any, **kwargs: Any) -> ModelOutput:
+        own = judge_operational_config(self)
+        if len(args) >= 3:
+            args = (*args[:2], own.merge(args[2]), *args[3:])
+        else:
+            kwargs["config"] = own.merge(kwargs.get("config") or GenerateConfig())
+        return await super().generate(input, *args, **kwargs)
+
+
 def judge_setup(
     models: Sequence[str],
     k_rolls: int,
@@ -233,6 +212,27 @@ def judge_setup(
         "verifier_model": verifier_model if verifier_armed else None,
         "verifier_same_model": same_model,
     }
+
+
+def judge_operational_config(judge: Model) -> GenerateConfig:
+    """The judge's own operational settings as a per-call config: the layer
+    inspect_ai applies last, so a limit set on the judge beats the scan
+    level's; one the judge leaves unset falls through to the scan level."""
+    return GenerateConfig(
+        **{field: getattr(judge.config, field) for field in JUDGE_OPERATIONAL_FIELDS}
+    )
+
+
+def judge_model(model: str | Model | None) -> Model | None:
+    """Resolve a judge as given (a name or a Model) into the instance the
+    judged paths call, its own operational settings winning per call;
+    ``None`` stays ``None`` (Scout's default model)."""
+    if model is None:
+        return None
+    resolved = model if isinstance(model, Model) else get_model(model)
+    if isinstance(resolved, JudgeModel):
+        return resolved
+    return JudgeModel(resolved.api, resolved.config)
 
 
 def cohort_llm_scanner(
