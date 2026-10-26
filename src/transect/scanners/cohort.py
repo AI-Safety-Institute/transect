@@ -796,6 +796,16 @@ def _split_batch_content(text: str) -> dict[int, str]:
     }
 
 
+def label_literal(labels: Sequence[str]) -> Any:
+    """A ``Literal`` of the run's label vocabulary, built at runtime.
+
+    Static checkers see a runtime-built ``Literal`` as a bare typing form,
+    not a type, so it cannot be passed to pydantic's ``create_model``
+    directly (its fields are typed ``TypeForm`` from pydantic 2.14); the
+    ``Any`` return is the one place that is said."""
+    return Literal[tuple(labels)]
+
+
 def _structured_batch_answer(labels: list[str]) -> AnswerStructured:
     """The batch answer spec: one {item, label, confidence,
     explanation} entry per marked unit."""
@@ -803,7 +813,7 @@ def _structured_batch_answer(labels: list[str]) -> AnswerStructured:
         "_CohortItemAnswer",
         item=(int, Field(description="The [ITEM n] marker's number.")),
         label=(
-            Literal[tuple(labels)],
+            label_literal(labels),
             Field(description="The single best-fitting label for this item."),
         ),
         confidence=(
@@ -1117,7 +1127,7 @@ def _structured_answer(labels: list[str]) -> AnswerStructured:
     answer_model = create_model(
         "_CohortAnswer",
         label=(
-            Literal[tuple(labels)],
+            label_literal(labels),
             Field(description="The single best-fitting label."),
         ),
         confidence=(
