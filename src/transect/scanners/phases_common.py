@@ -19,6 +19,7 @@ from transect.scanners.cohort import (
     LabelSource,
     VerifierReview,
     ci_half_width,
+    judge_operational_config,
     scoped_cache,
 )
 from transect.scanners.digests import Digest, digest_line
@@ -466,7 +467,9 @@ async def call_judge(
     - no_answer (schema loop exhausted, or an empty answer): one
       retry under a separate cache scope if ``cache=True``.
 
-    call_judge overrides the ``cache`` field in judge.config.
+    The per-call config carries the judge's own operational settings
+    (``judge_operational_config``) plus the ``cache`` override, so a limit
+    set on the judge wins over the scan level's, as on the sub-agent path.
 
     Returns:
         ``(value, status)`` - the answer's raw value dict with status
@@ -488,7 +491,9 @@ async def call_judge(
                 prompt,
                 answer,
                 model=judge,
-                config=judge.config.merge(GenerateConfig(cache=attempt_cache)),
+                config=judge_operational_config(judge).merge(
+                    GenerateConfig(cache=attempt_cache)
+                ),
             )
         except RefusalError:
             return None, "refusal"
