@@ -243,9 +243,9 @@ scanner change take effect; run a new scan and retain both results for compariso
   in pyproject.toml enforces it for every uv resolution (`uv lock`,
   `uv lock --upgrade`, `uv add`, `uv sync`), the span is recorded in
   `uv.lock`, and CI installs with `uv sync --locked` under the same
-  `UV_EXCLUDE_NEWER` (the two values must match). The Inspect packages,
-  the provider SDKs and `certifi` are exempt (`exclude-newer-package`,
-  mirrored in Dependabot's `cooldown.exclude`). Never disable the
+  `UV_EXCLUDE_NEWER` (the two values must match). Only the Inspect
+  packages and `certifi` are exempt (`exclude-newer-package`, mirrored
+  in Dependabot's `cooldown.exclude`); a provider SDK is not. Never disable the
   cutoff (`--exclude-newer`, `UV_EXCLUDE_NEWER`, `exclude-newer =
   false`) or hand-edit the lockfile to reach a newer release; if a fix
   is needed sooner, say so in the PR and wait, or exempt that package

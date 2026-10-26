@@ -56,16 +56,15 @@ required-version = ">=0.11.8"
 exclude-newer = "7 days"
 
 # Exempt from the cooldown, so a new release can be adopted the day it ships:
-# the Inspect packages this is built on (first-party, released together),
-# the provider SDKs the examples call (dev group only), and the CA bundle
-# (certifi), whose releases usually remove compromised roots. Mirror any
-# change in `cooldown.exclude` in .github/dependabot.yml.
+# the Inspect packages this is built on (first-party, released together, and
+# transect often needs a Scout fix the week it ships) and the CA bundle
+# (certifi), whose releases usually remove compromised roots. Nothing else:
+# a provider SDK is exactly the shape of package that gets compromised.
+# Mirror any change in `cooldown.exclude` in .github/dependabot.yml.
 [tool.uv.exclude-newer-package]
 inspect-ai = false
 inspect-scout = false
 inspect-viz = false
-anthropic = false
-openai = false
 certifi = false
 
 [tool.ruff]

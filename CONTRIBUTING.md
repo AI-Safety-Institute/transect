@@ -20,8 +20,8 @@ uv 0.11.8 or later is required (`required-version` in pyproject.toml;
 Dependencies have a 7-day cooldown: uv only resolves releases uploaded
 at least 7 days ago (`exclude-newer` in pyproject.toml, recorded in
 `uv.lock`), and CI installs the committed lockfile exactly with
-`uv sync --locked`. The Inspect packages, the provider SDKs and
-`certifi` are exempt (`exclude-newer-package`). To add or upgrade a
+`uv sync --locked`. Only the Inspect packages and `certifi` are exempt
+(`exclude-newer-package`). To add or upgrade a
 package use `uv add` or `uv lock --upgrade-package <name>` as usual; a
 release younger than 7 days is not visible yet (uv's resolution error
 names the cutoff in a `filtered by exclude-newer` hint), so wait rather

@@ -15,8 +15,6 @@ updates:
         - "inspect-ai"
         - "inspect-scout"
         - "inspect-viz"
-        - "anthropic"
-        - "openai"
         - "certifi"
     groups:
       python-packages:
