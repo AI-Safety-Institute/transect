@@ -129,9 +129,11 @@ def orchestrator_turns(transcript: Any) -> Iterator[tuple[int, Any, list[ToolCal
     """Yield ``(turn, model event, tool calls)`` for the orchestrator's turns.
 
     The orchestrator is the main lane (`main_span`); ``turn`` is the
-    0-based ordinal of its model events with output, in event order.
-    This enumeration is the turn axis: every scanner, frame and chart
-    numbers by it, and a custom scanner must too.
+    0-based ordinal of its model events with an output, in event order,
+    whether or not that output records a choice: read a turn's message
+    through `turn_message`, never ``event.output.message``. This
+    enumeration is the turn axis: every scanner, frame and chart numbers
+    by it, and a custom scanner must too.
 
     Args:
         transcript: A Scout ``Transcript`` or any object with

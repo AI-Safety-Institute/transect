@@ -17,7 +17,7 @@ from helpers import (
     seg_answer,
     tool_event,
 )
-from inspect_ai.model import ChatMessageTool, ContentText
+from inspect_ai.model import ChatMessageTool, ContentText, ModelOutput
 from inspect_ai.tool import ToolCallError
 
 from transect import DigestSettings, digest_turns
@@ -171,6 +171,24 @@ def test_tool_call_only_turns_are_judged_unless_switched_off(
         events,
     ).value
     assert [t["basis"] for t in value["turns"]] == bases
+
+
+def test_a_delegation_after_a_model_event_without_choices_anchors_to_a_judged_turn():
+    """A sub-agent span begun after a model event whose output has no
+    choices anchors its delegation to the last turn the judge sees, as it
+    does after a provider-failure placeholder, instead of raising a digest
+    for a turn that carries nothing."""
+    empty = model_turn("")
+    empty.output = ModelOutput(model="none", choices=[])
+    events = [
+        model_turn("split"),
+        empty,
+        *agent_span(
+            "s1", "sub", inner=[model_turn("working")], metadata={"task": "survey data"}
+        ),
+    ]
+    digests = turn_digests(StubTranscript(events))
+    assert [(d.turn, d.delegations) for d in digests] == [(0, ["survey data"])]
 
 
 @pytest.mark.parametrize(
