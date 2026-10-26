@@ -240,15 +240,21 @@ scanner change take effect; run a new scan and retain both results for compariso
 - **Dependency cooldown.** A package release must be at least 7 days
   old before it can enter this repo, so a compromised release has time
   to be caught and yanked first. `[tool.uv] exclude-newer = "7 days"`
-  in pyproject.toml enforces it for every resolution (`uv lock`,
-  `uv lock --upgrade`, `uv add`), the span is recorded in `uv.lock`,
-  and CI installs with `uv sync --locked` under the same
-  `UV_EXCLUDE_NEWER`. Never pass `--exclude-newer false` or edit the
-  lockfile by hand to reach a newer release; if a fix is needed sooner,
-  say so in the PR and wait. GitHub Actions are pinned to commit SHAs
-  with a `# vX.Y.Z` comment and Dependabot proposes bumps after the
-  same 7-day cooldown; the uv version CI installs is pinned in
-  `ci.yml` and bumped by hand to a release at least 7 days old.
+  in pyproject.toml enforces it for every uv resolution (`uv lock`,
+  `uv lock --upgrade`, `uv add`, `uv sync`), the span is recorded in
+  `uv.lock`, and CI installs with `uv sync --locked` under the same
+  `UV_EXCLUDE_NEWER` (the two values must match). The Inspect packages,
+  the provider SDKs and `certifi` are exempt (`exclude-newer-package`,
+  mirrored in Dependabot's `cooldown.exclude`). Never disable the
+  cutoff (`--exclude-newer`, `UV_EXCLUDE_NEWER`, `exclude-newer =
+  false`) or hand-edit the lockfile to reach a newer release; if a fix
+  is needed sooner, say so in the PR and wait, or exempt that package
+  in both places as a reviewed change. Other upgrades arrive as weekly
+  grouped Dependabot PRs or by hand with `uv lock --upgrade-package`.
+  GitHub Actions are pinned to commit SHAs with a `# vX.Y.Z` comment
+  and Dependabot proposes bumps after the same cooldown; the uv version
+  CI installs is pinned in `ci.yml` and bumped by hand (a uv security
+  fix skips the cooldown, as Dependabot security updates do).
 - `make sync` / `format` / `lint` / `test` / `check` / `hooks` are the
   canonical entry points. Note pre-commit runs the writing variants
   (`ruff check --fix`, `ruff format`) - it mutates the commit rather

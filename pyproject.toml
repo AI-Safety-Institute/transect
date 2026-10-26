@@ -46,12 +46,27 @@ testpaths = ["tests"]
 
 [tool.uv]
 default-groups = ["dev"]
+# 0.11.8 is the first uv that keeps uv.lock stable with a relative exclude-newer.
+required-version = ">=0.11.8"
 # Supply-chain cooldown: resolve only distributions uploaded at least 7 days
-# ago, so a compromised release (litellm 1.82.8 / 1.107.0) has time to be
-# caught and yanked before it can land in uv.lock. The span is recorded in
-# the lockfile; `uv lock --upgrade` honours it. CI exports the same value as
-# UV_EXCLUDE_NEWER so isolated uv runs outside the project obey it too.
+# ago, so a compromised release has time to be caught and yanked before it
+# can land in uv.lock (see CONTRIBUTING.md). uv records the span in the
+# lockfile; `uv lock --upgrade` honours it. CI exports the same value as
+# UV_EXCLUDE_NEWER so uv runs outside the project obey it too.
 exclude-newer = "7 days"
+
+# Exempt from the cooldown, so a new release can be adopted the day it ships:
+# the Inspect packages this is built on (first-party, released together),
+# the provider SDKs the examples call (dev group only), and the CA bundle
+# (certifi), whose releases usually remove compromised roots. Mirror any
+# change in `cooldown.exclude` in .github/dependabot.yml.
+[tool.uv.exclude-newer-package]
+inspect-ai = false
+inspect-scout = false
+inspect-viz = false
+anthropic = false
+openai = false
+certifi = false
 
 [tool.ruff]
 target-version = "py312"

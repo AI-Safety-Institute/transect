@@ -15,14 +15,19 @@ make check      # the full gate: lint + typecheck + tests
 make hooks      # install the pre-commit hook (once per clone)
 ```
 
-Dependencies have a 7-day cooldown: uv only resolves releases uploaded at
-least 7 days ago (`exclude-newer` in pyproject.toml, recorded in
-`uv.lock`), and CI installs the committed lockfile exactly (`uv sync
---locked`). To add or upgrade a package use `uv add` / `uv lock
---upgrade-package <name>` as usual; a release younger than 7 days is
-simply not visible yet, so wait rather than disabling the cutoff.
-GitHub Actions are pinned to commit SHAs and bumped by Dependabot after
-the same cooldown.
+uv 0.11.8 or later is required (`required-version` in pyproject.toml;
+`uv self update`, or `brew upgrade uv` for a Homebrew install).
+Dependencies have a 7-day cooldown: uv only resolves releases uploaded
+at least 7 days ago (`exclude-newer` in pyproject.toml, recorded in
+`uv.lock`), and CI installs the committed lockfile exactly with
+`uv sync --locked`. The Inspect packages, the provider SDKs and
+`certifi` are exempt (`exclude-newer-package`). To add or upgrade a
+package use `uv add` or `uv lock --upgrade-package <name>` as usual; a
+release younger than 7 days is not visible yet (uv's resolution error
+names the cutoff in a `filtered by exclude-newer` hint), so wait rather
+than disabling the cutoff. Routine upgrades arrive as weekly grouped
+Dependabot PRs. GitHub Actions are pinned to commit SHAs and bumped by
+Dependabot after the same cooldown.
 
 Report-rendering changes additionally need the browser test
 (`uv run --group ui-test playwright install chromium`, then
