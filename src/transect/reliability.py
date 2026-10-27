@@ -27,6 +27,7 @@ from transect.frames.common import (
 from transect.scanners.cohort import LabelSource
 
 __all__ = [
+    "BalancedAgreement",
     "CohortAgreement",
     "LabelStats",
     "Mean",
@@ -36,6 +37,7 @@ __all__ = [
     "RelabelRate",
     "cohort_agreement",
     "detect_regime",
+    "equal_sample_agreement",
     "label_stats",
     "member_coverage",
     "relabel_rate",
@@ -212,6 +214,49 @@ class MemberCoverage:
 
     misses: dict[str, int]
     """Miss reason -> count over the remainder."""
+
+
+@dataclass(frozen=True)
+class BalancedAgreement:
+    """Agreement averaged within runs, then equally within task samples."""
+
+    mean: float | None
+    samples: int
+    transcripts: int
+    units: int
+
+
+def equal_sample_agreement(units: pd.DataFrame) -> BalancedAgreement:
+    """Give each (task_set, sample_id) equal weight across its available runs.
+
+    Requires transcript_id, task_set, sample_id and judge_agreement columns.
+    The caller supplies eligible units with undefined agreement set to null.
+    Units are averaged within each transcript, then transcripts (including
+    epochs) within each task sample, then task samples equally. Unknown
+    agreement is excluded, never replaced with zero. No independence-based
+    confidence interval is reported for these dependent measurements.
+    """
+    _require(
+        units,
+        ("transcript_id", "task_set", "sample_id", "judge_agreement"),
+        "supply the identity columns and eligible per-unit judge_agreement",
+    )
+    identities = units[["transcript_id", "task_set", "sample_id"]].drop_duplicates()
+    if identities.transcript_id.duplicated().any():
+        raise ValueError("A transcript cannot belong to multiple task samples")
+    values = units.copy()
+    values["judge_agreement"] = pd.to_numeric(values.judge_agreement, errors="coerce")
+    values = values[values.judge_agreement.notna()]
+    by_run = values.groupby(
+        ["task_set", "sample_id", "transcript_id"], dropna=False
+    ).judge_agreement.mean()
+    balanced = by_run.groupby(level=[0, 1], dropna=False).mean()
+    return BalancedAgreement(
+        float(balanced.mean()) if len(balanced) else None,
+        len(balanced),
+        len(by_run),
+        len(values),
+    )
 
 
 def rate(count: int, of: int) -> Rate:
