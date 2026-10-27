@@ -6,7 +6,12 @@ from helpers import JSON_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
 from inspect_ai.event import timeline_build
 from inspect_ai.log import read_eval_log, write_eval_log
-from inspect_ai.model import GenerateConfig, ModelOutput
+from inspect_ai.model import (
+    ChatMessageAssistant,
+    ChatMessageUser,
+    GenerateConfig,
+    ModelOutput,
+)
 from inspect_ai.model._model import Model
 
 import transect.api as api
@@ -75,6 +80,36 @@ def test_structural_scanners_read_logs_with_stored_timelines(demo_log, tmp_path)
     )
     assert len(stored.transcript_info) == 1
     assert stored.transcript_info["scan_error"].isna().all()
+
+
+def test_initial_conversation_is_not_steering_after_scan_and_reload(demo_log, tmp_path):
+    """Initial user examples stay setup through Scout filtering and stored reload."""
+    log = read_eval_log(str(demo_log))
+    examples = [
+        ChatMessageUser(content="Example question", source="input"),
+        ChatMessageAssistant(content="Example answer", source="input"),
+    ]
+    for sample in log.samples or []:
+        init = next(e for e in sample.events if e.event == "sample_init")
+        init.state["messages"] = [m.model_dump(mode="json") for m in examples] + (
+            init.state["messages"]
+        )
+        sample.messages[:0] = examples
+        first = next(e for e in sample.events if e.event == "model")
+        first.input[:0] = examples
+    path = tmp_path / "history.eval"
+    write_eval_log(log, str(path))
+    changed, plain = (
+        _run(str(source), Spec(), scans_dir=str(tmp_path / name))
+        for name, source in [("changed", path), ("plain", demo_log)]
+    )
+    assert not changed.scan_status.has_failures
+    columns = ["turn", "channel", "initiator", "content", "prompt", "outcome"]
+    pd.testing.assert_frame_equal(
+        changed.interventions[columns], plain.interventions[columns]
+    )
+    restored = load(changed.scan_location)
+    pd.testing.assert_frame_equal(restored.interventions, changed.interventions)
 
 
 def test_a_model_event_without_choices_is_a_turn_not_a_scan_error(demo_log, tmp_path):

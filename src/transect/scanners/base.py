@@ -227,7 +227,15 @@ def context_flush() -> Scanner[Transcript]:
     # span events: the orchestrator lane is resolved from the timeline
     events=cast(
         "list[Any]",
-        ["model", "input", "approval", "compaction", "span_begin", "span_end"],
+        [
+            "model",
+            "input",
+            "approval",
+            "compaction",
+            "span_begin",
+            "span_end",
+            "sample_init",
+        ],
     ),
 )
 def human_intervention() -> Scanner[Transcript]:
@@ -257,8 +265,10 @@ def human_intervention() -> Scanner[Transcript]:
       decision, ``content`` the explanation. A "modify" decision
       records the decision, not the modified call.
 
-    The first user message that arrived on a human channel (operator
-    or input) is the task prompt, never an intervention.
+    Messages recorded in Inspect's initial state are supplied task
+    history, never interventions or generated turns. Without that
+    provenance, the first user message that arrived on a human channel
+    (operator or input) is treated as the task prompt.
 
     value = {"interventions": [entry, ...]}: turn (the orchestrator turn
     the intervention precedes), channel, initiator, prompt, content,
@@ -319,8 +329,10 @@ def human_intervention() -> Scanner[Transcript]:
             if event.event == "compaction" and event.type == "summary"
         ]
         next_turn = 0
-        seen_task_prompt = False
+        initial_ids, seen_task_prompt = _initial_input_ids(lanes.events)
         for message in transcript.messages:
+            if message.id in initial_ids:
+                continue
             if message.role == "assistant":
                 if message.id in sub_outputs:
                     continue
@@ -393,6 +405,27 @@ def human_intervention() -> Scanner[Transcript]:
         )
 
     return execute
+
+
+def _initial_input_ids(events: list[Any]) -> tuple[set[str], bool]:
+    """Initial message identities from the recorded pre-execution state."""
+    ids: set[str] = set()
+    has_task_prompt = False
+    for event in events:
+        if event.event != "sample_init":
+            continue
+        state = getattr(event, "state", None)
+        if not isinstance(state, dict):
+            continue
+        messages = state.get("messages")
+        if not isinstance(messages, list):
+            continue
+        for message in messages:
+            if not isinstance(message, dict) or not isinstance(message.get("id"), str):
+                continue
+            ids.add(message["id"])
+            has_task_prompt = has_task_prompt or message.get("role") == "user"
+    return ids, has_task_prompt
 
 
 def _input_answer(event: Any, prompt: str | None) -> str:
