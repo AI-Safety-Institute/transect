@@ -162,7 +162,23 @@ decide whether to import or copy deliberately:
 - `src/transect/report/sections.py` + `templates/`: the reference
   wording for explanations, legends, and the audit.
 
-## 6. Ship checklist
+## 6. Cross-run narrative extensions
+
+For a requested **Narrative analysis** box on a collection index, read
+[the cross-run narrative recipe](references/cross-run-narratives.md).
+It describes a saved-synthesis workflow over all retained Transect phases
+and descriptions. Include the proposer, independent overview
+and themes critics, and separate theme-fit confidences by default. Show the
+context, overall summary, proposed themes, evidence links and unavailable states.
+
+This is a project-owned extension, not a built-in scanner or index option.
+Native `transect()` still selects one sample; broader collections need an
+explicit manifest over exact saved scans. Generate and retain narrative
+artifacts separately, then render them without model calls. Critic corrections
+annotate the proposal; they do not replace scanner labels or rewrite counts.
+Claude Code, Codex and other agents can follow the same recipe.
+
+## 7. Ship checklist
 
 Before delivering a custom artifact:
 
