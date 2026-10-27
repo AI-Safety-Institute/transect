@@ -3,13 +3,32 @@
 import pandas as pd
 import pytest
 from bs4 import BeautifulSoup
-from helpers import phase_turns_frame
+from helpers import (
+    MODEL,
+    PHASES_SPEC,
+    REFUSED,
+    model_turn,
+    phase_turns_frame,
+    run_scan,
+    scripted_judge,
+    seg,
+    seg_answer,
+)
+from test_frames import raw_row
 from test_phase_review_units import reviewed_frame
 
-from transect.frames import phase_turn_votes_df
+from transect.frames import (
+    phase_turn_votes_df,
+    phase_turns_df,
+    phases_df,
+    subagent_votes_df,
+    subagents_df,
+)
+from transect.reliability import detect_regime
 from transect.report import sections
 from transect.report._jinja import jinja_env
 from transect.report.custom import _run_judge_cells
+from transect.scanners.phases import decision_phases
 
 
 def audit(frame):
@@ -78,6 +97,171 @@ def test_unjudged_flag_excludes_attributed_turns_from_its_denominator():
     (unjudged,) = [f for f in flags if f.metric.startswith("unjudged")]
     assert unjudged.value == "1 of 2 (50%)"
     assert unjudged.level == "red"
+
+
+@pytest.mark.parametrize("failure", ["no_answer", "refusal", "missing_turn"])
+@pytest.mark.parametrize("k_rolls", [1, 3])
+def test_total_phase_judging_failure_keeps_the_judge_setup_and_audit(failure, k_rolls):
+    """Failed judgments remain auditable even when no phase was produced."""
+    failed = {
+        "no_answer": seg_answer(),
+        "refusal": REFUSED,
+        "missing_turn": seg_answer(seg(20, 21, "setup")),
+    }[failure]
+    raw = pd.DataFrame(
+        [
+            raw_row(
+                run_scan(
+                    decision_phases(
+                        PHASES_SPEC,
+                        scripted_judge(*([failed] * 30)),
+                        k_rolls=k_rolls,
+                        cache=False,
+                        narrate=False,
+                    ),
+                    [
+                        model_turn("Planning."),
+                        model_turn("Running."),
+                        model_turn("Done."),
+                    ],
+                )
+            )
+        ]
+    )
+    phases = phases_df(raw)
+    turns = phase_turns_df(raw)
+    votes = phase_turn_votes_df(raw)
+    assert phases.empty
+    assert turns.basis.tolist() == [failure] * 3
+    regime = detect_regime(turns)
+    assert regime.models == (MODEL,)
+    assert regime.k_rolls == k_rolls
+    assert regime.verifier_on and regime.verifier_model == MODEL
+    assert regime.verifier_same_model
+    flags = sections.phase_reliability_flags(phases, votes, turns)
+    (unjudged,) = [f for f in flags if f.metric.startswith("unjudged")]
+    assert unjudged.value == "3 of 3 (100%)"
+    assert unjudged.level == "red"
+    text = _phase_audit_text(phases, turns, votes)
+    assert "3 unjudged" in text
+    assert "3 of 3 (100%)" in text
+    assert "Pass judge_models" not in text
+    assert "no judge ran" not in text
+
+
+def test_no_digest_content_is_configured_without_attempted_judgments():
+    """An empty-content run retains its setup without claiming failed attempts."""
+    raw = pd.DataFrame(
+        [
+            raw_row(
+                run_scan(
+                    decision_phases(PHASES_SPEC, MODEL, narrate=False),
+                    [model_turn(""), model_turn("")],
+                )
+            )
+        ]
+    )
+    phases, turns, votes = phases_df(raw), phase_turns_df(raw), phase_turn_votes_df(raw)
+    assert turns.basis.tolist() == ["unattributed"] * 2
+    assert detect_regime(turns).models == (MODEL,)
+    assert sections.phase_reliability_flags(phases, votes, turns) == []
+    text = _phase_audit_text(phases, turns, votes)
+    assert "0 judged" in text and "2 unattributed" in text
+    assert "Pass judge_models" not in text
+
+
+def test_partial_phase_judging_failure_retains_its_attempted_turn_denominator():
+    """A successful phase does not dilute or remove an unanswered digest turn."""
+    raw = pd.DataFrame(
+        [
+            raw_row(
+                run_scan(
+                    decision_phases(
+                        PHASES_SPEC,
+                        scripted_judge(
+                            seg_answer(seg(0, 0, "setup")),
+                            seg_answer(),
+                            seg_answer(seg(2, 2, "experiment")),
+                        ),
+                        chunk=1,
+                        cache=False,
+                        verify=False,
+                        narrate=False,
+                    ),
+                    [model_turn("Plan."), model_turn("Run."), model_turn("Review.")],
+                )
+            )
+        ]
+    )
+    phases, turns, votes = phases_df(raw), phase_turns_df(raw), phase_turn_votes_df(raw)
+    (unjudged,) = sections.phase_reliability_flags(phases, votes, turns)
+    assert unjudged.value == "1 of 3 (33%)"
+    assert unjudged.level == "red"
+
+
+def test_empty_phase_result_retains_a_distinct_configured_verifier():
+    """No phase output does not lose a distinct verifier's configured identity."""
+    raw = pd.DataFrame(
+        [
+            raw_row(
+                run_scan(
+                    decision_phases(
+                        PHASES_SPEC,
+                        scripted_judge(seg_answer()),
+                        verifier_model="mockllm/verifier",
+                        cache=False,
+                        narrate=False,
+                    ),
+                    [model_turn("Work.")],
+                )
+            )
+        ]
+    )
+    regime = detect_regime(phase_turns_df(raw))
+    assert regime.verifier_on and regime.verifier_model == "mockllm/verifier"
+    assert not regime.verifier_same_model
+
+
+def test_structural_only_scan_keeps_the_no_judge_note():
+    """An absent phase scanner remains distinct from attempted failed judging."""
+    raw = pd.DataFrame()
+    turns = phase_turns_df(raw)
+    assert detect_regime(turns).kind == "none"
+    assert "Pass judge_models" in _phase_audit_text(
+        phases_df(raw), turns, phase_turn_votes_df(raw)
+    )
+
+
+def test_zero_turn_projection_creates_no_attempts_or_synthetic_phase_rows():
+    """An empty stored turn surface has no attempted judgment to flag as failed."""
+    raw = pd.DataFrame(
+        [
+            {
+                "transcript_id": "tr1",
+                "value": {"turns": [], "phases": [], "phase_names": ["setup"]},
+            }
+        ]
+    )
+    assert phases_df(raw).empty and phase_turns_df(raw).empty
+    assert phase_turns_df(raw).phase.cat.categories.tolist() == ["setup"]
+    assert (
+        sections.phase_reliability_flags(
+            phases_df(raw), phase_turn_votes_df(raw), phase_turns_df(raw)
+        )
+        == []
+    )
+
+
+def _phase_audit_text(phases, turns, votes):
+    html = sections.reliability_audit(
+        phases,
+        turns,
+        subagents_df(pd.DataFrame()),
+        subagent_votes_df(pd.DataFrame()),
+        None,
+        votes,
+    )
+    return BeautifulSoup(str(html), "html.parser").get_text(" ", strip=True)
 
 
 def test_failed_review_is_not_described_as_an_unchanged_verdict():
