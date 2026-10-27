@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8">
+{% if petri_assets %}<meta name="viewport" content="width=device-width,initial-scale=1">{% endif %}
 <title>{{ title }}</title>
 <link rel="icon" type="image/png" href="{{ favicon_uri }}">
 {#- the chart runtime first, so the page's own rules below win ties -#}
@@ -197,4 +198,5 @@ function _transectBackTopVisibility() {
 window.addEventListener("scroll", _transectBackTopVisibility);
 document.addEventListener("DOMContentLoaded", _transectBackTopVisibility);
 </script>
+{{ petri_assets }}
 </body></html>

@@ -168,6 +168,15 @@ Key arguments and what they mean:
 | `extra_layers` | user-injected `Layer` additions (own judged classification, sections, tags, audit block) - authoring them is the add-a-layer skill's subject |
 | `section_order` | report section order: listed sections first in the given order, unlisted follow in default order, the audit always last. Keys are `transect.report.SECTION_KEYS` plus each custom layer's name; also on `render()` |
 
+Petri logs with explicit auditor/target roles automatically get a clickable
+branch diagram (`target_branches`) and a complete target conversation in
+`phase_cards`. The exact surviving path uses the saved final target context
+and branch anchors; earlier attempts stay folded and searchable. Phase badges
+remain auditor judgments. No judge rerun is needed. Keep the original `.eval`
+source available: Scout omits the final sample store, and missing ancestry or
+context produces an explicit recorded-order fallback. For custom section order,
+list `target_branches` just before `phase_cards`.
+
 Judge requests use inspect-ai's response cache. An identical request with
 a matching cache entry can replay; a repeated invocation does not guarantee
 zero spend. Each k-roll has its own cache scope. Record reused versus fresh

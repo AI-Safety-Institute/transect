@@ -2,11 +2,19 @@
 human_intervention - judged by what they extract from event streams."""
 
 import pytest
-from helpers import agent_span, model_turn, run_scan, tool_event
+from helpers import (
+    StubTranscript,
+    agent_span,
+    model_turn,
+    run_item,
+    run_scan,
+    tool_event,
+)
 from inspect_ai.event import (
     ApprovalEvent,
     CompactionEvent,
     InputEvent,
+    ModelEvent,
     SpanBeginEvent,
     SpanEndEvent,
 )
@@ -127,9 +135,9 @@ def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
     ]
     real = helpers.subagent_span_begins
 
-    def only_eda(transcript, main):
-        begins, firsts = real(transcript, main)
-        return [b for b in begins if b.id == "C"], firsts
+    def only_eda(transcript, main, orchestrator_role=None):
+        begins = real(transcript, main, orchestrator_role)
+        return [b for b in begins if b.id == "C"]
 
     monkeypatch.setattr(helpers, "subagent_span_begins", only_eda)
     value = run_scan(token_timeline(), events).value
@@ -556,3 +564,115 @@ def test_human_approvals_are_interventions_and_automatic_ones_are_not(approver, 
         assert intervention["outcome"] == "reject"
         assert intervention["content"] == "too destructive"
         assert intervention["turn"] == 1
+
+
+def _auditor_scaffold():
+    """An auditor driving a target through tools: both roles' calls in one
+    solver span, the target attempted twice (one trajectory span per
+    attempt), the auditor's own conversation compacted once."""
+    auditor_1, auditor_2, auditor_3 = (model_turn(f"auditor {n}") for n in range(3))
+    target_1, target_2, target_3 = (model_turn(f"target {n}") for n in range(3))
+    for event in (auditor_1, auditor_2, auditor_3):
+        event.role, event.model, event.span_id = "auditor", "m/auditor", "auditor"
+        event.output.message.tool_calls = [
+            ToolCall(id=f"c{id(event)}", function="send_message", arguments={})
+        ]
+    for event in (target_1, target_2, target_3):
+        event.role, event.model = "target", "m/target"
+    judge = model_turn("judge")
+    judge.role, judge.model, judge.span_id = "judge", "m/judge", "judge"
+    target_1.span_id = target_2.span_id = "attempt-1"
+    target_3.span_id = "attempt-2"
+    for event in (auditor_1, auditor_2, auditor_3, target_1, target_2, target_3):
+        event.output.usage = usage(input_tokens=1000, output_tokens=10)
+    events = [
+        SpanBeginEvent(id="solver", parent_id=None, type="solver", name="rollout"),
+        SpanBeginEvent(
+            id="auditor", parent_id="solver", type="auditor", name="auditor"
+        ),
+        SpanBeginEvent(id="target", parent_id="solver", type="target", name="target"),
+        auditor_1,
+        SpanBeginEvent(
+            id="attempt-1", parent_id="target", type="trajectory", name="trajectory"
+        ),
+        target_1,
+        auditor_2,
+        target_2,
+        SpanEndEvent(id="attempt-1"),
+        CompactionEvent(
+            type="summary",
+            source="inspect",
+            tokens_before=5000,
+            tokens_after=500,
+            role="auditor",
+        ),
+        auditor_3,
+        SpanBeginEvent(
+            id="attempt-2", parent_id="target", type="trajectory", name="trajectory"
+        ),
+        target_3,
+        SpanEndEvent(id="attempt-2"),
+        SpanEndEvent(id="target"),
+        SpanEndEvent(id="auditor"),
+        SpanEndEvent(id="solver"),
+        SpanBeginEvent(id="scorers", parent_id=None, type="scorers", name="scoring"),
+        SpanBeginEvent(
+            id="judge", parent_id="scorers", type="scorer", name="behaviour"
+        ),
+        judge,
+        SpanEndEvent(id="judge"),
+        SpanEndEvent(id="scorers"),
+    ]
+    transcript = StubTranscript(events)
+    transcript.model = "m/target"
+    return transcript
+
+
+def test_the_tool_calling_role_is_the_orchestrator_and_other_roles_are_lanes():
+    value = run_item(token_timeline(), _auditor_scaffold()).value
+    rows = [
+        (e["turn"], e["lane_turn"], e["agent_lane"], e["agent_span_id"])
+        for e in value["timeline"]
+    ]
+    assert rows == [
+        (0, 0, None, None),
+        (None, 0, "trajectory", "attempt-1"),
+        (1, 1, None, None),
+        (None, 1, "trajectory", "attempt-1"),
+        (2, 2, None, None),
+        (None, 0, "trajectory", "attempt-2"),
+        (None, None, None, None),  # the scorer's judge call: off the axis
+    ]
+    # each attempt is a recorded span on the auditor's axis
+    spans = [
+        (r["agent_span_id"], r["spawn_turn"], r["end_recorded"]) for r in value["spans"]
+    ]
+    assert spans == [("attempt-1", 0, True), ("attempt-2", 2, True)]
+
+
+def test_the_orchestrators_compaction_stays_on_the_axis_beside_the_lanes():
+    value = run_item(context_flush(), _auditor_scaffold()).value
+    assert [
+        (f["type"], f["agent_span_id"], f["turn"], f["role"]) for f in value["flushes"]
+    ] == [("summary", None, 2, "auditor")]
+
+
+def test_a_single_role_span_has_no_role_lanes():
+    events = [*agent_span("R", "react", inner=[model_turn("a"), model_turn("b")])]
+    for event in events:
+        if isinstance(event, ModelEvent):
+            event.role = "target"
+    lanes = helpers.Lanes(StubTranscript(events))
+    assert lanes.orchestrator_role == "target"
+    assert lanes.begins == []
+    assert [turn for turn, _event, _calls in lanes.turns()] == [0, 1]
+
+
+def test_the_transcript_model_breaks_a_tie_between_tool_less_roles():
+    agent, critic = model_turn("a"), model_turn("c")
+    agent.role, agent.model = "agent", "m/agent"
+    critic.role, critic.model = "critic", "m/critic"
+    events = [*agent_span("R", "react", inner=[agent, critic])]
+    transcript = StubTranscript(events)
+    transcript.model = "m/critic"
+    assert helpers.Lanes(transcript).orchestrator_role == "critic"

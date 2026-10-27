@@ -9,7 +9,8 @@ NaN otherwise.
 
 Columns (identity prefix explained in common.py):
 
-- agent_span_id / agent_lane: the sub-agent span (id / name).
+- agent_span_id / agent_lane: the lane span (id / name), including another model role's
+  conversation trajectories such as a Petri target.
 - spawn_turn: the orchestrator turn preceding the span's begin event
   (the turn that issued the spawn when the source links them, the
   importer's file-order anchor otherwise). Phase membership for the
