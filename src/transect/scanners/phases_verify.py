@@ -419,6 +419,5 @@ def _apply_verdicts(
         # after a merge the phase must report the verdict that rewrote it
         p.verifier = next((r for r in hits if r.overturned), hits[0])
         if p.verifier.overturned:
-            p.confidence_spread = 0.0
             p.confidence_source = "verifier"
     return result, audit
