@@ -400,6 +400,7 @@ erDiagram
         int phase_index FK
         string phase
         string basis
+        string judge_regime "configured setup, even when every judgment fails"
         float confidence
         float judge_agreement
     }

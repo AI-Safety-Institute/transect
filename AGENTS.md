@@ -136,6 +136,12 @@ scanner change take effect; run a new scan and retain both results for compariso
   `verifier_selected` means a record exists (failed attempts
   included); `verifier_completed` is the usable-verdict flag every
   rate conditions on.
+- **Empty phase results retain judge setup.** `phase_turns` carries the
+  scanner-stamped judge identity and model roster, even when every
+  attempted judgment failed and the `phases` frame is empty. The audit
+  reports attempted-turn failures from that dense surface; unseen turns
+  remain outside the failure-rate denominator. A structural-only scan
+  has no `phase_turns` rows.
 - **Narration groups.** A narrator title/gist attaches only to its
   exact inclusive range: groups render only as a complete,
   non-overlapping partition of the phase, otherwise one neutral
