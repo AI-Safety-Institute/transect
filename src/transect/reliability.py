@@ -52,12 +52,12 @@ class Regime:
     """
 
     kind: str
-    """"none" (the judge scanner never ran, or ran with no judged
-    rows) / "solo" (one model, one roll) / "k_roll" (one model, > 1
+    """"none" (the frame is empty or carries no recorded judge setup)
+    / "solo" (one model, one roll) / "k_roll" (one model, > 1
     roll) / "cohort" (> 1 distinct model)."""
 
     n_models: int
-    """Distinct judge models that judged this surface."""
+    """Distinct judge models configured to judge this surface."""
 
     k_rolls: int
     """Repeated rolls per model (1 outside the k-roll regime)."""
@@ -235,13 +235,14 @@ def detect_regime(frame: pd.DataFrame) -> Regime:
     Args:
         frame: Any frame whose judged rows carry those columns plus
             ``judge_models`` and ``verifier_model`` -
-            ``frames["phases"]`` and ``frames["subagents"]`` do; a
+            ``frames["phases"]``, ``frames["phase_turns"]`` and
+            ``frames["subagents"]`` do; a
             custom frame conforms by projecting
             `transect.frames.common.judge_identity`.
 
     Returns:
-        The `Regime`; NO_REGIME when the frame is empty or no row was
-        judged. Raises KeyError on a frame without the columns,
+        The `Regime`; NO_REGIME when the frame is empty or no row carries
+        a recorded judge setup. Raises KeyError on a frame without the columns,
         naming the missing ones and how to project them.
     """
     _require(
