@@ -11,11 +11,13 @@ from helpers import (
     run_scan,
     tool_event,
 )
+from inspect_ai.dataset import Sample
 from inspect_ai.event import (
     ApprovalEvent,
     CompactionEvent,
     InputEvent,
     ModelEvent,
+    SampleInitEvent,
     SpanBeginEvent,
     SpanEndEvent,
 )
@@ -436,6 +438,48 @@ def test_the_first_input_message_is_the_task_not_an_intervention():
     messages = [ChatMessageUser(content="the task prompt", source="input")]
     value = run_scan(human_intervention(), [], messages=messages).value
     assert value["interventions"] == []
+
+
+@pytest.mark.parametrize(
+    ("steering_turn", "source", "recorded"),
+    [
+        (None, None, True),
+        (0, "operator", True),
+        (1, "operator", True),
+        (1, "input", True),
+        (1, "operator", False),
+    ],
+)
+def test_initial_sample_history_is_not_human_steering(steering_turn, source, recorded):
+    """Supplied history is setup; new human messages remain interventions."""
+    initial = [
+        ChatMessageUser(content="Example question", source="input"),
+        ChatMessageAssistant(content="Example answer", source="input"),
+        ChatMessageUser(content="Solve the actual task", source="input"),
+    ]
+    init = SampleInitEvent(
+        sample=Sample(input=initial),
+        state={"messages": [m.model_dump(mode="json") for m in initial]},
+    )
+    note = (
+        ChatMessageUser(content="Check the units", source=source)
+        if source is not None
+        else None
+    )
+    first_input = [*initial, note] if steering_turn == 0 else initial
+    first = model_turn("Working", input=first_input)
+    events = [init, first]
+    history = [*first_input, first.output.message]
+    if steering_turn == 1:
+        second = model_turn("Checking", input=[*history, note] if recorded else [])
+        events.append(second)
+        history.extend([note, second.output.message])
+    interventions = run_scan(human_intervention(), events, history).value[
+        "interventions"
+    ]
+    assert [(i["turn"], i["channel"], i["content"]) for i in interventions] == (
+        [] if note is None else [(steering_turn, source, "Check the units")]
+    )
 
 
 def test_an_operator_delivered_task_brief_is_not_an_intervention():
