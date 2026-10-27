@@ -21,6 +21,7 @@ from transect.reliability import (
     RelabelRate,
     cohort_agreement,
     detect_regime,
+    equal_sample_agreement,
     gwet_ac1_nominal,
     label_stats,
     member_coverage,
@@ -595,3 +596,44 @@ def test_custom_judged_layer_conforms_to_the_reliability_contract(demo_log, tmp_
     assert "risk labelling" in html
     vocab = results.label_definitions
     assert list(vocab[vocab.surface == "risk"].label) == ["risky", "safe"]
+
+
+def test_equal_sample_agreement_balances_units_runs_and_task_samples():
+    """Long runs and repeated epochs do not outweigh other task samples."""
+    records = []
+    for tid, task, sample, values in [
+        ("a1", "task-a", "one", [1.0] * 9),
+        ("a2", "task-a", "one", [0.0]),
+        ("b", "task-a", "two", [0.0]),
+        ("c", "task-b", "one", [1.0]),
+        ("missing", "task-a", "three", [None]),
+    ]:
+        records.extend(
+            dict(
+                transcript_id=tid,
+                task_set=task,
+                sample_id=sample,
+                judge_agreement=value,
+            )
+            for value in values
+        )
+    measured = equal_sample_agreement(pd.DataFrame(records))
+    assert measured.mean == pytest.approx(0.5)
+    assert (measured.samples, measured.transcripts, measured.units) == (3, 4, 12)
+
+
+def test_equal_sample_agreement_rejects_conflicting_sample_identity():
+    """A transcript cannot silently contribute to two different task samples."""
+    units = pd.DataFrame(
+        {
+            "transcript_id": ["t", "t"],
+            "task_set": ["a", "b"],
+            "sample_id": ["s", "s"],
+            "judge_agreement": [0.5, 0.5],
+        }
+    )
+    with pytest.raises(ValueError, match="multiple task samples"):
+        equal_sample_agreement(units)
+    units["task_set"] = "a"
+    units["judge_agreement"] = float("nan")
+    assert equal_sample_agreement(units).mean is None
