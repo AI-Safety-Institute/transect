@@ -1,0 +1,10 @@
+<section class="section" id="runs">
+<h3>Reports</h3>
+<div class="relmap-scroll"><table class="relmap runs-table">
+<thead><tr><th scope="col">Report</th><th scope="col">Scan status</th></tr></thead>
+<tbody>
+{% for t in transcripts %}
+<tr><th scope="row"><a href="{{ t.href }}">{{ t.heading }}</a></th><td>{{ t.status }}</td></tr>
+{% else %}<tr><td colspan="2">No runs available.</td></tr>{% endfor %}
+</tbody></table></div>
+</section>

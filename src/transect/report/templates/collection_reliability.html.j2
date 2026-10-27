@@ -1,0 +1,36 @@
+{% macro percent(value) -%}{% if value is none %}No data{% else %}{{ '%.1f'|format(value * 100) }}%{% endif %}{%- endmacro %}
+<section class="section" id="collection-reliability">
+<h3>Collection reliability</h3>
+{% if collection %}
+<p class="meta explainer">Agreement colour scale: 0 <span class="ramp-bar" style="background:linear-gradient(90deg,{{ ramp.low }},{{ ramp.mid }} 50%,{{ ramp.high }})"></span> 1</p>
+<div class="relmap-scroll"><table class="relmap collection-reliability-table">
+<thead><tr><th>Scanner / setup</th><th>Valid / expected ballots</th><th>Mean unit agreement</th><th>Equal-sample agreement</th><th>Pairwise agreement</th><th>α</th><th>AC1</th><th>Verifier</th></tr></thead><tbody>
+{% for r in collection %}<tr><th scope="row">{{ r.name }}{% if r.available %}<div>{{ r.setup }}</div>{% endif %}</th>
+{% if not r.available %}<td colspan="7">{{ r.reason }}{% if r.scope is defined %} · {{ r.scope }} run(s){% endif %}</td>
+{% else %}
+
+<td>{% if r.valid is none %}Not retained{% else %}{{ r.valid }}{% endif %} / {{ r.expected if r.expected is not none else 'unknown' }}{% if r.recorded is not none %}<div>{{ r.recorded }} recorded</div>{% endif %}</td>
+<td style="{{ r.styles.mean }}">{{ percent(r.mean.mean) }}<div>{{ r.mean.n }} units</div></td>
+<td style="{{ r.styles.balanced }}">{{ percent(r.balanced.mean) }}<div>{{ r.balanced.samples }} task samples · {{ r.balanced.transcripts }} runs</div></td>
+<td style="{{ r.styles.pairwise }}">{{ percent(r.cohort.percent_agreement) }}<div>{{ r.paired_units }} paired units · {{ r.cohort.n }} ratings</div></td>
+<td style="{{ r.styles.alpha }}">{% if r.cohort.alpha is none %}No data{% else %}{{ '%.3f'|format(r.cohort.alpha) }}{% endif %}</td>
+<td style="{{ r.styles.ac1 }}">{% if r.cohort.ac1 is none %}No data{% else %}{{ '%.3f'|format(r.cohort.ac1) }}{% endif %}</td>
+
+<td>{% if r.verifier is none %}No data{% elif not r.verifier.on %}Off{% else %}{{ r.verifier.relabelled }} / {{ r.verifier.completed }} relabelled<div>{{ r.verifier.selected }} selected · {{ r.verifier.failed }} without verdict</div><div>Random spot-check overturns: {{ r.verifier.random.count }} / {{ r.verifier.random.of }} judged</div>{% endif %}</td>
+{% endif %}</tr>{% endfor %}
+</tbody></table></div>
+<details class="event definitions relmap-legend"><summary>How to read</summary>
+<ul class="collection-reading">
+<li><strong>Scanner / setup:</strong> Original judge ballots are grouped by scanner, recorded judge setup and label vocabulary. Different setups and vocabularies stay separate.</li>
+<li><strong>Valid / expected ballots:</strong> Valid original ballots compared with the expected count for retained judging units, with the recorded ballot count shown below. Missing records may have unknown unit counts. Built-in solo scanners do not retain original ballots in the voting frames.</li>
+<li><strong>Mean unit agreement:</strong> Average agreement across eligible units with at least two valid original ballots. Attributed and unattributed phase turns are excluded. Undefined measurements are excluded, never treated as zero.</li>
+<li><strong>Equal-sample agreement:</strong> First average eligible units within each run, then runs/epochs within each (task set, sample ID), then task samples equally. This gives each task sample equal weight regardless of run length or repeated epochs.</li>
+<li><strong>Pairwise agreement:</strong> Agreement between pairs of original ballots, pooled across the collection with transcript-scoped unit keys so matching turn or span numbers in different runs stay separate.</li>
+<li><strong>α:</strong> Krippendorff's alpha, a chance-adjusted agreement coefficient computed from the pooled original ballots with transcript-scoped unit keys.</li>
+<li><strong>AC1:</strong> Gwet's AC1, computed from the same pooled original ballots using a different chance model from alpha.</li>
+<li><strong>Verifier:</strong> Relabelled units out of usable verdicts, alongside selected reviews and attempts without a verdict. Random spot-check overturns use only usable verdicts from that review population. Original review units are preserved through phase merging.</li>
+</ul>
+<p class="meta explainer">Agreement and its colours measure consistency, not correctness. Colours use the same scale as the run audits; negative coefficients use the low end and missing values stay neutral. Dependent turns, epochs and correlated judges limit the interpretation of independence-based audit intervals.</p>
+</details>
+{% else %}<p class="meta">No judged scanners in this collection. Structural scanners have no judge reliability measurements.</p>{% endif %}
+</section>

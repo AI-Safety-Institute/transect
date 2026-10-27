@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{ title }} · Run index</title>
+<link rel="icon" type="image/png" href="{{ favicon_uri }}">
+<style>{{ style }}</style>
+</head><body{% if sensitivity %} class="classified"{% endif %}>
+{% if sensitivity %}<div class="sensitivity-banner sensitivity-top">{{ sensitivity }}</div><div class="sensitivity-banner sensitivity-bottom">{{ sensitivity }}</div>{% endif %}
+<h1><img class="brand-logo" src="{{ logo_uri }}" alt=""> {{ title }} · Run index</h1>
+<p class="meta">scan: {{ scan_location }} · {{ n_transcripts }} runs</p>
+{% include "runs.html.j2" %}
+{% include "collection_reliability.html.j2" %}
+{% include "scan_status.html.j2" %}
+<footer class="report-footer"><img src="{{ logo_uri }}" alt=""><span>Produced with Transect v{{ package_version }} · <a href="https://github.com/AI-Safety-Institute/transect">github.com/AI-Safety-Institute/transect</a></span></footer>
+</body></html>

@@ -65,6 +65,7 @@ def render_report(
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
     petri_full_text: bool = False,
+    index_href: str | None = None,
 ) -> str:
     validate_section_order(
         section_order, [layer.name for layer in results.extra_layers]
@@ -436,6 +437,7 @@ def render_report(
             {
                 "heading": _transcript_title(one, my_info),
                 "run_meta": sections.run_intro_line(my_info),
+                "anchor": f"transcript-{idx}",
                 "sections": sections_html,
             }
         )
@@ -452,6 +454,7 @@ def render_report(
         n_transcripts=len(order),
         transcripts=transcripts,
         sensitivity=sensitivity,
+        index_href=index_href,
         logo_uri=_brand_asset("logo.svg", "image/svg+xml"),
         favicon_uri=_brand_asset("favicon-32.png", "image/png"),
         package_version=_package_version(),
