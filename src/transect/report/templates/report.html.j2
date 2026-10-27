@@ -14,6 +14,7 @@
 <div class="sensitivity-banner sensitivity-bottom">{{ sensitivity }}</div>
 {%- endif %}
 <h1><img class="brand-logo" src="{{ logo_uri }}" alt=""> {{ title }}</h1>
+{% if index_href %}<p><a href="{{ index_href }}">&larr; Run index</a></p>{% endif %}
 <p class="meta">scan: {{ scan_location }} · {{ n_transcripts }} transcript(s)</p>
 {%- if scan_status_view.failures %}
 <p class="warning flag">&#9888; Some requested scanners failed or have missing coverage - see <a href="#scan-status">Scan execution &amp; coverage</a>.</p>
@@ -24,7 +25,7 @@
 <p class="meta"><label title="Renders each chart at its full authored width (higher per-turn resolution) inside a horizontal scroll box, instead of scaling it down to fit the window."><input type="checkbox" id="transect-zoom-toggle"> zoomed-in charts (scroll horizontally)</label></p>
 {% if not transcripts %}<p>No transcripts in results.</p>{% endif %}
 {% for t in transcripts %}
-<div class="transcript">
+<div class="transcript" id="{{ t.anchor }}">
 <h2>{{ t.heading }}</h2>
 {% if t.run_meta %}{{ t.run_meta }}{% endif %}
 {% for section in t.sections %}{{ section }}{% endfor %}

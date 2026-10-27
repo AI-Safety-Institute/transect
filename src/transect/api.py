@@ -15,6 +15,7 @@ import sys
 import webbrowser
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 from uuid import uuid4
 
 import pandas as pd
@@ -54,6 +55,7 @@ from transect.layers import (
 )
 from transect.report import render_report
 from transect.report.blocks import validate_section
+from transect.report.index import render_index
 from transect.report.render import validate_section_order
 from transect.scan_status import build_scan_status, scan_error
 from transect.scanners.base import (
@@ -421,9 +423,12 @@ def render(
     transect() or load().
 
     Fills ``report_paths``/``viewer_url`` on the given results and
-    returns that same object. Normally one report file renders;
-    when the frames carry more than one epoch, one file renders per
-    epoch (``report_epoch2.html``, ...).
+    returns that same object. Single runs render one report. Multiple
+    transcripts render individual run/epoch reports
+    (``report_run001_epoch2.html``, ...), plus
+    a separate run index (``report_index.html``), listed first in
+    ``report_paths`` and opened by default. It links to each run and
+    shows collection reliability without additional model calls.
 
     Args:
         results: The frames to render (from transect() or load()).
@@ -467,25 +472,39 @@ def render(
     if viewer and results.transcripts_location:
         viewer_url = _spawn_viewer(results.transcripts_location)
     path.parent.mkdir(parents=True, exist_ok=True)
-    # split per-epoch only when some sample carries several epochs
-    # (epochs="all"/list); auto-selection picks one epoch per sample
-    epochs = (
-        sorted(int(e) for e in results.token_timeline.epoch.dropna().unique())
-        if len(results.token_timeline)
-        and results.token_timeline.groupby("sample_id").epoch.nunique().max() > 1
-        else []
+    identities = (
+        pd.concat(
+            [
+                results.transcript_info[
+                    ["agent", "sample_id", "epoch", "transcript_id"]
+                ],
+                results.token_timeline[
+                    ["agent", "sample_id", "epoch", "transcript_id"]
+                ],
+            ]
+        )
+        .drop_duplicates("transcript_id")
+        .sort_values(["agent", "sample_id", "epoch"])
     )
+    transcript_ids = identities.transcript_id.tolist()
     views = (
         [
             (
-                path.with_name(f"{path.stem}_epoch{epoch}{path.suffix}"),
-                f"{title} · epoch {epoch}",
-                _epoch_view(results, epoch),
+                path.with_name(
+                    f"{path.stem}_run{position:03d}_epoch{row.epoch}{path.suffix}"
+                ),
+                f"{title} · sample {row.sample_id} · epoch {row.epoch}",
+                _transcript_view(results, str(row.transcript_id)),
             )
-            for epoch in epochs
+            for position, row in enumerate(identities.itertuples(), 1)
         ]
-        if epochs
+        if len(transcript_ids) > 1
         else [(path, title, results)]
+    )
+    index_path = (
+        path.with_name(f"{path.stem}_index{path.suffix}")
+        if len(transcript_ids) > 1
+        else None
     )
     paths: list[str] = []
     for out, view_title, view in views:
@@ -496,9 +515,20 @@ def render(
                 viewer_base_url=viewer_url,
                 section_order=section_order,
                 sensitivity=sensitivity,
+                index_href=quote(index_path.name) if index_path else None,
             )
         )
         paths.append(str(out))
+    if index_path is not None:
+        index_path.write_text(
+            render_index(
+                results,
+                [(out.name, view) for out, _, view in views],
+                title=title,
+                sensitivity=sensitivity,
+            )
+        )
+        paths.insert(0, str(index_path))
     results.report_paths = paths
     results.viewer_url = viewer_url
     for p in paths:
@@ -726,14 +756,9 @@ async def _import_openclaw(files: list[Path], db_dir: str) -> None:
         await db.disconnect()
 
 
-def _epoch_view(results: TransectResults, epoch: int) -> TransectResults:
-    """Per-epoch view: every frame filtered to the epoch's transcripts
-    (via the token timeline's epoch column).
-
-    The original results object is untouched, views only feed the report."""
-    tids = set(
-        results.token_timeline[results.token_timeline.epoch == epoch].transcript_id
-    )
+def _transcript_view(results: TransectResults, transcript_id: str) -> TransectResults:
+    """Cut every frame to one run, retaining the full scan execution status."""
+    tids = {transcript_id}
 
     def cut(frame: pd.DataFrame) -> pd.DataFrame:
         if "transcript_id" in frame.columns:
