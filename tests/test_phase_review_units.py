@@ -4,7 +4,15 @@ import asyncio
 
 import pandas as pd
 import pytest
-from helpers import PHASES_SPEC, model_turn, run_scan, scripted_judge, seg, seg_answer
+from helpers import (
+    PHASES_SPEC,
+    model_turn,
+    run_scan,
+    scripted_judge,
+    seg,
+    seg_answer,
+    verify_answer,
+)
 from inspect_ai.model import get_model
 
 import transect.scanners.phases_verify as phase_verifier
@@ -97,6 +105,106 @@ def test_original_triggers_survive_merge():
     )
     measured = reliability.spot_check_overturns(frame)
     assert (measured.count, measured.of) == (0, 2)
+
+
+@pytest.mark.parametrize(
+    ("initial", "verdicts", "expected"),
+    [
+        (
+            [("A", 0.95), ("B", 0.3), ("A", 0.95)],
+            {1: ("A", 0.6)},
+            [("A", 0.833, 0.6, 0.229)],
+        ),
+        (
+            [("B", 0.3), ("C", 0.4)],
+            {0: ("A", 0.6), 1: ("A", 0.9)},
+            [("A", 0.75, 0.6, 0.294)],
+        ),
+        (
+            [("B", 0.3), ("B", 0.3)],
+            {0: ("A", 0.8)},
+            [("A", 0.8, 0.8, 0.0)],
+        ),
+        (
+            [("A", 0.95), ("B", 0.3), ("D", 0.7), ("D", 0.9)],
+            {1: ("C", 0.8)},
+            [("A", 0.95, 0.95, 0.0), ("C", 0.8, 0.8, 0.0), ("D", 0.8, 0.7, 0.196)],
+        ),
+    ],
+    ids=[
+        "merge-with-unreviewed",
+        "merge-two-overturns",
+        "uniform-overturn",
+        "isolated",
+    ],
+)
+def test_restitched_confidence_spread_uses_the_final_turn_confidences(
+    initial, verdicts, expected
+):
+    """Merged phases retain the spread of their final per-turn confidence values."""
+    rows = [
+        ConsensusJudgement(turn=i, phase=label, confidence=confidence, basis="judged")
+        for i, (label, confidence) in enumerate(initial)
+    ]
+    attempts = {
+        i: _ReviewAttempt(
+            trigger="low_confidence",
+            verdict=_Verdict(
+                phase_index=i, phase=label, confidence=confidence, explanation="fixture"
+            ),
+            status="ok",
+        )
+        for i, (label, confidence) in verdicts.items()
+    }
+    phases, _ = _apply_verdicts(
+        rows, stitch_phases(rows), attempts, VerifierAudit(), "m"
+    )
+    assert [
+        (phase.phase, phase.confidence, phase.min_confidence, phase.confidence_spread)
+        for phase in phases
+    ] == expected
+
+
+def test_merged_confidence_spread_survives_scanning_and_frame_projection():
+    """A verifier merge exports the final confidence spread without changing reviews."""
+    value = run_scan(
+        decision_phases(
+            PHASES_SPEC,
+            scripted_judge(
+                seg_answer(
+                    seg(0, 0, "setup", 0.95),
+                    seg(1, 1, "experiment", 0.3),
+                    seg(2, 2, "setup", 0.95),
+                ),
+                verify_answer(
+                    {
+                        "phase_index": 1,
+                        "phase": "setup",
+                        "confidence": 0.6,
+                        "explanation": "setup continues",
+                    }
+                ),
+            ),
+            verify=True,
+            verify_sample=0,
+            narrate=False,
+            cache=False,
+        ),
+        [
+            model_turn("prepare data"),
+            model_turn("prepare config"),
+            model_turn("prepare tools"),
+        ],
+    ).value
+    assert [turn["confidence"] for turn in value["turns"]] == [0.95, 0.6, 0.95]
+    frame = phases_df(pd.DataFrame([{"transcript_id": "t1", "value": value}]))
+    assert len(frame) == 1
+    assert frame.iloc[0].confidence_spread == 0.229
+    assert frame.iloc[0].confidence == 0.833
+    assert value["verifier"]["n_relabelled"] == 1
+    review = frame.iloc[0].verifier_reviews[0]["review"]
+    assert review["original_confidence"] == 0.3
+    assert review["verifier_confidence"] == 0.6
 
 
 def test_label_statistics_read_original_review_population():
