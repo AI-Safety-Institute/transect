@@ -268,6 +268,27 @@ Read [references/report-guide.md](references/report-guide.md) before
 walking a user through a report - it covers every section top to
 bottom (what it shows, how to read it, what to check), the
 reliability audit's thresholds, and the interpretation discipline.
+The public `transect()` entry point selects one sample per invocation;
+multi-transcript indexes normally cover that sample's selected epochs.
+It does not automatically batch different samples or combine saved scans.
+For multiple transcripts, a separate `report_index.html` comes first in
+`report_paths` and opens by default. A two-column table of report links and
+scan status comes first, followed by collection reliability, then scan execution
+and coverage. The index is outside `section_order` and applies to every
+supported transcript source.
+The collection panel pools original ballots within each scanner and setup,
+showing unit-weighted and equal-sample agreement, pairwise agreement, α / AC1,
+ballot coverage and verifier outcomes. Agreement cells share the detailed
+audits' colour scale; audit breakdowns stay in individual reports. Different judge setups and vocabularies
+stay separate; fewer than two valid ballots cannot measure agreement.
+Each index link opens an individual run/epoch report, such as
+`report_run001_epoch2.html`, with a link back. Failed runs and run-wide execution
+status remain visible on the index.
+For a user-requested cross-run narrative, follow the
+[custom-ui narrative recipe](../custom-ui/references/cross-run-narratives.md).
+The custom Narrative analysis box presents context, summary and proposed
+phase-based themes with independent critics and theme-fit confidence by
+default. This is a separate generation workflow, not a native index option.
 The one-line version: everything judged is descriptive and carries
 its provenance (who decided, confidence, agreement); grey always
 means "not judged", never "fine"; absence is stated, never faked.
