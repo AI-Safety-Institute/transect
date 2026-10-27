@@ -16,9 +16,16 @@ import random
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
-from inspect_ai.model import CachePolicy, ChatMessageUser, Model, get_model
+from inspect_ai.model import (
+    CachePolicy,
+    ChatMessageUser,
+    GenerateConfig,
+    Model,
+    ModelOutput,
+    get_model,
+)
 from inspect_scout import (
     AnswerStructured,
     RefusalError,
@@ -61,6 +68,12 @@ _BATCH_QUESTION_SUFFIX = (
     "[ITEM n] marker. Answer every marker: one entry per item, "
     "carrying its number."
 )
+
+
+# The judge settings inspect_ai would otherwise let the scan level override
+# (its layering serves one eval model; a judge cohort wants each member's
+# own limits), passed back per call so the judge's own value wins.
+JUDGE_OPERATIONAL_FIELDS = ("max_connections", "max_retries", "timeout")
 
 
 @dataclass(frozen=True)
@@ -150,6 +163,22 @@ class VerifierReview(BaseModel):
     """The review call's outcome: ok / no_answer / refusal / error."""
 
 
+class JudgeModel(Model):
+    """A judge whose own operational settings win on every call, for the
+    paths that reach the model through Scout's ``llm_scanner`` and so pass
+    no per-call config. Applied at run time by ``judge_model``, inside the
+    scanner, because Scout rebuilds a judge from its name and config in
+    each worker process and a wrapped instance would not survive the trip."""
+
+    async def generate(self, input: Any, *args: Any, **kwargs: Any) -> ModelOutput:
+        own = judge_operational_config(self)
+        if len(args) >= 3:
+            args = (*args[:2], own.merge(args[2]), *args[3:])
+        else:
+            kwargs["config"] = own.merge(kwargs.get("config") or GenerateConfig())
+        return await super().generate(input, *args, **kwargs)
+
+
 def judge_setup(
     models: Sequence[str],
     k_rolls: int,
@@ -183,6 +212,27 @@ def judge_setup(
         "verifier_model": verifier_model if verifier_armed else None,
         "verifier_same_model": same_model,
     }
+
+
+def judge_operational_config(judge: Model) -> GenerateConfig:
+    """The judge's own operational settings as a per-call config: the layer
+    inspect_ai applies last, so a limit set on the judge beats the scan
+    level's; one the judge leaves unset falls through to the scan level."""
+    return GenerateConfig(
+        **{field: getattr(judge.config, field) for field in JUDGE_OPERATIONAL_FIELDS}
+    )
+
+
+def judge_model(model: str | Model | None) -> Model | None:
+    """Resolve a judge as given (a name or a Model) into the instance the
+    judged paths call, its own operational settings winning per call;
+    ``None`` stays ``None`` (Scout's default model)."""
+    if model is None:
+        return None
+    resolved = model if isinstance(model, Model) else get_model(model)
+    if isinstance(resolved, JudgeModel):
+        return resolved
+    return JudgeModel(resolved.api, resolved.config)
 
 
 def cohort_llm_scanner(
@@ -578,6 +628,16 @@ def ci_half_width(values: list[float]) -> float:
     return 1.96 * sd / len(values) ** 0.5
 
 
+def label_literal(labels: Sequence[str]) -> Any:
+    """A ``Literal`` of the run's label vocabulary, built at runtime.
+
+    Static checkers see a runtime-built ``Literal`` as a bare special
+    form, not a type form, so it does not typecheck as a ``create_model``
+    field (typed ``TypeForm`` from pydantic 2.14). The ``Any`` return
+    absorbs that here, once."""
+    return Literal[tuple(labels)]
+
+
 def _batch_llm_scanner(
     question: str,
     labels: list[str],
@@ -753,7 +813,7 @@ def _structured_batch_answer(labels: list[str]) -> AnswerStructured:
         "_CohortItemAnswer",
         item=(int, Field(description="The [ITEM n] marker's number.")),
         label=(
-            Literal[tuple(labels)],
+            label_literal(labels),
             Field(description="The single best-fitting label for this item."),
         ),
         confidence=(
@@ -792,7 +852,7 @@ def _verified_llm_scanner(
     inner = llm_scanner(
         question=question,
         answer=_structured_answer(labels),
-        model=model,
+        model=judge_model(model),
         cache=cache,
     )
 
@@ -935,7 +995,7 @@ async def _verify_judgement(
     scan = llm_scanner(
         question=review,
         answer=_structured_answer(labels),
-        model=verifier_model,
+        model=judge_model(verifier_model),
         cache=cache,
     )
     try:
@@ -1057,7 +1117,7 @@ def _judge_scanner(
     return llm_scanner(
         question=question,
         answer=spec,
-        model=model,
+        model=judge_model(model),
         cache=roll_cache(cache, roll),
     )
 
@@ -1067,7 +1127,7 @@ def _structured_answer(labels: list[str]) -> AnswerStructured:
     answer_model = create_model(
         "_CohortAnswer",
         label=(
-            Literal[tuple(labels)],
+            label_literal(labels),
             Field(description="The single best-fitting label."),
         ),
         confidence=(

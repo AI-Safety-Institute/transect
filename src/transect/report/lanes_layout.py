@@ -14,8 +14,7 @@ from typing import Any
 # row read this one constant, so the two cannot drift onto different
 # limits for what is conceptually one value. Not unbounded: tippy caps
 # the popover at 350px wide whatever the content length, so a longer name
-# only buys more wrapped lines, and `charts._SWIMLANE_LANE_ROW_PX`'s
-# tooltip-fit floor is measured against this exact cap.
+# only buys more wrapped lines.
 LANE_NAME_MAX_CHARS = 120
 
 

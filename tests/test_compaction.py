@@ -73,7 +73,7 @@ def test_recorded_prompt_and_nudge_survive_to_the_stored_report(fixture_logs, tm
     assert html.index("Task message (verbatim") < html.index("Compaction prompt")
     _assert_no_page_errors(
         str(report),
-        min_frames=2,
+        min_charts=1,
         setup_prompts={
             "Compaction prompt (verbatim)": prompts.iloc[0],
             "Compaction nudge (before compaction)": nudges.iloc[0],

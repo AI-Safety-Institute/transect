@@ -8,7 +8,13 @@ from inspect_ai.model import CachePolicy, Model
 from inspect_scout import AnswerStructured
 from pydantic import BaseModel, Field, ValidationError, create_model
 
-from transect.scanners.cohort import _SPOT_DEFAULT, LOWCONF, Trigger, VerifierReview
+from transect.scanners.cohort import (
+    _SPOT_DEFAULT,
+    LOWCONF,
+    Trigger,
+    VerifierReview,
+    label_literal,
+)
 from transect.scanners.digests import Digest
 from transect.scanners.phases_cohort import ConsensusJudgement
 from transect.scanners.phases_common import (
@@ -273,7 +279,7 @@ def _verify_answer_spec(phase_names: Sequence[str]) -> AnswerStructured:
         "_VocabVerdict",
         __base__=_Verdict,
         phase=(
-            Literal[tuple(phase_names)],
+            label_literal(phase_names),
             Field(
                 description=(
                     "The correct phase label: the current one to confirm, "

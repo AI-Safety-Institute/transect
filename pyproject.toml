@@ -1,6 +1,6 @@
 [project]
 name = "transect"
-version = "0.4.1"
+version = "0.4.5"
 description = "Transect: transcript analysis for agent evals, built on inspect-scout"
 license-files = ["LICENSE", "LICENSES/*.txt"]
 requires-python = ">=3.12"
@@ -10,7 +10,7 @@ dependencies = [
     "pandas>=3.0.5",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
-    "inspect-viz>=0.4.1",
+    "inspect-viz>=0.4.2",
     "markdown-it-py>=4.2.0",
     "jinja2>=3.1.6",
 ]
@@ -46,6 +46,26 @@ testpaths = ["tests"]
 
 [tool.uv]
 default-groups = ["dev"]
+# 0.11.8 is the first uv that keeps uv.lock stable with a relative exclude-newer.
+required-version = ">=0.11.8"
+# Supply-chain cooldown: resolve only distributions uploaded at least 7 days
+# ago, so a compromised release has time to be caught and yanked before it
+# can land in uv.lock (see CONTRIBUTING.md). uv records the span in the
+# lockfile; `uv lock --upgrade` honours it. CI exports the same value as
+# UV_EXCLUDE_NEWER so uv runs outside the project obey it too.
+exclude-newer = "7 days"
+
+# Exempt from the cooldown, so a new release can be adopted the day it ships:
+# the Inspect packages this is built on (first-party, released together, and
+# transect often needs a Scout fix the week it ships) and the CA bundle
+# (certifi), whose releases usually remove compromised roots. Nothing else:
+# a provider SDK is exactly the shape of package that gets compromised.
+# Mirror any change in `cooldown.exclude` in .github/dependabot.yml.
+[tool.uv.exclude-newer-package]
+inspect-ai = false
+inspect-scout = false
+inspect-viz = false
+certifi = false
 
 [tool.ruff]
 target-version = "py312"

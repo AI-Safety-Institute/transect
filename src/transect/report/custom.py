@@ -12,7 +12,7 @@ from inspect_viz import Component as VizComponent, Data, Selection
 from inspect_viz.input import select
 from inspect_viz.interactor import highlight
 from inspect_viz.mark import area_y, line, rect
-from inspect_viz.plot import plot
+from inspect_viz.plot import HtmlPage, plot
 from inspect_viz.table import table
 from markdown_it import MarkdownIt
 from markupsafe import Markup, escape
@@ -36,16 +36,7 @@ from transect.report.charts import (
     turn_xlim,
 )
 from transect.report.colors import _UNJUDGED_GREY, _label_colors
-from transect.report.embed import (
-    _TIP_EXTRA_LINE_PX,
-    _TIP_SHORT_ROW_PX,
-    _WIDGET_ROW_HEIGHT,
-    _section_height,
-    _tip_floor,
-    _tip_rows,
-    embed_section,
-)
-from transect.report.style import _WIDGET_STYLE_CSS
+from transect.report.embed import embed_section
 
 
 @dataclass(frozen=True)
@@ -78,39 +69,35 @@ _FILTER_CLEAR_LABEL = "(all)"
 
 
 def layer_section(
+    page: HtmlPage,
     layer,
     frame: pd.DataFrame | None,
     ctx: SectionContext,
     definitions: pd.DataFrame | None = None,
 ) -> Markup:
     """One layer's rendered section: badge-marked heading + its blocks,
-    closed by the layer's recorded label definitions."""
+    closed by the layer's recorded label definitions. Each run of
+    consecutive viz blocks is one fragment of ``page``."""
     fragments: list[Markup] = []
     pending: list[VizComponent] = []
     pending_after: list[Markup] = []
-    pending_height = 0
 
     def flush_pending() -> None:
-        nonlocal pending, pending_after, pending_height
+        nonlocal pending, pending_after
         if pending:
-            fragments.append(
-                Markup(
-                    embed_section(pending, pending_height + _MARGINS, _WIDGET_STYLE_CSS)
-                )
-            )
+            fragments.append(Markup(embed_section(page, pending)))
             fragments.extend(pending_after)
-            pending, pending_after, pending_height = [], [], 0
+            pending, pending_after = [], []
 
     for block in layer.section or []:
         if isinstance(block, b.Markdown):
             flush_pending()
             fragments.append(_markdown(block, ctx))
             continue
-        components, height, after = _viz_block(block, frame, ctx)
+        components, after = _viz_block(block, frame, ctx)
         pending.extend(components)
         if after is not None:
             pending_after.append(after)
-        pending_height += height
     flush_pending()
     heading = Markup(
         f'<h3>{escape(layer.name)} <span class="custom-layer-badge">custom</span></h3>'
@@ -122,13 +109,13 @@ def layer_section(
 
 
 def _viz_block(block, own: pd.DataFrame | None, ctx: SectionContext):
-    """One viz block -> (components, height, after-the-iframe HTML).
+    """One viz block -> (components, after-the-chart HTML).
 
     A block-level ``frame`` override is cut to this transcript when it
     carries ``transcript_id`` (``own`` arrives pre-cut from render);
     without the column it broadcasts as-is."""
     if isinstance(block, b.Component):
-        return [block.fn(ctx)], _CHART_HEIGHT, None
+        return [block.fn(ctx)], None
     frame = own
     if isinstance(block.frame, pd.DataFrame):
         frame = block.frame
@@ -141,21 +128,15 @@ def _viz_block(block, own: pd.DataFrame | None, ctx: SectionContext):
         )
     if isinstance(block, b.Table):
         columns = block.columns or [c for c in frame.columns]
-        return (
-            [table(Data.from_dataframe(frame[columns]), height=_TABLE_HEIGHT)],
-            _TABLE_HEIGHT,
-            None,
-        )
+        return [table(Data.from_dataframe(frame[columns]), height=_TABLE_HEIGHT)], None
     if isinstance(block, b.TurnChart):
-        return [_turn_chart(block, frame, ctx)], _CHART_HEIGHT, None
+        return [_turn_chart(block, frame, ctx)], None
     if isinstance(block, b.TurnBand):
         return _turn_band(block, frame, ctx)
     if isinstance(block, b.SpanLanes):
-        component, height = _span_lanes(block, frame, ctx)
-        return [component], height, None
+        return [_span_lanes(block, frame, ctx)], None
     if isinstance(block, b.EventMarks):
-        component, height = _event_marks(block, frame, ctx)
-        return [component], height, None
+        return [_event_marks(block, frame, ctx)], None
     raise ValueError(f"unrenderable block {type(block).__name__}")
 
 
@@ -318,12 +299,8 @@ def _turn_band(block: b.TurnBand, frame: pd.DataFrame, ctx: SectionContext):
         y_axis=False,
         color_scale=_IDENTITY_SCALE,
     )
-    body = _BAND_BODY + _BAND_MARGIN_TOP + _BAND_MARGIN_BOTTOM
-    # single-line tooltip rows, one two-line allowance for the label
-    floor = _tip_floor(_tip_rows(channels), _TIP_SHORT_ROW_PX + 2 * _TIP_EXTRA_LINE_PX)
-    height = max(body + _WIDGET_ROW_HEIGHT, floor)
     chips = sections.label_chips(turn_counts, colors)
-    return [filter_select, band], height, chips
+    return [filter_select, band], chips
 
 
 def _run_judge_cells(
@@ -418,25 +395,22 @@ def _span_lanes(block: b.SpanLanes, frame: pd.DataFrame, ctx: SectionContext):
         channels={_tip_name(block.label): "lane_label"},
         tip=True,
     )
-    height = max(len(rows), 1) * _LANE_HEIGHT + _MARGINS
-    component = plot(
+    return plot(
         mark,
         width=chart_width(ctx.n_turns),
-        height=height,
+        height=max(len(rows), 1) * _LANE_HEIGHT + _MARGINS,
         x_domain=turn_xlim(ctx.n_turns),
         x_label="turn",
         y_axis=False,
     )
-    return component, height
 
 
 def _event_marks(block: b.EventMarks, frame: pd.DataFrame, ctx: SectionContext):
     """Dashed rules at the frame's turns."""
     rows = frame.dropna(subset=["turn"])
     events = pd.DataFrame({"turn": rows.turn.astype(int), "event": str(block.label)})
-    channels = {"event": "event", "turn": "turn"}
-    component = plot(
-        _event_hit_rect(events, -1, 1, channels),
+    return plot(
+        _event_hit_rect(events, -1, 1, {"event": "event", "turn": "turn"}),
         _offset_rule_x(
             Data.from_dataframe(events[["turn"]]),
             "#7b5cb8",
@@ -455,7 +429,6 @@ def _event_marks(block: b.EventMarks, frame: pd.DataFrame, ctx: SectionContext):
         x_domain=turn_xlim(ctx.n_turns),
         x_label="turn",
     )
-    return component, _section_height(_INTERVENTION_HEIGHT, _tip_rows(channels))
 
 
 def _markdown(block: b.Markdown, ctx: SectionContext) -> Markup:

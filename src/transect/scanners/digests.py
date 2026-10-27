@@ -10,6 +10,7 @@ import json
 from bisect import bisect_right
 from typing import Any
 
+from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.tool import ToolCall
 from pydantic import BaseModel, Field
 
@@ -18,6 +19,7 @@ from transect.scanners.helpers import (
     message_reasoning,
     span_task_text,
     strip_subagent_scaffold,
+    turn_message,
 )
 
 _OPENCLAW_FAILED_TURN_PREFIX = "[assistant turn failed"  # placeholder assistant turn
@@ -112,11 +114,11 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     final: tuple[int, str] | None = None  # last digest turn with text, uncapped
     for (turn, ev, calls), until in zip(turns, ends, strict=True):
         event: Any = ev
-        if _is_failed_turn(event):
-            continue  # provider-failure placeholder: not a turn to judge
+        message = turn_message(event)
+        if message is None or _is_failed_turn(message):
+            continue  # placeholder (no choices, provider failure): not a turn to judge
         eligible_turns.append(turn)
-        message = event.output.message
-        text = (message.text or "").strip() if message else ""
+        text = (message.text or "").strip()
         reasoning = message_reasoning(message)
         delegations: list[str] = []
         if not lanes.begins:  # span-less sources: delegations ride tool-call args
@@ -227,12 +229,11 @@ def resolve_digest(digest: DigestSettings | None) -> DigestSettings:
     return digest
 
 
-def _is_failed_turn(event: Any) -> bool:
+def _is_failed_turn(message: ChatMessageAssistant) -> bool:
     """Detect an OpenClaw provider-failure placeholder turn: the scaffold
     writes a fake assistant turn ("[assistant turn failed ...]") when a
     provider call dies."""
-    message = event.output.message
-    text = (message.text or "").strip().lower() if message else ""
+    text = (message.text or "").strip().lower()
     return text.startswith(_OPENCLAW_FAILED_TURN_PREFIX)
 
 

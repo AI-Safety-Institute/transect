@@ -2,7 +2,7 @@
 
 import logging
 from collections.abc import Collection, Sequence
-from typing import Any, Literal, cast
+from typing import Any, cast
 
 from inspect_ai.model import CachePolicy, Model, get_model
 from inspect_scout import AnswerStructured, Result, Scanner, Transcript, scanner
@@ -12,6 +12,7 @@ from transect.scanners.cohort import (
     LabelSource,
     cohort_members,
     judge_setup,
+    label_literal,
     resolve_verify,
     roll_cache,
 )
@@ -620,7 +621,7 @@ def _answer_spec(phase_names: Sequence[str]) -> AnswerStructured:
         "_VocabSegment",
         __base__=_Segment,
         phase=(
-            Literal[tuple(phase_names)],
+            label_literal(phase_names),
             Field(description=("The phase label (one of the allowed phase names).")),
         ),
     )
