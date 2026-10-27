@@ -94,6 +94,16 @@ h4 {{ font-size: var(--transect-font-size-smaller); font-weight: 600; }}
   background: var(--transect-color-hover); white-space: nowrap; }}
 .relmap tr:first-child th {{ background: var(--transect-color-hover);
   font-weight: 600; }}
+.runs-table, .collection-reliability-table {{ width: 100%; }}
+.runs-table td,
+.collection-reliability-table td,
+.collection-reliability-table tr th:first-child,
+.runs-table tr th:first-child {{
+  white-space: normal; vertical-align: top; min-width: 8rem;
+}}
+.collection-reliability-table td:nth-child(6),
+.collection-reliability-table td:nth-child(7) {{ min-width: 4rem; }}
+.collection-reading {{ list-style-type: "- "; }}
 .relmap-sub {{ font-size: 0.7rem; opacity: 0.85; font-weight: 400; }}
 .relmap-ci {{ font-size: 0.65rem; opacity: 0.85; }}
 .relmap-absent {{ color: var(--transect-color-muted); opacity: 0.6; font-weight: 400; }}

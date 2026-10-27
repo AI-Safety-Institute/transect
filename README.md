@@ -102,6 +102,10 @@ project once (re-run after upgrading the package):
 python -m transect.skills install
 ```
 
+Claude Code discovers the installed `.claude/skills/` files. Codex and other
+agents can read the same `SKILL.md` files and their linked references directly;
+the installer currently targets Claude Code's directory only.
+
 ## Getting started
 
 The repository ships a runnable worked example in `examples/`:
@@ -235,6 +239,30 @@ to reload that exact scan rather than whichever scan is latest in its parent.
 
 ![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
 
+When a scan contains multiple transcripts, `transect()` and `render()`
+also write a separate `report_index.html`, list it first in
+`results.report_paths`, and
+open it by default. A two-column table lists individual run/epoch report
+links and scan status. Collection reliability follows, then scan execution
+and coverage. The collection panel pools original ballots within each
+scanner and judge setup, showing unit-weighted and equal-sample agreement, pairwise
+agreement, α / AC1, ballot coverage and original verifier review outcomes.
+Agreement cells use the same colour scale as the individual report audits.
+Detailed audit breakdowns live in the individual reports.
+Different setups and label vocabularies stay separate. Undefined agreement
+and units with fewer than two valid ballots do not become zero or perfect
+agreement. These measurements do not establish correctness. Structural-only
+runs and missing judgments show explicit absence. The index includes failed
+runs and the full scan execution status, works for every supported source,
+and needs no additional model calls or chart CDN. Multi-run details use
+names such as `report_run001_epoch2.html`; each contains one transcript and a link back to the index. A single run still uses
+`report.html`.
+
+`transect()` analyses one selected sample per invocation. Use
+`epochs="all"` or an explicit epoch list to include multiple attempts at
+that sample in the index. It does not automatically batch different
+samples or combine separate saved scans into a collection.
+
 Top to bottom, everything on the orchestrator's turn axis (sub-agents
 appear as swimlanes placed by wall-clock, never as turns of their own):
 
@@ -263,6 +291,25 @@ discipline travels with the data, not with our HTML.
 
 > [!TIP]
 > The recipe and checklist are the `custom-ui` skill.
+
+### Cross-run narratives (custom extension)
+
+To build a **Narrative analysis** box above the collection reliability table,
+follow the [agent/developer recipe](.claude/skills/custom-ui/references/cross-run-narratives.md)
+in the `custom-ui` skill. It describes collection synthesis over all retained
+Transect phases and their descriptions.
+Present evaluation context, an overall narrative summary, and proposed themes
+with linked run/phase evidence. Include independent overview and themes critics
+plus theme-fit confidences by default. Keep proposed corrections beside the
+original text, and distinguish theme-fit confidence from scanner confidence.
+
+This is documentation for customisation, not a built-in narrative feature.
+A project-owned driver saves the proposer, critic and confidence outputs;
+index rendering only reads them. Broader collections need an explicit manifest
+of saved scans because `transect()` still selects one sample per invocation.
+The recipe covers the rubric, evidence contract, overlapping memberships,
+confidence denominators, stale results and presentation for Claude Code,
+Codex and other agents.
 
 ## Working with the dataframes
 
@@ -466,6 +513,9 @@ from transect import reliability
 reliability.detect_regime(frames["phases"])  # solo / k-roll / cohort + verifier state
 reliability.cohort_agreement(frames["phase_turn_votes"], "turn", "phase")
 # CohortAgreement(percent_agreement=0.67, alpha=0.57, ac1=0.65, n=1424)
+reliability.equal_sample_agreement(frames["phase_turns"])
+# Average eligible units within runs, then runs within task samples, then samples.
+# Supply only eligible agreement values with at least two valid ballots.
 reliability.relabel_rate(frames["phases"])  # verifier re-labels, overall + per label
 reliability.spot_check_overturns(frames["phases"])  # overturns among random spot-checks
 reliability.member_coverage(

@@ -176,9 +176,11 @@ def test_structural_scanner_failing_one_transcript_loads_and_renders(
     assert info.scan_error.notna().sum() == 1
     assert info.loc[error.transcript_id, "scan_error"] == error.message
     failed_epoch = int(info.loc[error.transcript_id, "epoch"])
-    assert len(result.report_paths) == 3
+    assert len(result.report_paths) == 4
+    assert result.report_paths[0].endswith("report_index.html")
     for path in result.report_paths:
         assert "eval_setup" in " ".join(_status_element(path).itertext())
+    for path in result.report_paths[1:]:
         section = _eval_setup_text(path)
         is_failed = path.endswith(f"epoch{failed_epoch}.html")
         assert ("eval_setup scan error" in section) == is_failed
