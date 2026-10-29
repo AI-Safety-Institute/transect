@@ -8,6 +8,7 @@ from transect.frames import TransectResults
 from transect.frames.common import judge_identity
 from transect.frames.user import member_ballots, turns_frame
 from transect.layers import Layer
+from transect.provenance import RunProvenance
 from transect.scanners.cohort import cohort_llm_scanner
 from transect.scanners.digests import DigestSettings
 from transect.scanners.loaders import digest_turns
@@ -18,6 +19,7 @@ __version__ = _version("transect")
 __all__ = [
     "DigestSettings",
     "Layer",
+    "RunProvenance",
     "Spec",
     "TransectResults",
     "cohort_llm_scanner",

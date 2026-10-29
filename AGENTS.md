@@ -39,6 +39,7 @@ store -> frames -> report.
 |---|---|---|
 | API | `src/transect/api.py` | `transect()` / `load()` / `render()`, viewer spawn, epoch loop, and the OpenClaw import driver (`_openclaw_files` / `_import_openclaw`) |
 | Spec | `src/transect/spec.py` | `Spec` / `Phase` / `load_spec` - the user's eval vocabulary |
+| Provenance | `src/transect/provenance.py` | content-addressed Spec identity, effective run settings, input and custom-layer identities retained with a new scan |
 | Selection | `src/transect/selection.py` | sample + epoch selection before any judge spend |
 | Ingestion | `src/transect/ingestion/` | the vendored OpenClaw telemetry parser only - the import logic that drives it lives in `api.py` (`.eval` logs are read natively by Scout) |
 | Scanners | `src/transect/scanners/` | Scout scanners; each scanner's `value` dict is the store schema, documented in that scanner's docstring |
@@ -81,6 +82,15 @@ scanner change take effect; run a new scan and retain both results for compariso
 - **One vocabulary source.** Enum-like frame columns derive from the
   scanners' own `Literal` types via `typing.get_args` - never restate
   a value list.
+- **Run provenance.** A new scan records `RunProvenance` in the
+  `eval_setup` scanner parameters and exposes it as
+  `TransectResults.provenance`. `spec_id` is the SHA-256 of canonical
+  validated-Spec JSON; the source file bytes and hash are retained
+  separately. Effective analysis settings, input hashes and custom
+  scanner source identities sit beside it. Old scans load with
+  `provenance=None`; never reconstruct missing provenance from current
+  files. Provenance identifies the analysis configuration but does not
+  validate the rubric or judge output.
 - **Vendored tree.** `src/transect/ingestion/openclaw_telemetry_hal/` is a
   mirror of inspect_scout's worked example
   (`examples/sources/openclaw_telemetry_hal/` in

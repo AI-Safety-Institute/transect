@@ -103,8 +103,16 @@ any number, **prove the change reached the run** - the rubric is
 recorded in each scan, so diff it:
 
 ```python
-a = transect.load("scans_v1/").frames()
-b = transect.load("scans_v2/").frames()
+r1 = transect.load("scans_v1/")
+r2 = transect.load("scans_v2/")
+a, b = r1.frames(), r2.frames()
+p1, p2 = r1.provenance, r2.provenance
+assert p1 is not None and p2 is not None  # older scans have no record
+assert (p1.spec_id, p1.settings, p1.inputs) != (
+    p2.spec_id,
+    p2.settings,
+    p2.inputs,
+)
 keys = ["surface", "label"]
 d = a["label_definitions"][keys + ["description"]].merge(
     b["label_definitions"][keys + ["description"]],
@@ -115,10 +123,12 @@ d = a["label_definitions"][keys + ["description"]].merge(
 changed = d[d.description_v1 != d.description_v2]
 ```
 
-This compares recorded label descriptions only: changes to context, prompts,
-models or runtime settings require their own provenance checks. If a planned
-description change is absent, inspect which Spec the runner loaded. Identical
-ballots do not establish cache replay; changed prompts can yield identical labels.
+`spec_id` covers the validated vocabulary and context; `settings` and `inputs`
+cover the remaining analysis conditions. Inspect the exact changed fields rather
+than assuming the intended change was the only difference. For scans created
+before provenance support, compare the stored scanner parameters and source
+records instead. Identical ballots do not establish cache replay; changed prompts
+can yield identical labels.
 
 Then diff the outcome:
 

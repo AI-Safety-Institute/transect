@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, fields
 
 import pandas as pd
 
+from transect.provenance import RunProvenance
 from transect.scan_status import ScanStatus
 
 
@@ -65,6 +66,10 @@ class TransectResults:
     scan_status: ScanStatus = field(default_factory=ScanStatus, kw_only=True)
     """The whole scan's execution record (completed vs total transcripts,
     recorded errors); remains run-wide when rendering a selected epoch."""
+
+    provenance: RunProvenance | None = field(default=None, kw_only=True)
+    """The exact Spec and effective settings recorded by a new scan.
+    None for scans created before provenance support."""
 
     layer_frames: dict[str, pd.DataFrame] = field(default_factory=dict)
     """User layers' pandas frames, keyed by layer name."""
