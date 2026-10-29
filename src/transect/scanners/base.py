@@ -103,8 +103,13 @@ def token_timeline() -> Scanner[Transcript]:
 
 
 @scanner(messages="all")
-def eval_setup() -> Scanner[Transcript]:
+def eval_setup(provenance: dict[str, Any] | None = None) -> Scanner[Transcript]:
     """The run's setup facts for the report's intro section.
+
+    ``provenance`` is recorded by Scout as a scanner argument. It names
+    the exact Spec, effective analysis settings, package versions and
+    source identities for the scan. Its value shape is owned by
+    ``transect.provenance.RunProvenance``.
 
     value = one dict per transcript:
 

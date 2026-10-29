@@ -231,6 +231,33 @@ viewer.
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
 
+### Provenance and replay
+
+Every new scan records `results.provenance`. It identifies the exact
+evaluation-family Spec and the effective settings used to interpret the
+transcript:
+
+```python
+provenance = results.provenance
+provenance.spec_id        # sha256:<canonical Spec hash>
+provenance.spec           # the validated vocabulary and context
+provenance.settings       # judges, regime, verifier, digest and scan knobs
+provenance.inputs         # resolved input paths and their SHA-256 hashes
+provenance.custom_layers  # custom scanners and source-file hashes
+```
+
+The canonical Spec identity changes when a label, description, context or
+other Spec content changes. A changed identity means a new behavioural
+analysis, not a replay of the old one. `load()` restores the same record
+without judge calls. Scans created before provenance support load with
+`results.provenance is None`; they are not retroactively reconstructed.
+The scan store now retains the full family Spec and resolved input paths as
+part of this record, so review the store before sharing it.
+
+Provenance covers the analysis configuration, not correctness. Expert
+sources, validation status and the separation of development from held-out
+assessment transcripts remain research records owned by the evaluator.
+
 ## Reading the report
 
 ![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
