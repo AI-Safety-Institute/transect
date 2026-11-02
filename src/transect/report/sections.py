@@ -560,7 +560,7 @@ def agreement_strip_caption(
 
 def no_phases_note(status) -> Markup:
     """The Phase timeline section's body when the run has no phases: no
-    phase judge was requested, or it ran and produced none."""
+    phase judge was requested, or judging produced none."""
     requested = any(s.scanner == "decision_phases" for s in status.scanners)
     return _notes.no_phases_note(requested)
 
@@ -1316,9 +1316,9 @@ def reliability_audit(
             block, block_flags = _unauditable_layer_block(audit["name"], error), []
         custom_blocks.append((audit["name"], block, block_flags))
 
-    phases_ran = bool(len(phases))
+    phase_scan_present = bool(len(phases) or len(phase_turns))
     subagents_ran = bool(len(subagents)) and bool(subagents.status.notna().any())
-    if not phases_ran and not subagents_ran and not custom_blocks:
+    if not phase_scan_present and not subagents_ran and not custom_blocks:
         return _notes.intro_line(
             "No judged surfaces in this scan: the mechanical frames carry "
             "no classifications to audit. Pass judge_models to classify "
@@ -1327,7 +1327,7 @@ def reliability_audit(
 
     blocks = []
     flag_groups = []
-    if phases_ran:
+    if phase_scan_present:
         phase_extra_rows = [
             {
                 "label": "Turns",
@@ -2103,7 +2103,9 @@ def _entity_audit(
     in map copy (defaults per surface); ``badge`` marks the block with
     the custom-layer badge.
     """
-    regime = reliability.detect_regime(entity)
+    regime = reliability.detect_regime(
+        agreement_source if name == "Phases" and not len(entity) else entity
+    )
     k_roll_stat = reliability.mean_stat(agreement_source.judge_agreement)
     cohort = reliability.cohort_agreement(members, unit_col, value_col)
     relabel = reliability.relabel_rate(entity)
@@ -2174,8 +2176,8 @@ def _entity_audit(
         {
             "label": "Judge regime",
             "value": reliability.describe_regime(regime),
-            "definition": "The number of distinct judge models and/or repeated "
-            "rolls that judged this surface, detected from its own frame.",
+            "definition": "The distinct judge models and/or repeated rolls "
+            "configured to judge this surface, recorded in its frame.",
         },
         {
             "label": "Verifier",

@@ -2,11 +2,11 @@
 
 import pandas as pd
 import pytest
-from helpers import JSON_SPEC, demo_judge
+from helpers import JSON_SPEC, MODEL, PHASES_SPEC, demo_judge
 from inspect_ai._util.registry import registry_info
 from inspect_ai.event import timeline_build
 from inspect_ai.log import read_eval_log, write_eval_log
-from inspect_ai.model import GenerateConfig, ModelOutput
+from inspect_ai.model import GenerateConfig, ModelOutput, get_model
 from inspect_ai.model._model import Model
 
 import transect.api as api
@@ -272,6 +272,43 @@ def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):
         loaded.token_timeline.sort_values("turn").reset_index(drop=True),
         ran.token_timeline.sort_values("turn").reset_index(drop=True),
     )
+
+
+def test_total_phase_no_answer_is_audited_before_and_after_reload(demo_log, tmp_path):
+    """A completed scan with no usable phase judgment retains failed coverage."""
+
+    def empty_answer(input, tools, tool_choice, config):
+        return ModelOutput.for_tool_call(
+            MODEL, "answer", {"segments": [], "explanation": "No answer"}
+        )
+
+    results = transect(
+        logs=str(demo_log),
+        spec=PHASES_SPEC,
+        judge_models=get_model(MODEL, custom_outputs=empty_answer, memoize=False),
+        verify=False,
+        narrate=False,
+        scans_dir=str(tmp_path / "scans"),
+        viewer=False,
+        open_report=False,
+    )
+    assert not results.scan_status.has_failures
+    assert results.phases.empty
+    assert (results.phase_turns.basis == "no_answer").any()
+    restored = load(results.scan_location)
+    pd.testing.assert_frame_equal(restored.phase_turns, results.phase_turns)
+    assert set(restored.phase_turns.judge_models) == {MODEL}
+    api.render(
+        restored,
+        report_path=str(tmp_path / "restored.html"),
+        viewer=False,
+        open_report=False,
+    )
+    for report in [*results.report_paths, *restored.report_paths]:
+        html = open(report).read()
+        assert "unjudged units (no delivered judgement)" in html
+        assert "(100%)" in html
+        assert "Pass judge_models" not in html
 
 
 def test_epochs_all_renders_one_report_per_epoch(epochs_logs, tmp_path):

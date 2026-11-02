@@ -128,10 +128,10 @@
 {%- endmacro %}
 
 {#- The Phase timeline section's body when the run has no phases;
-    ``requested`` = the phase judge ran and produced none. -#}
+    ``requested`` = the phase scanner was requested. -#}
 {% macro no_phases_note(requested) -%}
 {% if requested -%}
-<p class="meta">The phase judge ran but produced no phases for this transcript, so there is no phase timeline, no phase cards and no token spend by phase. See the Scan execution &amp; coverage block at the end of the report for the recorded errors.</p>
+<p class="meta">Phase judging was requested but produced no phases for this transcript, so there is no phase timeline, no phase cards and no token spend by phase. See the Reliability &amp; provenance audit for available attempted-turn coverage and the Scan execution &amp; coverage block for recorded execution errors.</p>
 {%- else -%}
 <p class="meta">No judge was configured for this scan (<code>judge_models=None</code>), so there is no phase segmentation: the phase timeline, the phase cards and token spend by phase are absent. Pass <code>judge_models</code> with a spec that declares <code>phases</code> to add them.</p>
 {%- endif %}
