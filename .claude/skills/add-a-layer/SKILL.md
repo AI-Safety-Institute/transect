@@ -237,7 +237,7 @@ the shared turn axis where applicable:
 
 | Block | Renders | Needs |
 |---|---|---|
-| `Markdown(text)` | prose (HTML escaped, headings demoted) | - |
+| `Markdown(text)` | prose (HTML escaped, images reduced to alt text, headings demoted; interpolated transcript strings are markup) | - |
 | `TurnBand(label=col)` | contiguous same-label runs as coloured chunks, with filter select, legend chips, judge tooltip rows, and grey fillers over missing turns | per-turn frame with `turn` + the label column |
 | `TurnChart(y=col, kind=...)` | bar / line / step / area per turn | `turn` + a numeric column |
 | `SpanLanes(start, end, label)` | one lane per row spanning start..end | the three columns |
