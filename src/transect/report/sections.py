@@ -662,6 +662,31 @@ def subagent_explanation() -> Markup:
     return _notes.subagent_explanation()
 
 
+ROLE_LANE_GROUP = "other model roles"
+
+
+def lane_group(
+    span_id: str, label_of: dict, role_ids: set[str], classification_ran: bool
+) -> str:
+    """The swimlane group a lane draws in. A role lane (another model
+    role's conversation) always groups as `ROLE_LANE_GROUP`, outside the
+    classification states. A sub-agent lane groups by its label, else
+    as "unclassified" when a classifier ran (it joined no label: the
+    honest fallback) and as "sub-agents" when none did (no label
+    dimension exists)."""
+    if span_id in role_ids:
+        return ROLE_LANE_GROUP
+    label = label_of.get(span_id)
+    if isinstance(label, str) and label:
+        return label
+    return "unclassified" if classification_ran else "sub-agents"
+
+
+def role_lane_ids(subagents: pd.DataFrame) -> set[str]:
+    """The span ids of a transcript's role lanes (``lane_kind`` role)."""
+    return {str(s) for s in subagents.agent_span_id[subagents.lane_kind == "role"]}
+
+
 def subagent_notes(
     lanes: list[SpanGeometry],
     label_of: dict,
@@ -680,12 +705,15 @@ def subagent_notes(
     """
     # three states, honestly distinguished: no classification at all
     # (grey note, and NO label vocabulary anywhere; classification joined
-    # (labels, no note); and classification present but zero lanes joined
-    # - a silent-failure smell (identity/span-id mismatch).
-    any_joined = any(span.span_id in label_of for span in lanes)
+    # (labels, no note); and classification present but zero sub-agent
+    # lanes joined - a silent-failure smell (identity/span-id mismatch).
+    # Role lanes are never classified, so they count in none of these.
+    role_ids = role_lane_ids(subagents)
+    sub_lanes = [span for span in lanes if span.span_id not in role_ids]
+    any_joined = any(span.span_id in label_of for span in sub_lanes)
     if not classification_ran:
         state = "not_run"
-    elif not any_joined:
+    elif sub_lanes and not any_joined:
         state = "warn"
     else:
         state = "ok"
@@ -712,7 +740,7 @@ def subagent_notes(
                 "n_spans": len(voted_rows),
             }
         summary = {
-            "n_spans": len(lanes),
+            "n_spans": len(sub_lanes),
             "judge_label": judge_label(joined),
             "judges": roster(joined),
             "cohort": cohort_part,
@@ -722,7 +750,7 @@ def subagent_notes(
     return _subagent_tpl.subagent_notes(
         state,
         summary,
-        int((subagents.lane_kind == "role").sum()),
+        len(role_ids),
         any(span.boxed for span in lanes),
         bool(subagents.end_recorded.any()),
         _END_MARKER_GLYPH,

@@ -776,6 +776,7 @@ def test_subagent_notes_say_which_lanes_are_another_roles_conversations():
     such above the swimlanes, so the section never calls it a sub-agent."""
     spans = pd.DataFrame(
         {
+            "agent_span_id": ["t1", "t2", "s"],
             "lane_kind": ["role", "role", "subagent"],
             "judge_models": [None] * 3,
             "judge_agreement": [None] * 3,
@@ -789,3 +790,31 @@ def test_subagent_notes_say_which_lanes_are_another_roles_conversations():
         sections.subagent_notes([], {}, spans.iloc[2:], classification_ran=False)
     )
     assert "another model role" not in only_subagents
+
+
+def test_role_lanes_never_count_as_unjoined_sub_agents():
+    """When the classifier ran elsewhere in the scan, a transcript whose
+    lanes are all another role's conversations gets no span-id mismatch
+    warning and no sub-agent count, and its lanes group as other model
+    roles rather than as unclassified sub-agents."""
+    spans = pd.DataFrame(
+        {
+            "agent_span_id": ["t1", "t2"],
+            "lane_kind": ["role", "role"],
+            "judge_models": [None, None],
+            "judge_agreement": [None, None],
+            "verifier_model": [None, None],
+            "end_recorded": [True, True],
+        }
+    )
+    lanes = [
+        SpanGeometry("t1", "trajectory", 0.0, 1.0, True),
+        SpanGeometry("t2", "trajectory", 1.0, 2.0, True),
+    ]
+    notes = str(sections.subagent_notes(lanes, {}, spans, classification_ran=True))
+    assert "mismatch" not in notes
+    assert "sub-agent span(s)" not in notes
+    assert sections.lane_group("t1", {}, {"t1", "t2"}, True) == "other model roles"
+    assert sections.lane_group("s", {}, {"t1", "t2"}, True) == "unclassified"
+    assert sections.lane_group("s", {"s": "lit"}, {"t1"}, True) == "lit"
+    assert sections.lane_group("s", {}, set(), False) == "sub-agents"

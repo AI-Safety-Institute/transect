@@ -1,11 +1,12 @@
-"""lane_activity_df: tool-events-only sub-agent activity.
+"""lane_activity_df: tool-events-only lane activity.
 
 Columns (identity prefix explained in common.py):
 
 - turn: 0-based orchestrator turn preceding the tool event, in event
   order (subagents.anchor_turn / end_turn place spans by wall-clock, so
   the two can differ on parallel lanes).
-- agent_lane / agent_span_id: the sub-agent span (name / id).
+- agent_lane / agent_span_id: the lane span (name / id): a sub-agent
+  span or another model role's conversation span (subagents.lane_kind).
 - tool_calls: tool events in that span at that turn.
 - busy_seconds: summed tool wall-time; None = not reported.
 - started_at: the earliest tool-event start in this row's (turn, span).
@@ -27,7 +28,7 @@ from transect.scan_status import scan_error
 
 def lane_activity_df(results: pd.DataFrame) -> pd.DataFrame:
     """token_timeline lane_activity -> one row per (turn, agent span) of
-    tool activity, for every sub-agent span."""
+    tool activity, for every lane span."""
     rows = []
     for _, r in results.iterrows():
         if scan_error(r):

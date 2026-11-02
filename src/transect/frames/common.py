@@ -25,7 +25,7 @@ from transect.scanners.cohort import CallStatus, LabelSource, VerifierReview
 from transect.scanners.helpers import LaneKind
 from transect.scanners.phases_common import TurnBasis
 
-SCHEMA_VERSION = "0.3"
+SCHEMA_VERSION = "0.4"
 
 IDENTITY_COLS = {
     "sample_id": "transcript_task_id",

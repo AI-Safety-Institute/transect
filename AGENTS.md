@@ -120,9 +120,11 @@ scanner change take effect; run a new scan and retain both results for compariso
   each target trajectory span as a lane, `scanners.helpers.Lanes`).
   Only sub-agent lanes are classified, digested as delegations or
   listed as spawns; role lanes appear in the frames and the swimlanes.
-  The axis role is the role of the main span's first tool-calling turn
-  (`scanners.helpers.axis_role`, Inspect's own primary-trajectory rule),
-  and another role's calls with no span of their own are off the axis.
+  The axis role is the role that opens the main span and makes its
+  first tool call (`scanners.helpers.axis_role`; the driven side cannot
+  act before it is driven); when those disagree the transcript raises.
+  Another role's calls with no span of their own, or in a tool span,
+  are off the axis.
   The subagents frame records the orchestrator turns active at each
   span's start and end by wall-clock (`frames/spine.py`), and the
   swimlane chart maps the same timestamps to fractional positions when

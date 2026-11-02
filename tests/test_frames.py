@@ -695,6 +695,7 @@ def test_phase_rollups_split_orchestrator_and_delegated_spend(raw_phases):
         {
             "transcript_id": ["tr1", "tr1", "tr1"],
             "agent_span_id": ["A", "B", "C"],
+            "lane_kind": ["subagent"] * 3,
             "spawn_turn": [1, 3, 9],
             "new_work": [1100.0, None, 5.0],
         }
@@ -719,6 +720,7 @@ def test_phase_rollups_split_orchestrator_and_delegated_spend(raw_phases):
                 {
                     "transcript_id": ["tr1"],
                     "agent_span_id": ["A"],
+                    "lane_kind": ["subagent"],
                     "spawn_turn": [1],
                     "new_work": [None],
                 }
@@ -859,3 +861,43 @@ def test_subagents_frame_carries_the_lane_kind(demo_results):
     assert subagents.lane_kind.tolist() == ["subagent"] * 3
     assert list(subagents.lane_kind.cat.categories) == ["subagent", "role"]
     assert "lane_kind" in subagents_df(pd.DataFrame()).columns
+
+
+def test_a_span_record_without_a_lane_kind_names_the_rescan():
+    """A store written before lane kinds existed is not patched over: the
+    frame builder raises naming the missing field and the fix."""
+    value = {
+        "timeline": [{"turn": 0, "timestamp": None, "completed": None}],
+        "spans": [
+            {
+                "agent_span_id": "A",
+                "agent_lane": "a",
+                "spawn_turn": 0,
+                "first_at": None,
+                "last_at": None,
+                "end_at": None,
+                "end_recorded": False,
+                "event_order_end_turn": 0,
+            }
+        ],
+        "lane_activity": [],
+    }
+    with pytest.raises(KeyError, match=r"lane_kind.*new scan"):
+        subagents_df(pd.DataFrame(), timeline_results=pd.DataFrame([value_row(value)]))
+
+
+def test_role_lanes_are_neither_spawned_sub_agents_nor_delegated_spend(raw_phases):
+    """A target trajectory under an auditor spawned inside a phase is not a
+    sub-agent of that phase: the count and the delegated spend skip it."""
+    subagents = pd.DataFrame(
+        {
+            "transcript_id": ["tr1", "tr1"],
+            "agent_span_id": ["A", "T"],
+            "lane_kind": ["subagent", "role"],
+            "spawn_turn": [1, 1],
+            "new_work": [1100.0, 999.0],
+        }
+    )
+    (phase,) = phases_df(raw_phases, subagents=subagents).itertuples()
+    assert phase.n_subagents == 1
+    assert phase.delegated_new_work_tokens == 1100

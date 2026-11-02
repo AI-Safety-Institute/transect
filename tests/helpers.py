@@ -299,7 +299,8 @@ def auditor_scaffold(target_tools=False):
             input_tokens=1000, output_tokens=10, total_tokens=1010
         )
     events = [
-        SpanBeginEvent(id="solver", parent_id=None, type="solver", name="rollout"),
+        SpanBeginEvent(id="solvers", parent_id=None, type="solvers", name="solvers"),
+        SpanBeginEvent(id="solver", parent_id="solvers", type="solver", name="audit"),
         SpanBeginEvent(
             id="auditor", parent_id="solver", type="auditor", name="auditor"
         ),
@@ -328,7 +329,8 @@ def auditor_scaffold(target_tools=False):
         SpanEndEvent(id="target"),
         SpanEndEvent(id="auditor"),
         SpanEndEvent(id="solver"),
-        SpanBeginEvent(id="scorers", parent_id=None, type="scorers", name="scoring"),
+        SpanEndEvent(id="solvers"),
+        SpanBeginEvent(id="scorers", parent_id=None, type="scorers", name="scorers"),
         SpanBeginEvent(id="judge", parent_id="scorers", type="scorer", name="judge"),
         judge,
         SpanEndEvent(id="judge"),

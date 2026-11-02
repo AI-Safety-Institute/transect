@@ -136,8 +136,8 @@ def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
     ]
     real = helpers.subagent_span_begins
 
-    def only_eda(transcript, main):
-        return [b for b in real(transcript, main) if b.id == "C"]
+    def only_eda(transcript, main, **kwargs):
+        return [b for b in real(transcript, main, **kwargs) if b.id == "C"]
 
     monkeypatch.setattr(helpers, "subagent_span_begins", only_eda)
     value = run_scan(token_timeline(), events).value
@@ -612,6 +612,7 @@ def test_sub_agent_spans_record_lane_kind_subagent():
 
 
 def test_the_orchestrators_compaction_stays_on_the_axis_beside_role_lanes():
+    """The auditor's own compaction is an orchestrator flush, not a lane's."""
     value = run_item(context_flush(), auditor_scaffold()).value
     assert [
         (f["type"], f["agent_span_id"], f["turn"], f["role"]) for f in value["flushes"]
@@ -619,6 +620,7 @@ def test_the_orchestrators_compaction_stays_on_the_axis_beside_role_lanes():
 
 
 def test_a_single_role_span_has_no_role_lanes():
+    """A main span of one role keeps that role on the axis with no lanes."""
     events = [*agent_span("R", "react", inner=[model_turn("a"), model_turn("b")])]
     for event in events:
         if isinstance(event, ModelEvent):
@@ -646,4 +648,160 @@ def test_another_roles_calls_outside_any_span_of_their_own_are_off_the_axis():
         (0, 0),
         (None, None),
         (1, 1),
+    ]
+
+
+def test_a_span_holding_the_axis_roles_turns_is_never_a_role_lane():
+    """A primitive solver span holding the orchestrator's own turns beside
+    a critic's call is the orchestrator's span, not a lane: its turns stay
+    on the axis and the critic's call is off it."""
+    agent, critic, again = model_turn("a"), model_turn("c"), model_turn("a2")
+    critic.role = "critic"
+    agent.output.message.tool_calls = [ToolCall(id="c0", function="bash", arguments={})]
+    for event in (agent, critic, again):
+        event.span_id = "my_solver"
+    events = [
+        SpanBeginEvent(id="solvers", parent_id=None, type="solvers", name="solvers"),
+        SpanBeginEvent(id="my_solver", parent_id="solvers", type="solver", name="s"),
+        agent,
+        critic,
+        again,
+        SpanEndEvent(id="my_solver"),
+        SpanEndEvent(id="solvers"),
+    ]
+    lanes = helpers.Lanes(StubTranscript(events))
+    assert lanes.role_begins == []
+    assert [turn for turn, _event, _calls in lanes.turns()] == [0, 1]
+    value = run_scan(token_timeline(), events).value
+    assert [
+        (e["turn"], e["lane_turn"], e["agent_span_id"]) for e in value["timeline"]
+    ] == [
+        (0, 0, None),
+        (None, None, None),
+        (1, 1, None),
+    ]
+
+
+def test_another_roles_call_inside_a_sub_agent_belongs_to_that_sub_agent():
+    """A critic call a sub-agent makes in a span of its own is the
+    sub-agent's activity, not a role lane of its own."""
+    critic = model_turn("critic", span_id="S")
+    critic.role = "critic"
+    events = [
+        *agent_span(
+            "R",
+            "react",
+            inner=[
+                model_turn("lead"),
+                *agent_span(
+                    "C",
+                    "eda",
+                    inner=[
+                        model_turn("s0"),
+                        SpanBeginEvent(id="S", parent_id="C", type="solver", name="s"),
+                        critic,
+                        SpanEndEvent(id="S"),
+                    ],
+                    parent_id="R",
+                ),
+            ],
+        )
+    ]
+    lanes = helpers.Lanes(StubTranscript(events))
+    assert lanes.role_begins == []
+    value = run_scan(token_timeline(), events).value
+    assert [
+        (e["turn"], e["lane_turn"], e["agent_span_id"]) for e in value["timeline"]
+    ] == [
+        (0, 0, None),
+        (None, 0, "C"),
+        (None, 1, "C"),
+    ]
+
+
+def test_lane_kind_of_a_span_that_is_no_lane_raises():
+    """Asking the kind of a span that is no lane is a caller error."""
+    lanes = helpers.Lanes(auditor_scaffold())
+    assert lanes.lane_kind("attempt-1") == "role"
+    with pytest.raises(KeyError, match="auditor"):
+        lanes.lane_kind("auditor")
+
+
+def test_a_sub_agents_first_model_skips_inspects_utility_wrapped_calls():
+    """A sub-agent whose first call is a cache-priming warmup hands its
+    real first call to the task-text readers, as the timeline walk did."""
+    from inspect_ai.model import ChatMessageUser, GenerateConfig
+
+    warmup = model_turn("w", input=[ChatMessageUser(content="hi")])
+    warmup.config = GenerateConfig(max_tokens=1)
+    real = model_turn("real first", input=[ChatMessageUser(content="do the task")])
+    events = [
+        *agent_span(
+            "R",
+            "react",
+            inner=[
+                model_turn("lead"),
+                *agent_span("C", "eda", inner=[warmup, real], parent_id="R"),
+            ],
+        )
+    ]
+    lanes = helpers.Lanes(StubTranscript(events))
+    assert lanes.first_models["C"] is real
+
+
+def test_the_axis_role_follows_event_order_not_span_opening_order():
+    """Which role's span was opened first says nothing: the auditor drives
+    whether or not the target span was opened before the auditor's."""
+    transcript = auditor_scaffold(target_tools=True)
+    events = transcript.events
+    auditor_begin = next(
+        e for e in events if e.event == "span_begin" and e.id == "auditor"
+    )
+    target_begin = next(
+        e for e in events if e.event == "span_begin" and e.id == "target"
+    )
+    i, j = events.index(auditor_begin), events.index(target_begin)
+    events[i], events[j] = events[j], events[i]
+    assert helpers.Lanes(transcript).axis_role == "auditor"
+
+
+def test_a_main_span_whose_opening_turn_and_first_tool_call_disagree_raises():
+    """A plan turn of one role followed by another role's tool call names no
+    single orchestrator; the transcript raises rather than guessing."""
+    plan, critic, act = model_turn("plan"), model_turn("c"), model_turn("act")
+    critic.role = "critic"
+    critic.output.message.tool_calls = [
+        ToolCall(id="c0", function="bash", arguments={})
+    ]
+    act.output.message.tool_calls = [ToolCall(id="c1", function="bash", arguments={})]
+    events = [*agent_span("R", "react", inner=[plan, critic, act])]
+    with pytest.raises(ValueError, match="critic"):
+        helpers.Lanes(StubTranscript(events))
+
+
+def test_a_tool_span_calling_another_role_is_no_lane():
+    """A tool whose implementation calls a grader model is a helper call,
+    off the axis and in no lane, not a conversation of its own."""
+    grader = model_turn("grade", span_id="T")
+    grader.role = "grader"
+    events = [
+        *agent_span(
+            "R",
+            "react",
+            inner=[
+                model_turn("lead"),
+                SpanBeginEvent(id="T", parent_id="R", type="tool", name="ask_expert"),
+                grader,
+                SpanEndEvent(id="T"),
+                model_turn("lead 2"),
+            ],
+        )
+    ]
+    lanes = helpers.Lanes(StubTranscript(events))
+    assert lanes.role_begins == []
+    value = run_scan(token_timeline(), events).value
+    assert [(e["turn"], e["agent_span_id"]) for e in value["timeline"]] == [
+        (0, None),
+        (None, None),
+        (1, None),
     ]
