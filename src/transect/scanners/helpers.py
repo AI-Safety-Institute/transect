@@ -50,8 +50,9 @@ class Lanes:
     definition) and ``role_begins`` the conversation spans of other model
     roles (`role_span_begins`: an auditor driving a target has each
     target trajectory as a lane); ``lane_ids`` is both, and `lane_kind`
-    tells them apart. ``first_models`` is each lane's first model event. ``events`` is the transcript's event list. Every
-    scanner that attributes events to lanes starts from one of these.
+    tells them apart. ``first_models`` is each lane's first model event.
+    ``events`` is the transcript's event list. Every scanner that
+    attributes events to lanes starts from one of these.
     """
 
     def __init__(self, transcript: Any) -> None:
