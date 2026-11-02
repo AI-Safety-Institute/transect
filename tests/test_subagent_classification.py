@@ -389,3 +389,15 @@ def test_cohort_scanner_refuses_labels_that_are_not_keys(kwargs, monkeypatch):
     )
     with pytest.raises(ValueError, match="must be their own keys"):
         cohort_mod.cohort_llm_scanner("Classify the work", **kwargs)
+
+
+def test_loader_never_classifies_another_roles_conversation_lane():
+    """A target trajectory driven by an auditor is a lane, not a sub-agent:
+    the classifier gets no item for it, so no judge call is spent on it."""
+    from helpers import auditor_scaffold
+
+    async def collect():
+        stub = cast(Transcript, auditor_scaffold())
+        return [item async for item in agent_spans()(stub)]
+
+    assert asyncio.run(collect()) == []

@@ -2,11 +2,20 @@
 human_intervention - judged by what they extract from event streams."""
 
 import pytest
-from helpers import agent_span, model_turn, run_scan, tool_event
+from helpers import (
+    StubTranscript,
+    agent_span,
+    auditor_scaffold,
+    model_turn,
+    run_item,
+    run_scan,
+    tool_event,
+)
 from inspect_ai.event import (
     ApprovalEvent,
     CompactionEvent,
     InputEvent,
+    ModelEvent,
     SpanBeginEvent,
     SpanEndEvent,
 )
@@ -128,8 +137,7 @@ def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
     real = helpers.subagent_span_begins
 
     def only_eda(transcript, main):
-        begins, firsts = real(transcript, main)
-        return [b for b in begins if b.id == "C"], firsts
+        return [b for b in real(transcript, main) if b.id == "C"]
 
     monkeypatch.setattr(helpers, "subagent_span_begins", only_eda)
     value = run_scan(token_timeline(), events).value
@@ -556,3 +564,86 @@ def test_human_approvals_are_interventions_and_automatic_ones_are_not(approver, 
         assert intervention["outcome"] == "reject"
         assert intervention["content"] == "too destructive"
         assert intervention["turn"] == 1
+
+
+@pytest.mark.parametrize("target_tools", [False, True])
+def test_the_role_opening_the_tool_loop_is_the_axis_and_other_roles_are_lanes(
+    target_tools,
+):
+    """The auditor's turns are the axis, each target trajectory span is a
+    lane of kind role, and the scorer's judge call is off the axis, whether
+    or not Inspect's timeline wraps the target calls as utility helpers."""
+    value = run_item(token_timeline(), auditor_scaffold(target_tools)).value
+    rows = [
+        (e["turn"], e["lane_turn"], e["agent_lane"], e["agent_span_id"])
+        for e in value["timeline"]
+    ]
+    assert rows == [
+        (0, 0, None, None),
+        (None, 0, "trajectory", "attempt-1"),
+        (1, 1, None, None),
+        (None, 1, "trajectory", "attempt-1"),
+        (2, 2, None, None),
+        (None, 0, "trajectory", "attempt-2"),
+        (None, None, None, None),
+    ]
+    assert [
+        (r["agent_span_id"], r["lane_kind"], r["spawn_turn"], r["end_recorded"])
+        for r in value["spans"]
+    ] == [("attempt-1", "role", 0, True), ("attempt-2", "role", 2, True)]
+
+
+def test_sub_agent_spans_record_lane_kind_subagent():
+    """An agent-type span below the orchestrator is a lane of kind subagent."""
+    events = [
+        *agent_span(
+            "R",
+            "react",
+            inner=[
+                model_turn("lead"),
+                *agent_span("C", "eda", inner=[model_turn("s0")], parent_id="R"),
+            ],
+        )
+    ]
+    value = run_scan(token_timeline(), events).value
+    assert [(r["agent_span_id"], r["lane_kind"]) for r in value["spans"]] == [
+        ("C", "subagent")
+    ]
+
+
+def test_the_orchestrators_compaction_stays_on_the_axis_beside_role_lanes():
+    value = run_item(context_flush(), auditor_scaffold()).value
+    assert [
+        (f["type"], f["agent_span_id"], f["turn"], f["role"]) for f in value["flushes"]
+    ] == [("summary", None, 2, "auditor")]
+
+
+def test_a_single_role_span_has_no_role_lanes():
+    events = [*agent_span("R", "react", inner=[model_turn("a"), model_turn("b")])]
+    for event in events:
+        if isinstance(event, ModelEvent):
+            event.role = "target"
+    lanes = helpers.Lanes(StubTranscript(events))
+    assert lanes.axis_role == "target"
+    assert lanes.begins == [] and lanes.role_begins == []
+    assert [turn for turn, _event, _calls in lanes.turns()] == [0, 1]
+
+
+def test_another_roles_calls_outside_any_span_of_their_own_are_off_the_axis():
+    """A critic's calls interleaved in the orchestrator's own span, with no
+    span of their own, are neither axis turns nor a lane: off the axis,
+    like an init or scorer call."""
+    agent, critic, again = model_turn("a"), model_turn("c"), model_turn("a2")
+    agent.role = again.role = None
+    critic.role = "critic"
+    agent.output.message.tool_calls = [ToolCall(id="c0", function="bash", arguments={})]
+    events = [*agent_span("R", "react", inner=[agent, critic, again])]
+    lanes = helpers.Lanes(StubTranscript(events))
+    assert lanes.axis_role is None
+    assert lanes.role_begins == []
+    value = run_scan(token_timeline(), events).value
+    assert [(e["turn"], e["lane_turn"]) for e in value["timeline"]] == [
+        (0, 0),
+        (None, None),
+        (1, 1),
+    ]

@@ -672,7 +672,9 @@ def subagent_notes(
     (the label legend renders below it - `subagent_legend`).
 
     ``lanes`` / ``label_of`` are the same span-grouping the orchestrator
-    built for the chart. The how-to-read line renders when any span
+    built for the chart. A line names how many lanes are another model
+    role's conversations (``lane_kind`` role: never sub-agents, never
+    classified) when any are. The how-to-read line renders when any span
     draws as a wall-clock box, its completion-glyph clause when any
     span's end was recorded.
     """
@@ -720,6 +722,7 @@ def subagent_notes(
     return _subagent_tpl.subagent_notes(
         state,
         summary,
+        int((subagents.lane_kind == "role").sum()),
         any(span.boxed for span in lanes),
         bool(subagents.end_recorded.any()),
         _END_MARKER_GLYPH,

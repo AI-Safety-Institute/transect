@@ -769,3 +769,23 @@ def test_phase_runs_split_refused_and_unattributed_turns_into_grey_runs():
 def test_every_basis_has_a_strip_tooltip_phrase():
     """A basis the strip cannot explain would fall through as its raw name."""
     assert set(charts._STRIP_BASIS_WHY) == set(get_args(TurnBasis))
+
+
+def test_subagent_notes_say_which_lanes_are_another_roles_conversations():
+    """A role lane (a target trajectory driven by an auditor) is named as
+    such above the swimlanes, so the section never calls it a sub-agent."""
+    spans = pd.DataFrame(
+        {
+            "lane_kind": ["role", "role", "subagent"],
+            "judge_models": [None] * 3,
+            "judge_agreement": [None] * 3,
+            "verifier_model": [None] * 3,
+            "end_recorded": [True] * 3,
+        }
+    )
+    notes = str(sections.subagent_notes([], {}, spans, classification_ran=False))
+    assert "2 lane(s) are another model role's conversations" in notes
+    only_subagents = str(
+        sections.subagent_notes([], {}, spans.iloc[2:], classification_ran=False)
+    )
+    assert "another model role" not in only_subagents

@@ -1,4 +1,4 @@
-"""subagents_df: one row per agent span - structural facts always,
+"""subagents_df: one row per lane span - structural facts always,
 judge columns when the classification scanner ran.
 
 The structural half is built from the token_timeline scanner's span
@@ -9,7 +9,11 @@ NaN otherwise.
 
 Columns (identity prefix explained in common.py):
 
-- agent_span_id / agent_lane: the sub-agent span (id / name).
+- agent_span_id / agent_lane: the lane span (id / name).
+- lane_kind: subagent (an agent-type span below the orchestrator) or
+  role (the conversation span of another model role, such as a target
+  trajectory driven by an auditor; never classified, so its judge
+  columns are NaN).
 - spawn_turn: the orchestrator turn preceding the span's begin event
   (the turn that issued the spawn when the source links them, the
   importer's file-order anchor otherwise). Phase membership for the
@@ -72,6 +76,7 @@ from transect.frames.common import (
     IDENTITY_COLS,
     JUDGE_COLS,
     LABEL_SOURCES,
+    LANE_KINDS,
     VERIFIER_COLS,
     categorical,
     identity,
@@ -138,6 +143,7 @@ def subagents_df(
         merged[col] = merged[col].astype("string")
     for col, dtype in _SPINE_DTYPES:
         merged[col] = merged[col].astype(dtype)
+    merged["lane_kind"] = categorical(merged.lane_kind, LANE_KINDS)
     merged["label"] = categorical(merged.label, _vocabulary(results))
     merged["label_source"] = categorical(merged.label_source, LABEL_SOURCES)
     merged["status"] = categorical(merged.status, CALL_STATUSES)
@@ -146,6 +152,7 @@ def subagents_df(
         *IDENTITY_COLS,
         "agent_span_id",
         "agent_lane",
+        "lane_kind",
         "spawn_turn",
         "anchor_turn",
         "end_turn",
@@ -241,15 +248,20 @@ def _structural_spine(
         # coalesce the shared identity/lane columns from either source
         for col in _PART_IDENTITY:
             spine[col] = spine[col].combine_first(spine.pop(f"{col}_m"))
-    for col in (*_SPINE_FLAGS, *_SPINE_TEXT, *(c for c, _ in _SPINE_DTYPES)):
+    for col in (
+        "lane_kind",
+        *_SPINE_FLAGS,
+        *_SPINE_TEXT,
+        *(c for c, _ in _SPINE_DTYPES),
+    ):
         if col not in spine.columns:
             spine[col] = None
     return spine.reset_index()
 
 
 def _span_turns(timeline_results: pd.DataFrame | None) -> pd.DataFrame | None:
-    """The span record with its orchestrator turns: one row per
-    sub-agent span (`frames.spine.span_turns`)."""
+    """The span record with its orchestrator turns: one row per lane
+    span (`frames.spine.span_turns`)."""
     if timeline_results is None or not len(timeline_results):
         return None
     rows = []
@@ -273,6 +285,7 @@ def _span_turns(timeline_results: pd.DataFrame | None) -> pd.DataFrame | None:
                     **identity_cols,
                     "agent_span_id": record["agent_span_id"],
                     "agent_lane": record["agent_lane"],
+                    "lane_kind": record["lane_kind"],
                     "spawn_turn": record["spawn_turn"],
                     **spine.span_turns(
                         cells,

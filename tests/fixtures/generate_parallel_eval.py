@@ -31,7 +31,7 @@ from inspect_ai.model import (
 )
 from inspect_ai.tool import Tool, ToolCall, tool
 
-from transect.scanners.helpers import main_span, nearest_agent_span
+from transect.scanners.helpers import main_span, nearest_lane_span
 
 LOG_DIR = Path(__file__).parent / "parallel_logs"
 MOCK = "mockllm/model"
@@ -182,13 +182,14 @@ def stretch_wallclock(log: EvalLog) -> None:
     sample = log.samples[0]
     events = cast("list[Any]", sample.events)
     spans = {e.id: e for e in events if e.event == "span_begin"}
+    agent_ids = frozenset(i for i, e in spans.items() if e.type == "agent")
     main = main_span(SimpleNamespace(events=events, timelines=[]))
     clock = events[0].timestamp
     lane_elapsed: dict[str, float] = {}
     orchestrator_elapsed = 0.0
     spawn_at = 0.0
     for event in events:
-        agent = nearest_agent_span(spans, getattr(event, "span_id", None))
+        agent = nearest_lane_span(spans, getattr(event, "span_id", None), agent_ids)
         if event.event == "span_begin" and getattr(event, "type", None) == "agent":
             agent = spans.get(event.id)
         lane = agent.id if agent is not None and agent.id != main.id else "__main__"

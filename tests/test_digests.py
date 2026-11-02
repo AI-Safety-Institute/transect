@@ -268,3 +268,17 @@ def test_digest_turns_items_carry_the_same_digest_lines():
     assert asyncio.run(items(RESULTS_ON)) == [
         '0: list [CALL] bash({"cmd": "ls"}) [RESULT] README.md'
     ]
+
+
+def test_another_roles_lanes_add_no_delegations_to_the_digest():
+    """An auditor's message to its target is the auditor's own tool call,
+    already in the digest; the target trajectory it opens is not a
+    delegation."""
+    from helpers import auditor_scaffold
+
+    from transect.scanners.digests import resolve_digest
+
+    digests = turn_digests(auditor_scaffold(), resolve_digest(None))
+    assert [d.turn for d in digests] == [0, 1, 2]
+    assert all(d.delegations == [] for d in digests)
+    assert all("[DELEGATES]" not in digest_line(d) for d in digests)

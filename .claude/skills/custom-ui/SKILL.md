@@ -55,9 +55,9 @@ Grains and join keys, in one table:
 | grain | frame(s) | key |
 |---|---|---|
 | transcript | transcript_info | `transcript_id` (every frame carries the identity prefix: `sample_id`, `task_set`, `epoch`, `transcript_id`, `agent`) |
-| orchestrator turn | token_timeline, phase_turns, turn_tags | `turn` (0-based orchestrator turn; a sub-agent's own turns are not on the axis and carry `turn` NA with a `lane_turn`) |
+| orchestrator turn | token_timeline, phase_turns, turn_tags | `turn` (0-based orchestrator turn; a lane's own turns are not on the axis and carry `turn` NA with a `lane_turn`) |
 | phase | phases, turn_groups | `phase_index`; `phase` is the label |
-| sub-agent span | subagents, lane_activity | `agent_span_id` |
+| lane span (a sub-agent, or another model role's conversation: `lane_kind`) | subagents, lane_activity | `agent_span_id` |
 | judge ballot | phase_turn_votes, subagent_votes, `transect.member_ballots(frame, unit_col)` | (unit, `model`, `roll`) |
 | loader item / batch unit | a custom layer's `turns_frame` | `item`, plus the loader's declared facts (e.g. `turn`) |
 

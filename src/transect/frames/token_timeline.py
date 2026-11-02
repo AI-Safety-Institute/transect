@@ -1,15 +1,16 @@
 """token_timeline_df: one row per model turn in any lane (orchestrator
-turns on the axis, sub-agent and init/scorer calls off it) + token views.
+turns on the axis, lane and init/scorer calls off it) + token views.
 
 Columns (identity prefix explained in common.py):
 
-- turn: 0-based orchestrator turn; NA on a sub-agent's own turns (they
-  are off the axis) and on init/scorer calls.
+- turn: 0-based orchestrator turn; NA on a lane's own turns (they are
+  off the axis) and on init/scorer calls.
 - lane_turn: 0-based ordinal within the turn's own lane; NA on an
   off-axis call, which is in no lane.
 - n_tool_calls: tool calls requested by this turn's assistant message.
-- agent_lane / agent_span_id: the turn's sub-agent span (name / id);
-  None for orchestrator turns.
+- agent_lane / agent_span_id: the turn's lane span (name / id): a
+  sub-agent span, or another model role's conversation span (the
+  subagents frame's lane_kind tells which); None for orchestrator turns.
 - timestamp / completed: the model call's start and completion, ISO
   8601; None when unrecorded.
 - output_tokens / input_tokens / total_tokens /

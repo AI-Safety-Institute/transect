@@ -4,7 +4,7 @@ Columns (identity prefix explained in common.py):
 
 - turn: 0-based orchestrator turn the flush precedes (the first
   post-flush orchestrator turn, in event order), for a flush in any lane.
-- agent_span_id: the sub-agent lane the compaction happened in; None on
+- agent_span_id: the lane the compaction happened in; None on
   the orchestrator.
 - lane_turn: the first post-flush turn of the compacted lane itself
   (token_timeline's lane_turn): equal to turn on the orchestrator, the

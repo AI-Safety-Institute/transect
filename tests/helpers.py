@@ -261,3 +261,77 @@ def phase_turns_frame(bases, phase_index):
             "judge_agreement": [None] * len(bases),
         }
     )
+
+
+def auditor_scaffold(target_tools=False):
+    """An auditor driving a target through tools: both roles' calls in one
+    solver span with no agent-type span anywhere (the inspect_petri
+    shape), the target attempted twice (one trajectory span per attempt),
+    the auditor's own conversation compacted once, and a judge call under
+    the scorers phase. With ``target_tools`` the target calls tools too,
+    so Inspect's timeline leaves its calls beside the auditor's instead of
+    wrapping them as utility helpers."""
+    from inspect_ai.event import CompactionEvent
+    from inspect_ai.model import ChatMessageSystem, ModelUsage
+    from inspect_ai.tool import ToolCall
+
+    auditor = [model_turn(f"auditor {n}") for n in range(3)]
+    target = [model_turn(f"target {n}") for n in range(3)]
+    for n, event in enumerate(auditor):
+        event.role, event.model, event.span_id = "auditor", "m/auditor", "auditor"
+        event.input = [ChatMessageSystem(content="You are the auditor.")]
+        event.output.message.tool_calls = [
+            ToolCall(id=f"call-{n}", function="send_message", arguments={})
+        ]
+    for n, event in enumerate(target):
+        event.role, event.model = "target", "m/target"
+        event.input = [ChatMessageSystem(content="You are a helpful assistant.")]
+        if target_tools:
+            event.output.message.tool_calls = [
+                ToolCall(id=f"target-call-{n}", function="bash", arguments={})
+            ]
+    judge = model_turn("judge")
+    judge.role, judge.model, judge.span_id = "judge", "m/judge", "judge"
+    target[0].span_id = target[1].span_id = "attempt-1"
+    target[2].span_id = "attempt-2"
+    for event in (*auditor, *target):
+        event.output.usage = ModelUsage(
+            input_tokens=1000, output_tokens=10, total_tokens=1010
+        )
+    events = [
+        SpanBeginEvent(id="solver", parent_id=None, type="solver", name="rollout"),
+        SpanBeginEvent(
+            id="auditor", parent_id="solver", type="auditor", name="auditor"
+        ),
+        SpanBeginEvent(id="target", parent_id="solver", type="target", name="target"),
+        auditor[0],
+        SpanBeginEvent(
+            id="attempt-1", parent_id="target", type="trajectory", name="trajectory"
+        ),
+        target[0],
+        auditor[1],
+        target[1],
+        SpanEndEvent(id="attempt-1"),
+        CompactionEvent(
+            type="summary",
+            source="inspect",
+            tokens_before=5000,
+            tokens_after=500,
+            role="auditor",
+        ),
+        auditor[2],
+        SpanBeginEvent(
+            id="attempt-2", parent_id="target", type="trajectory", name="trajectory"
+        ),
+        target[2],
+        SpanEndEvent(id="attempt-2"),
+        SpanEndEvent(id="target"),
+        SpanEndEvent(id="auditor"),
+        SpanEndEvent(id="solver"),
+        SpanBeginEvent(id="scorers", parent_id=None, type="scorers", name="scoring"),
+        SpanBeginEvent(id="judge", parent_id="scorers", type="scorer", name="judge"),
+        judge,
+        SpanEndEvent(id="judge"),
+        SpanEndEvent(id="scorers"),
+    ]
+    return StubTranscript(events)

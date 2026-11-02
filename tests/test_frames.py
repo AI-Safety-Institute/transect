@@ -756,6 +756,7 @@ def test_a_skewed_orchestrator_clock_falls_back_to_event_order():
             {
                 "agent_span_id": "A",
                 "agent_lane": "a",
+                "lane_kind": "subagent",
                 "spawn_turn": 1,
                 "first_at": "2026-01-01T10:00:10",
                 "last_at": "2026-01-01T10:00:20",
@@ -849,3 +850,12 @@ def test_subagent_labels_join_their_definitions_after_reload(demo_log, tmp_path)
         joined = frames.subagents.merge(definitions, on=["transcript_id", "label"])
         assert len(joined) == len(frames.subagents) > 0
         assert set(joined.description) == {"Reads"}
+
+
+def test_subagents_frame_carries_the_lane_kind(demo_results):
+    """Every span row says what kind of lane it is; the demo's handoff
+    spans are sub-agents, and the empty frame still has the column."""
+    subagents = demo_results.frames()["subagents"]
+    assert subagents.lane_kind.tolist() == ["subagent"] * 3
+    assert list(subagents.lane_kind.cat.categories) == ["subagent", "role"]
+    assert "lane_kind" in subagents_df(pd.DataFrame()).columns

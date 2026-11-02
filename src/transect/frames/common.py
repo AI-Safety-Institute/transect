@@ -22,6 +22,7 @@ from typing import get_args
 import pandas as pd
 
 from transect.scanners.cohort import CallStatus, LabelSource, VerifierReview
+from transect.scanners.helpers import LaneKind
 from transect.scanners.phases_common import TurnBasis
 
 SCHEMA_VERSION = "0.3"
@@ -47,6 +48,7 @@ JUDGE_COLS = (
 LABEL_SOURCES = list(get_args(LabelSource))
 BASES = list(get_args(TurnBasis))
 CALL_STATUSES = list(get_args(CallStatus))
+LANE_KINDS = list(get_args(LaneKind))
 
 # The flattened VerifierReview columns (verifier_model is excluded)
 _REVIEW_RENAMES = {"trigger": "verifier_trigger", "status": "verifier_status"}
