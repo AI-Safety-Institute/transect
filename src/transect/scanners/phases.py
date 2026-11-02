@@ -190,7 +190,9 @@ def decision_phases(
           - ``min_agreement``: minimum per-turn vote agreement over
             turns carrying one (voting regimes); None solo.
           - ``confidence_spread``: 95%-CI half-width of the same
-            per-turn confidences; 0.0 after an overturn.
+            final per-turn confidences, after verifier updates and
+            display merging. A uniform overturn has zero spread;
+            merging it with other confidences can produce nonzero spread.
           - ``judge_agreement``: mean per-turn vote agreement
             (voting regimes); None solo.
           - ``confidence_source``: whose confidence the phase

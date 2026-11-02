@@ -179,7 +179,7 @@ class StitchedPhase(BaseModel):
         default=0.0,
         description=(
             "95%-CI half-width of the phase's per-turn confidences "
-            "0.0 after a verifier overturn."
+            "after any verifier updates and display merging."
         ),
     )
     judge_agreement: float | None = Field(
