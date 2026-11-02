@@ -65,8 +65,11 @@ class Table:
 
 @dataclass(frozen=True)
 class Markdown:
-    """Markdown prose (HTML escaped, headings demoted); ``text`` may
-    be a string or a callable of the section context."""
+    """Markdown prose; ``text`` may be a string or a callable of the
+    section context. The text is markup, interpolated transcript
+    strings included: raw HTML is escaped, an image renders as its
+    alt text (the page must never fetch a transcript-chosen URL), and
+    headings are demoted below the section title."""
 
     text: str | Callable[[Any], str]
 

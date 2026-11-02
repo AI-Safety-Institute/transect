@@ -67,6 +67,17 @@ _TIP_RENAMES = {"label": "classification"}
 # empty-string mechanism as charts._PHASE_FILTER_CLEAR_LABEL)
 _FILTER_CLEAR_LABEL = "(all)"
 
+# block text may interpolate transcript-derived strings, so raw HTML is
+# escaped and an image collapses to its escaped alt text: an <img>
+# would fetch a transcript-chosen URL the moment the report opens
+_MARKDOWN = MarkdownIt("commonmark", {"html": False})
+_MARKDOWN.add_render_rule(
+    "image",
+    lambda self, tokens, idx, options, env: str(
+        escape(self.renderInlineAsText(tokens[idx].children or [], options, env))
+    ),
+)
+
 
 def layer_section(
     page: HtmlPage,
@@ -432,11 +443,11 @@ def _event_marks(block: b.EventMarks, frame: pd.DataFrame, ctx: SectionContext):
 
 
 def _markdown(block: b.Markdown, ctx: SectionContext) -> Markup:
-    """Markdown -> HTML: raw HTML escaped (html=False - the text may
-    interpolate transcript-derived strings), user headings demoted
-    below the section title."""
+    """Markdown -> HTML through `_MARKDOWN` (raw HTML escaped, images
+    reduced to alt text), user headings demoted below the section
+    title."""
     text = block.text(ctx) if callable(block.text) else block.text
-    html = MarkdownIt("commonmark", {"html": False}).render(str(text))
+    html = _MARKDOWN.render(str(text))
     for level in (4, 3, 2, 1):  # h1..h4 -> h5..h6 (capped)
         demoted = min(level + 4, 6)
         html = html.replace(f"<h{level}>", f"<h{demoted}>").replace(
