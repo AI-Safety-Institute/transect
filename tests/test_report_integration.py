@@ -840,15 +840,29 @@ def test_lane_group_places_each_lane(
     ("score", "expected"),
     [
         ("C", "Scored C."),
+        ('{"concerning": 2}', "Scored concerning 2."),
         ('{"concerning": 2, "admirable": 8}', "Scored on 2 dimensions (Run summary)."),
         (None, None),
     ],
-    ids=["scalar", "dimensions", "unscored"],
+    ids=["scalar", "one dimension", "dimensions", "unscored"],
 )
-def test_the_intro_line_summarises_a_multi_dimension_score(score, expected):
-    """A judge that scores many dimensions is summarised by count; the
-    dimensions themselves stay in the Run summary rows."""
+def test_the_intro_line_states_a_score_or_counts_its_dimensions(score, expected):
+    """A scalar or single-dimension score reads inline; many dimensions
+    are counted and listed in the Run summary rows."""
     info = pd.DataFrame([{"model": "m", "task_name": "t", "score": score}])
     line = str(sections.run_intro_line(info))
     assert (expected in line) if expected else ("cored" not in line)
-    assert "concerning" not in line
+    assert "admirable" not in line
+
+
+def test_the_run_summary_lists_each_score_dimension():
+    """A dict score becomes one Run summary row per dimension, in name
+    order, in place of the JSON blob."""
+    info = pd.DataFrame(
+        [{"score": '{"concerning": 2, "admirable": 8}', "message_count": 3}],
+        dtype=object,
+    )
+    text = html_mod.unescape(str(sections.eval_setup_blocks(info, empty_flushes())))
+    assert "score · admirable</strong>: 8" in text
+    assert "score · concerning</strong>: 2" in text
+    assert '{"' not in text[text.index("Run summary") :]
