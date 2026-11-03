@@ -35,6 +35,7 @@ transcripts/
 !tests/fixtures/**/*.eval
 !tests/fixtures/**/*.jsonl
 !examples/logs/house_price_demo.eval
+!examples/petri_logs/petri_demo.eval
 
 # Local planning notes (specs, plans, ledgers) - never committed
 docs/superpowers/
