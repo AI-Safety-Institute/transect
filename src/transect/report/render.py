@@ -474,9 +474,6 @@ def _subagent_section(
         if pd.notna(row.label)
     }
 
-    # the honesty cases live in `sections.lane_group`: a role lane is
-    # never a classification outcome, and a sub-agent lane is its label,
-    # else "unclassified" (classifier ran) or "sub-agents" (none ran)
     role_ids = sections.role_lane_ids(subagents)
 
     def _label(span_id) -> str:

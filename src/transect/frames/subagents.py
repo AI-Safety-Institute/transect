@@ -279,8 +279,7 @@ def _span_turns(timeline_results: pd.DataFrame | None) -> pd.DataFrame | None:
         for record in value.get("spans") or []:
             if "lane_kind" not in record:
                 raise KeyError(
-                    "token_timeline span record has no lane_kind: the scan "
-                    "predates lane kinds (transect 0.5.0); run a new scan"
+                    "token_timeline span record has no lane_kind; run a new scan"
                 )
             end_recorded = bool(record.get("end_recorded"))
             started_at = record.get("first_at")

@@ -136,8 +136,9 @@ def test_utility_spans_are_neither_recorded_nor_counted(monkeypatch):
     ]
     real = helpers.subagent_span_begins
 
-    def only_eda(transcript, main, **kwargs):
-        return [b for b in real(transcript, main, **kwargs) if b.id == "C"]
+    def only_eda(transcript, main):
+        begins, firsts = real(transcript, main)
+        return [b for b in begins if b.id == "C"], firsts
 
     monkeypatch.setattr(helpers, "subagent_span_begins", only_eda)
     value = run_scan(token_timeline(), events).value
@@ -729,7 +730,7 @@ def test_lane_kind_of_a_span_that_is_no_lane_raises():
 
 def test_a_sub_agents_first_model_skips_inspects_utility_wrapped_calls():
     """A sub-agent whose first call is a cache-priming warmup hands its
-    real first call to the task-text readers, as the timeline walk did."""
+    real first call to the task-text readers."""
     from inspect_ai.model import ChatMessageUser, GenerateConfig
 
     warmup = model_turn("w", input=[ChatMessageUser(content="hi")])

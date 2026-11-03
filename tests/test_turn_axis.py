@@ -172,7 +172,8 @@ def test_a_wrapper_span_around_the_orchestrator_is_not_a_sub_agent():
     ]
     transcript = StubTranscript(events)
     assert main_span(transcript).id == "inner"
-    assert subagent_span_begins(transcript, main_span(transcript)) == []
+    begins, _ = subagent_span_begins(transcript, main_span(transcript))
+    assert begins == []
     assert [t for t, _, _ in orchestrator_turns(transcript)] == [0, 1]
 
 

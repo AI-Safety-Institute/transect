@@ -247,9 +247,9 @@ def _delegated_rollup(
     phases: pd.DataFrame, subagents: pd.DataFrame | None
 ) -> tuple[pd.Series, pd.Series]:
     """Per-phase delegated spend and spawn count: the sub-agent lanes
-    (``lane_kind`` subagent; another role's conversation lanes are no
-    delegation) whose ``spawn_turn`` lies in the phase's range. Spend is NA when no
-    member span carries usage (tool-only lanes), never 0. Both are NA
+    (``lane_kind`` subagent: another role's conversation is no
+    delegation) whose ``spawn_turn`` lies in the phase's range. Spend is
+    NA when no member span carries usage (tool-only lanes), never 0. Both are NA
     only without the input; an empty frame from a complete structural
     scan is a known count of zero."""
     if subagents is None or not len(subagents):
