@@ -378,7 +378,7 @@ def test_the_report_names_roles_lists_lane_spawns_and_spends_by_role(petri_resul
     }
     document = render_report(petri_results)
     assert "Sub-agent / lane activity" in document
-    assert "2 lane(s) carry the target model role's conversations" in document
+    assert "2 lane(s) carry the conversations of model role target" in document
     assert "(auditor) turns" in document
     assert "lanes are grouped by model role" in document
     assert "2 lane spawn(s)" in document

@@ -673,7 +673,7 @@ def subagent_explanation() -> Markup:
     return _notes.subagent_explanation()
 
 
-UNNAMED_ROLE = "other model role"
+UNNAMED_ROLE = "unnamed"
 
 
 def lane_group(

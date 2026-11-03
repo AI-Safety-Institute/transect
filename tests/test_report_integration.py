@@ -795,11 +795,11 @@ def _lane_rows(kinds):
         (
             ["role", "role", "subagent"],
             False,
-            "2 lane(s) carry the target model role's conversations",
+            "2 lane(s) carry the conversations of model role target",
             "mismatch",
         ),
         (["subagent"], False, "one neutral sub-agents group", "model role"),
-        (["role", "role"], True, "2 lane(s) carry the target", "mismatch"),
+        (["role", "role"], True, "2 lane(s) carry the conversations", "mismatch"),
         (["role", "subagent"], True, "mismatch", "sub-agent span(s)"),
     ],
     ids=[
