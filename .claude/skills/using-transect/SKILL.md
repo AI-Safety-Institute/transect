@@ -171,7 +171,8 @@ Key arguments and what they mean:
 
 A Petri audit (`transcript_info.eval_family == "petri"`, from the recorded
 auditor and target model roles) puts the auditor on the turn axis, so the
-phases and cards describe the auditor; the Target conversation section
+phases and cards describe the auditor, whose digests carry the target's
+replies as `[TARGET]` context for the judge; the Target conversation section
 shows the target's branch tree and surviving conversation, grouped by the
 auditor phase that drove each reply, with discarded attempts folded at
 their fork.
