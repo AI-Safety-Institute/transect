@@ -593,6 +593,13 @@ def token_intro(derived: bool, coincide: bool = False) -> Markup:
     return _notes.token_intro_derived(coincide)
 
 
+def token_role_note(role: str | None) -> Markup:
+    """The Petri note under the token telemetry intro: the chart is the
+    orchestrator's (``role``, the auditor) stream, the target's calls
+    are lane turns counted elsewhere."""
+    return _notes.token_role_note(role)
+
+
 def event_legend(
     has_context_chart: bool, flushes: bool = True, threshold: int | None = None
 ) -> Markup:

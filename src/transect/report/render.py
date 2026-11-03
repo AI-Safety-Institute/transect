@@ -289,6 +289,8 @@ def render_report(
                 derived, coincide=derived and charts.token_measures_coincide(main)
             )
         ]
+        if target is not None:
+            token_blocks.append(sections.token_role_note(_axis_role(main)))
         threshold = sections.compaction_threshold(my_info)
         components = charts.token_stack(
             main, my_flushes, threshold.tokens if threshold is not None else None

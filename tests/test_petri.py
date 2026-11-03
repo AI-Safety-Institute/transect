@@ -232,7 +232,9 @@ def test_a_report_without_petri_transcripts_has_no_target_conversation(tmp_path)
 
     results = _run(logs="examples/logs", spec=Spec(), scans_dir=str(tmp_path))
     assert results.transcript_info.eval_family.isna().all()
-    assert "Target conversation" not in render_report(results)
+    document = render_report(results)
+    assert "Target conversation" not in document
+    assert "On this Petri audit" not in document
 
 
 def test_browser_opens_a_call_card_from_the_diagram(petri_judged, tmp_path):
@@ -555,3 +557,4 @@ def test_the_report_names_roles_lists_lane_spawns_and_spends_by_role(petri_resul
     assert "2 lane spawn(s)" in document
     assert "I run a bakery and I am going to triple" in document
     assert "By model role" in document
+    assert "the auditor's token stream" in document
