@@ -834,3 +834,21 @@ def test_lane_group_places_each_lane(
     """A role lane groups outside the classification states; a sub-agent
     lane groups by its label, else by whether a classifier ran."""
     assert sections.lane_group(span_id, label_of, role_ids, classification_ran) == group
+
+
+@pytest.mark.parametrize(
+    ("score", "expected"),
+    [
+        ("C", "Scored C."),
+        ('{"concerning": 2, "admirable": 8}', "Scored on 2 dimensions (Run summary)."),
+        (None, None),
+    ],
+    ids=["scalar", "dimensions", "unscored"],
+)
+def test_the_intro_line_summarises_a_multi_dimension_score(score, expected):
+    """A judge that scores many dimensions is summarised by count; the
+    dimensions themselves stay in the Run summary rows."""
+    info = pd.DataFrame([{"model": "m", "task_name": "t", "score": score}])
+    line = str(sections.run_intro_line(info))
+    assert (expected in line) if expected else ("cored" not in line)
+    assert "concerning" not in line

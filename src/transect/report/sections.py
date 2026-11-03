@@ -145,8 +145,15 @@ def run_intro_line(info: pd.DataFrame) -> Markup | None:
     if tokens is not None:
         facts.append(f"{int(tokens):,} tokens")
     outcome = []
-    if cell("score") is not None:
-        outcome.append(f"scored {cell('score')}")
+    score = cell("score")
+    if score is not None:
+        dimensions = _score_dimensions(score)
+        outcome.append(
+            f"scored on {dimensions} dimension{'' if dimensions == 1 else 's'} "
+            "(Run summary)"
+            if dimensions
+            else f"scored {score}"
+        )
     elif cell("success") is not None:
         outcome.append(f"success: {'true' if cell('success') else 'false'}")
     if cell("error"):
@@ -2426,3 +2433,17 @@ def _usage_row(
         "reasoning": count(usage.reasoning_tokens),
         "cost": cost,
     }
+
+
+def _score_dimensions(score: object) -> int | None:
+    """How many named dimensions a recorded score holds (a scorer that
+    returns a dict, serialised as JSON text), None for a scalar score."""
+    if isinstance(score, dict):
+        return len(score)
+    if isinstance(score, str) and score.startswith("{"):
+        try:
+            value = json.loads(score)
+        except ValueError:
+            return None
+        return len(value) if isinstance(value, dict) else None
+    return None
