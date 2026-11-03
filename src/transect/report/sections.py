@@ -148,12 +148,14 @@ def run_intro_line(info: pd.DataFrame) -> Markup | None:
     score = cell("score")
     if score is not None:
         dimensions = _score_dimensions(score)
-        outcome.append(
-            f"scored on {dimensions} dimension{'' if dimensions == 1 else 's'} "
-            "(Run summary)"
-            if dimensions
-            else f"scored {score}"
-        )
+        if dimensions is None:
+            outcome.append(f"scored {score}")
+        elif len(dimensions) == 1:
+            outcome.append(
+                f"scored {' '.join(map(str, next(iter(dimensions.items()))))}"
+            )
+        else:
+            outcome.append(f"scored on {len(dimensions)} dimensions (Run summary)")
     elif cell("success") is not None:
         outcome.append(f"success: {'true' if cell('success') else 'false'}")
     if cell("error"):
@@ -361,7 +363,7 @@ def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
             None,
         ),
         ("total tokens", found(irow, "total_tokens"), None),
-        ("score", found(irow, "score"), None),
+        *_score_rows(cell(irow, "score"), found(irow, "score")),
         (
             "success",
             ("true" if success else "false") if success is not None else _NOT_FOUND,
@@ -2435,15 +2437,27 @@ def _usage_row(
     }
 
 
-def _score_dimensions(score: object) -> int | None:
-    """How many named dimensions a recorded score holds (a scorer that
-    returns a dict, serialised as JSON text), None for a scalar score."""
+def _score_dimensions(score: object) -> dict[str, Any] | None:
+    """The named dimensions of a recorded score (a scorer that returns a
+    dict, serialised as JSON text), None for a scalar score."""
     if isinstance(score, dict):
-        return len(score)
+        return score
     if isinstance(score, str) and score.startswith("{"):
         try:
             value = json.loads(score)
         except ValueError:
             return None
-        return len(value) if isinstance(value, dict) else None
+        return value if isinstance(value, dict) else None
     return None
+
+
+def _score_rows(score: object, display: str) -> list[tuple[str, str, None]]:
+    """The Run summary's score rows: one per dimension of a dict score,
+    in name order, else the single score row."""
+    dimensions = _score_dimensions(score)
+    if dimensions is None:
+        return [("score", display, None)]
+    return [
+        (f"score · {name}", str(value), None)
+        for name, value in sorted(dimensions.items())
+    ]
