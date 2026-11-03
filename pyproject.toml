@@ -24,7 +24,7 @@ dev = [
     "pyright>=1.1.414",
     "pre-commit>=4.6.2",
     "types-pyyaml>=6.0.12.20260906",
-    "anthropic>=1.5.0",
+    "anthropic>=2.0.0",
     "openai>=3.13.0",
 ]
 ui-test = ["playwright>=1.62.0"]
