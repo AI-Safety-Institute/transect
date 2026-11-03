@@ -84,6 +84,12 @@ _DELEGATION_TIE_BREAK = (
     "the phase more than half the tasks serve; else '{none}' (a mixed "
     "hand-off fits no single phase)."
 )
+_TARGET_RULE = (
+    "Each [TARGET] part is a reply the target model under audit gave "
+    "within that turn; the agent is the auditor. Label the auditor's own "
+    "move, reading the reply as context for it alongside the agent's "
+    "text and calls."
+)
 _MARKER_RULES = (
     "[THINKING] text is the agent's recorded reasoning. It can show what "
     "the agent was considering, but reasoning is not always faithful to "
@@ -270,18 +276,23 @@ def reserved_phase_labels(spec: Spec) -> set[str]:
     return {_NONE_PHASE.label} & {p.label for p in spec.phases}
 
 
-def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
+def label_rules(
+    phase_defs: Sequence[Phase], ops_name: str | None, target: bool = False
+) -> list[str]:
     """The labelling rules the phase judge and its verifier share, in
     order and unnumbered: the ops rule (only with an operational
     bucket; worded from the author's description unless the bucket is
     the reserved default or undescribed), the delegation rule with its
-    tie-break for a turn whose tasks serve several phases, and the
-    digest-marker rules. The judge adds its segmentation and confidence
-    rules around these; the verifier shows exactly these.
+    tie-break for a turn whose tasks serve several phases, the
+    digest-marker rules, and (with ``target``) the [TARGET] rule for
+    digests that carry a Petri target's replies. The judge adds its
+    segmentation and confidence rules around these; the verifier shows
+    exactly these.
 
     Args:
         phase_defs: The resolved phases (`resolve_phases`).
         ops_name: The operational bucket's label, None without one.
+        target: Whether the digests carry [TARGET] parts.
     """
     rules = []
     delegation = _DELEGATION_RULE_NO_OPS
@@ -301,6 +312,8 @@ def label_rules(phase_defs: Sequence[Phase], ops_name: str | None) -> list[str]:
         + _DELEGATION_TIE_BREAK.format(none=_NONE_PHASE.label)
     )
     rules.extend(_MARKER_RULES)
+    if target:
+        rules.append(_TARGET_RULE)
     return rules
 
 

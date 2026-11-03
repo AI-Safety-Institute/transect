@@ -263,6 +263,27 @@ def phase_turns_frame(bases, phase_index):
     )
 
 
+def petri_scaffold(roles=True, reply=None, reply_tools=()):
+    """`auditor_scaffold` as a Petri audit: the model roles recorded (or
+    not, with ``roles`` off), every target reply's text set to ``reply``
+    when given and its tool calls to ``reply_tools``."""
+    from inspect_ai.tool import ToolCall
+
+    transcript = auditor_scaffold()
+    if roles:
+        transcript.metadata = {"model_roles": {"auditor": "a", "target": "t"}}
+    for event in transcript.events:
+        if getattr(event, "role", None) != "target":
+            continue
+        if reply is not None:
+            event.output.message.content = reply
+        event.output.message.tool_calls = [
+            ToolCall(id=f"{name}-{n}", function=name, arguments={})
+            for n, name in enumerate(reply_tools)
+        ]
+    return transcript
+
+
 def auditor_scaffold(target_tools=False):
     """An auditor driving a target through tools: both roles' calls in one
     solver span with no agent-type span anywhere (the inspect_petri

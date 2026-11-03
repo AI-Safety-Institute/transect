@@ -11,6 +11,8 @@ from helpers import (
     model_turn,
     narrate_answer,
     narrative,
+    petri_scaffold,
+    run_item,
     run_scan,
     scripted_judge,
     seg,
@@ -551,3 +553,54 @@ def test_verify_sample_outside_the_unit_interval_is_rejected():
     """A verify_sample outside [0, 1] raises at scanner build time."""
     with pytest.raises(ValueError, match="verify_sample"):
         decision_phases(PHASES_SPEC, scripted_judge(), verify=True, verify_sample=-0.1)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda target: system_prompt(PHASES_SPEC, target=target),
+        lambda target: verify_system_prompt(PHASES_SPEC, "", target=target),
+    ],
+    ids=["judge", "verifier"],
+)
+def test_the_target_rule_renders_only_for_digests_with_target_replies(build):
+    """The [TARGET] marker rule joins the shared label rules only when the
+    digests carry a target's replies, so every other prompt is unchanged."""
+    assert "[TARGET]" not in build(False)
+    assert "[TARGET]" in build(True)
+
+
+@pytest.mark.parametrize("roles", [True, False], ids=["petri", "no model roles"])
+def test_the_judge_of_a_petri_audit_reads_the_target_rule_and_replies(roles):
+    """A Petri transcript's judge gets the [TARGET] rule in its system
+    prompt and the replies in its digest lines, and its verifier the same
+    rule; any other transcript's judge and verifier get neither."""
+    seen = []
+
+    def judge(input, tools, tool_choice, config):
+        seen.append(input)
+        if (
+            "verdicts"
+            in next(t for t in tools if t.name == "answer").parameters.properties
+        ):
+            return verify_answer(
+                {
+                    "phase_index": 0,
+                    "phase": "experiment",
+                    "confidence": 0.9,
+                    "explanation": "ok",
+                }
+            )
+        return seg_answer(seg(0, 2, "experiment", confidence=0.3))
+
+    scan = decision_phases(
+        PHASES_SPEC,
+        get_model(MODEL, custom_outputs=judge, memoize=False),
+        verify=True,
+        verify_sample=1.0,
+        narrate=False,
+    )
+    run_item(scan, petri_scaffold(roles))
+    assert len({prompt[0].text for prompt in seen}) == 2  # judge and verifier
+    assert all(("[TARGET]" in prompt[0].text) is roles for prompt in seen)
+    assert ("[TARGET] target 0" in seen[0][-1].text) is roles

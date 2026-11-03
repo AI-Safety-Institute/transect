@@ -95,7 +95,8 @@ The pieces, and the rules that make them work:
   main-lane turn as `decision_phases` shows it to its judge: reasoning
   blocks behind `[THINKING]` when the source records them, the turn's
   text, each tool call with its arguments behind `[CALL]` (and its
-  output behind `[RESULT]` / `[ERROR]` when switched on), and
+  output behind `[RESULT]` / `[ERROR]` when switched on), on a Petri
+  audit the target replies the turn produced behind `[TARGET]`, and
   sub-agent spawn tasks behind `[DELEGATES]`; pass the same
   `DigestSettings` as `digest=` to both the loader and `transect()`
   to keep the lines identical - the right unit for a second

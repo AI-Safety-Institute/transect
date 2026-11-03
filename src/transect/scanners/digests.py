@@ -14,8 +14,10 @@ from inspect_ai.model import ChatMessageAssistant
 from inspect_ai.tool import ToolCall
 from pydantic import BaseModel, Field
 
+from transect.petri import is_petri
 from transect.scanners.helpers import (
     Lanes,
+    is_model_turn,
     message_reasoning,
     span_task_text,
     strip_subagent_scaffold,
@@ -25,6 +27,7 @@ from transect.scanners.helpers import (
 _OPENCLAW_FAILED_TURN_PREFIX = "[assistant turn failed"  # placeholder assistant turn
 # inspect_ai's handoff tools answer with this boilerplate, not with output
 _HANDOFF_RESULT_PREFIX = "Successfully transferred to"
+_TARGET_TEXT_CHARS = 1000  # each target reply of a Petri audit
 
 # recorded tool outputs: tool events by call id with their event position,
 # and tool messages by call id (see _tool_outputs)
@@ -68,6 +71,7 @@ class Digest(BaseModel):
     reasoning: str = ""  # the turn's reasoning-block text, when recorded
     tool_calls: list[ToolDigest] = []
     delegations: list[str] = []
+    target_replies: list[str] = []  # a Petri target's replies this turn produced
     event_id: str | None = None  # source model event uuid (viewer anchor)
 
 
@@ -78,7 +82,12 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     (`helpers.orchestrator_turns`, the turn axis): a turn is eligible
     when it carries visible text, reasoning-block content (when the
     source records it), a delegation, or (with
-    ``digest.tool_only_turns``) a tool call.
+    ``digest.tool_only_turns``) a tool call. On a Petri audit
+    (`transect.petri.is_petri`) an auditor turn's digest also carries
+    the target replies its calls produced: the role lanes' model turns
+    before the next auditor turn, each capped at 1000 characters. The
+    replies ride their turn's eligibility: a turn with nothing to judge
+    yields no digest, and the replies it produced are shown nowhere.
 
     Args:
         transcript: The transcript to digest.
@@ -91,6 +100,8 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     settings = resolve_digest(digest)
     text_chars = settings.text_chars
     lanes = Lanes(transcript)
+    metadata = getattr(transcript, "metadata", None) or {}
+    petri = is_petri(metadata.get("model_roles"))
     outputs = _tool_outputs(transcript) if settings.tool_result_chars else None
     # the calls that spawned a sub-agent span: their tool event carries
     # the span's id (OpenClaw); span-less sources show the spawn as the
@@ -148,6 +159,8 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
             for call in calls
         ]
         record.delegations.extend(delegations)
+        if petri:
+            record.target_replies = _target_replies(lanes, lanes.position(event), until)
         record.event_id = getattr(event, "uuid", None)
 
     # Sub-agent-span delegations, snapped to the nearest digest-eligible
@@ -169,8 +182,9 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
 
 def digest_line(d: Digest) -> str:
     """Render one digest as a single prompt line: index, reasoning
-    behind a [THINKING] marker, text, the tool calls, then each
-    delegation behind a [DELEGATES] marker.
+    behind a [THINKING] marker, text, the tool calls, each target
+    reply behind a [TARGET] marker, then each delegation behind a
+    [DELEGATES] marker.
 
     Tool calls render as ``[CALL] name(arguments)`` followed by
     ``[RESULT]`` or ``[ERROR]`` output when the digest carries
@@ -184,6 +198,8 @@ def digest_line(d: Digest) -> str:
         parts.extend(_call_part(c) for c in d.tool_calls)
     elif d.tool_calls:
         parts.append(f"(tools: {', '.join(c.function for c in d.tool_calls)})")
+    for reply in d.target_replies:
+        parts.append(f"[TARGET] {reply}".replace("\n", " "))
     for goal in d.delegations:
         if goal:
             parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
@@ -274,6 +290,28 @@ def _tool_digest(
         result=clip(result, settings.tool_result_chars),
         error=error,
     )
+
+
+def _target_replies(lanes: Lanes, start: int, end: int) -> list[str]:
+    """The replies the target produced within one auditor turn: the
+    role lanes' model turns between event positions ``start`` and
+    ``end``, each as its text; tool calls are listed, by name, only for
+    a text-less reply; an empty reply is left out."""
+    replies: list[str] = []
+    for event in lanes.events[start + 1 : end]:
+        if not is_model_turn(event):
+            continue
+        lane = lanes.lane_of(event)
+        if lane is None or lanes.lane_kind(lane.id) != "role":
+            continue
+        message = turn_message(event)
+        text = (message.text or "").strip() if message else ""
+        calls = message.tool_calls if message else None
+        if not text and calls:
+            text = f"(tools: {', '.join(call.function for call in calls)})"
+        if text:
+            replies.append(clip(text, _TARGET_TEXT_CHARS))
+    return replies
 
 
 def _tool_outputs(transcript: Any) -> _ToolOutputs:

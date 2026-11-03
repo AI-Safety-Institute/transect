@@ -137,7 +137,8 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
 - **Turn digests**: what the phase judges read - one line per
   orchestrator turn with content, carrying its reasoning, text, tool
   calls and sub-agent tasks, each part capped by a `DigestSettings`
-  passed as `digest=` to `transect()`.
+  passed as `digest=` to `transect()` (and, on a Petri audit, the
+  target's replies, capped at 1000 characters).
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.
@@ -264,8 +265,10 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
 
 An [inspect_petri](https://meridianlabs-ai.github.io/inspect_petri/) log
 is recognised from its recorded model roles (`transcript_info.eval_family`
-is `petri`). The auditor's turns are the orchestrator axis, so the phases,
-digests and cards describe the auditor; each target trajectory is a lane.
+is `petri`). The auditor's turns are the orchestrator axis, so the phases
+and cards describe the auditor; each target trajectory is a lane, and the
+replies an auditor turn produced join that turn's digest as `[TARGET]`
+context, so the phase judge reads both sides of the audit.
 The report adds a **Target conversation** section: the stored branch tree
 as a diagram, and the target's replies as cards in the surviving
 conversation's order, grouped by the auditor phase that drove them, with
