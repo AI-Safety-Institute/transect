@@ -255,8 +255,9 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
   an auditor) grouped under its role; each lane's opening message is listed.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
-- **Target conversation** (Petri audits): the target's branch tree and surviving
-  conversation, each call under the auditor phase that drove it.
+- **Target conversation** (Petri audits): the target's branch tree with its
+  phase segments; the exchanges sit in the phase cards of the auditor turns
+  that drove them.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
 - **Custom layers**: user layers' own sections; `section_order` rearranges the report.
 - **Reliability & provenance audit**: per judged surface, how every label was produced.
@@ -270,12 +271,14 @@ and cards describe the auditor; each target trajectory is a lane, and the
 replies an auditor turn produced join that turn's digest as `[TARGET]`
 context, so the phase judge reads both sides of the audit.
 The report adds a **Target conversation** section: the stored branch tree
-as a diagram, and the target's replies as cards in the surviving
-conversation's order, grouped by the auditor phase that drove them, with
-the attempts a rollback discarded folded at their fork. Replies are
-capped like excerpts and link to the Scout viewer; `petri_full_text=True`
-renders them whole. `examples/transect_petri.py` runs the shipped
-scripted audit.
+as a diagram, one row per trajectory with the target calls as blocks,
+the discarded ones grey, and a coloured segment per auditor phase. Each
+phase card hosts the target exchanges its auditor turns drove (what the
+auditor sent, the target's reply, a marker where a rollback opened a
+trajectory); a run without phase cards lists the exchanges in the
+section. Replies are capped like excerpts and link to the Scout viewer;
+`petri_full_text=True` renders them whole. `examples/transect_petri.py`
+runs the shipped scripted audit.
 
 ### Building your own UI
 

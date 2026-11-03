@@ -71,7 +71,7 @@ document.addEventListener("DOMContentLoaded", _transectOpenPhaseFromHash);
 function _transectCardSort(containerId, by) {
   var c = document.getElementById(containerId);
   if (!c) return;
-  var cards = Array.prototype.slice.call(c.querySelectorAll(".event"));
+  var cards = Array.prototype.slice.call(c.querySelectorAll(":scope > .event"));
   // Always re-sort from data-order (this card's render-time,
   // chronological/phase_index position) first, regardless of the DOM's
   // current order - so repeated calls are idempotent (a "chronological"
@@ -129,7 +129,7 @@ function _transectCardFilter(containerId) {
   var wantIntv = !!(intvEl && intvEl.checked);
   var wantSubag = !!(subagEl && subagEl.checked);
   var confBand = confEl ? confEl.value : "";
-  var cards = c.querySelectorAll(".event");
+  var cards = c.querySelectorAll(":scope > .event");
   var shown = 0;
   cards.forEach(function(card) {
     var okLabel = checks.length === 0 || !!allowed[card.getAttribute("data-label")];

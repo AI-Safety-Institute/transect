@@ -148,9 +148,17 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-connector {{ fill: none; stroke: var(--transect-color-border);
   stroke-width: 1.5; }}
 .petri-fork {{ fill: #fff; stroke: var(--transect-color-link); stroke-width: 1.5; }}
+.petri-start {{ fill: #fff; stroke: var(--transect-color-muted); stroke-width: 1.5; }}
+.petri-segment {{ stroke-width: 4; stroke-linecap: butt; }}
+.petri-segment-label {{ fill: var(--transect-color-muted); font-size: 0.62rem; }}
 .petri-call {{ fill: #8896a2; }}
-.petri-discarded {{ opacity: 0.35; }}
+.petri-discarded {{ fill: #c3c9cf; }}
 .petri-call-label {{ fill: #fff; pointer-events: none; }}
+.petri-axis {{ fill: var(--transect-color-muted); font-size: 0.68rem; }}
+.petri-discarded-card > summary {{ color: var(--transect-color-muted); }}
+.petri-rollback, .petri-prompt {{ border-left: 3px solid var(--transect-color-border);
+  padding-left: 0.5rem; }}
+.petri-rollback {{ margin: 0.5rem 0; }}
 .petri-diagram a:hover rect, .petri-diagram a:focus rect {{
   stroke: var(--transect-color-accent); stroke-width: 2; }}
 .petri-full {{ white-space: pre-wrap; }}

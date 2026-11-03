@@ -167,15 +167,19 @@ scanner change take effect; run a new scan and retain both results for compariso
   The auditor is the orchestrator and each target trajectory a role
   lane, so every judged surface describes the auditor, with the
   target's replies as context in each auditor turn's digest. The report's
-  Target conversation section (`report/petri.py`) reads the target's
-  calls, the stored `target` branch timeline and the final message
-  list at render time through `petri.conversation.target_conversation`:
-  branches and fork points come from the timeline's `branched_from`
-  anchors, the surviving path from the last target reply in the
-  messages, rollbacks from the tool call preceding each branch event.
-  A missing timeline or endpoint is stated, never inferred. Replies
-  render capped unless `petri_full_text` is set; the viewer link
-  carries the whole text. The scripted demo audit is
+  target side (`report/petri.py`) reads the target's calls, the stored
+  `target` branch timeline and the final message list at render time
+  through `petri.conversation.target_conversation`: branches and fork
+  points come from the timeline's `branched_from` anchors, the
+  surviving path from the last target reply in the messages, rollbacks
+  from the tool call preceding each branch event, each call's prompt
+  from the auditor's `send_message` calls before it. A missing timeline
+  or endpoint is stated, never inferred. The Target conversation section
+  holds the tree diagram; the exchange cards sit inside the phase cards
+  (`sections.phase_cards(card_extras=...)`), or in the section when no
+  judged phase hosts them. Replies render capped unless
+  `petri_full_text` is set; the viewer link carries the whole text. The
+  scripted demo audit is
   `examples/petri_logs/petri_demo.eval` (`tests/fixtures/generate_petri_eval.py`).
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
   stored scan on every load. It records execution only: completed vs total

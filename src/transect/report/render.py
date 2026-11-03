@@ -147,6 +147,23 @@ def render_report(
             )
         )
 
+        # the Petri target report: its exchange blocks go into the phase
+        # cards built next, its section is added after the token spend
+        target = None
+        if _info_cell(my_info, "eval_family") == "petri":
+            target = petri_report.target_report(
+                my_extras.petri if my_extras else None,
+                my_extras.petri_note
+                if my_extras
+                else "the transcript store is unreachable",
+                my_phase_turns,
+                phase_colors,
+                idx,
+                _viewer_link(
+                    viewer_base_url, results.transcripts_location, transcript_id
+                ),
+                petri_full_text,
+            )
         # 1. phase timeline (the cards are built here too)
         phase_cards_section = None
         if len(my_phases):
@@ -234,6 +251,7 @@ def render_report(
                         tool_counts=tool_counts,
                         turn_tags=my_tags,
                         tag_layer_of=tag_layer_of,
+                        card_extras=target.card_blocks if target else None,
                     ),
                 ],
             )
@@ -364,25 +382,8 @@ def render_report(
                 )
         if spend_blocks:
             add(("token_spend", sections.section("Token spend", spend_blocks)))
-        if _info_cell(my_info, "eval_family") == "petri":
-            add(
-                (
-                    "target_conversation",
-                    petri_report.target_section(
-                        my_extras.petri if my_extras else None,
-                        my_extras.petri_note
-                        if my_extras
-                        else "the transcript store is unreachable",
-                        my_phase_turns,
-                        phase_colors,
-                        idx,
-                        _viewer_link(
-                            viewer_base_url, results.transcripts_location, transcript_id
-                        ),
-                        petri_full_text,
-                    ),
-                )
-            )
+        if target is not None:
+            add(("target_conversation", target.section))
         if phase_cards_section is not None:
             add(("phase_cards", phase_cards_section))
 

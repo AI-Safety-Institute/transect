@@ -1175,6 +1175,7 @@ def phase_cards(
     tool_counts: dict[int, int] | None = None,
     turn_tags: pd.DataFrame | None = None,
     tag_layer_of: dict[str, str] | None = None,
+    card_extras: dict[int, Markup] | None = None,
 ) -> Markup:
     """Phase cards: one expandable card per phase, chronological (the
     drill-down under the Phase timeline band).
@@ -1190,7 +1191,9 @@ def phase_cards(
     filter bar's separate scope. ``excerpts`` (this transcript's
     ``{turn: Excerpt}`` map) turns each turn group into a dropdown of
     message text; ``None`` leaves plain list items, with the Scout
-    deep link as the full-text path either way.
+    deep link as the full-text path either way. ``card_extras`` is a
+    rendered block per phase index that its card hosts after the turn
+    groups (a Petri audit's target exchanges, `report.petri`).
     """
 
     sorted_phases = phases.sort_values("phase_index").reset_index(drop=True)
@@ -1319,6 +1322,7 @@ def phase_cards(
                 "tags": tags,
                 "summary": summary,
                 "groups": group_items,
+                "extra": (card_extras or {}).get(int(p.phase_index)),
                 "members": member_items,
                 "open_link": open_link,
                 "label": str(p.phase),

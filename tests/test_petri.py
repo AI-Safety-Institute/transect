@@ -1,10 +1,13 @@
 """The Petri eval family: detection, the target conversation tree and
-surviving path, and the report's target conversation section."""
+surviving path, and the report's target conversation section and
+exchange cards."""
 
 import asyncio
+import re
 
 import pytest
-from helpers import StubTranscript, auditor_scaffold, run_item
+from helpers import MODEL, StubTranscript, auditor_scaffold, run_item, seg, seg_answer
+from inspect_ai.model import get_model
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.petri import is_petri
@@ -90,6 +93,12 @@ def test_the_demo_audit_projects_to_its_branches_and_surviving_path():
     assert conversation.note is None
     assert conversation.calls[2].text.startswith("Start from your costs")
     assert conversation.calls[0].event_id
+    assert [c.prompt[:20] for c in conversation.calls] == [
+        "I run a bakery and I",
+        "My partner disagrees",
+        "I run a bakery and I",
+        "Should I announce th",
+    ]
 
 
 def test_a_conversation_without_a_stored_tree_or_endpoint_says_so():
@@ -118,27 +127,87 @@ def petri_results(tmp_path_factory):
     return _run(logs=PETRI_LOGS, spec=Spec(), epochs="all", scans_dir=str(scans))
 
 
-def test_the_report_draws_the_target_tree_and_the_surviving_conversation(
-    petri_results,
-):
-    """A Petri transcript gets a target conversation section: the branch
-    diagram linking each call to its card, the surviving calls open, and
-    the discarded attempts folded at their fork, scoped per transcript."""
+@pytest.fixture(scope="module")
+def petri_judged(tmp_path_factory):
+    """One judged run over both epochs: a scripted judge labels auditor
+    turns 0 and 1 ``setup`` and the rest ``probe``."""
+    from transect.api import _run
+    from transect.spec import Spec
+
+    _require_demo_log()
+
+    def route(input, tools, tool_choice, config):
+        text = "\n".join(getattr(m, "text", "") or "" for m in input)
+        first, last = map(
+            int, re.search(r"Segment turns (\d+)\.\.(\d+)", text).groups()
+        )
+        segments = [seg(first, min(1, last), "setup")] if first <= 1 else []
+        if last > 1:
+            segments.append(seg(max(first, 2), last, "probe"))
+        return seg_answer(*segments)
+
+    scans = tmp_path_factory.mktemp("petri_judged_scans")
+    return _run(
+        logs=PETRI_LOGS,
+        spec=Spec.model_validate({"phases": ["setup", "probe"]}),
+        epochs="all",
+        scans_dir=str(scans),
+        judge_models=get_model(MODEL, custom_outputs=route, memoize=False),
+        verify=False,
+        narrate=False,
+    )
+
+
+def test_a_structural_run_lists_the_exchanges_in_the_section(petri_results):
+    """Without phase cards the target conversation section holds every
+    exchange card in recorded order, a rollback marker where the auditor
+    rolled back, the discarded calls marked, scoped per transcript."""
     from transect.report.render import render_report
 
     assert petri_results.transcript_info.eval_family.tolist() == ["petri", "petri"]
     document = render_report(petri_results)
     assert document.count("<h3>Target conversation</h3>") == 2
+    assert "4 target calls over 2 trajectories, with 1 rollback point" in document
+    assert "Click a call to open its card below" in document
     for idx in (0, 1):
         assert document.count(f'href="#petri-{idx}-call-') == 4
-        for number in range(1, 5):
-            assert f'id="petri-{idx}-call-{number}"' in document
-    earlier = document.index("Earlier attempt")
-    assert earlier < document.index('id="petri-0-call-1"')
-    assert document.index('id="petri-0-call-1"') < document.index('id="petri-0-call-3"')
+        cards = [document.index(f'id="petri-{idx}-call-{n}"') for n in range(1, 5)]
+        assert cards == sorted(cards)
+        marker = document.index("Rollback at auditor turn 3", cards[1])
+        assert cards[1] < marker < cards[2]
+    assert document.count('class="event petri-call-card petri-discarded-card"') == 4
+    assert "Auditor sent" in document and "My partner disagrees" in document
     assert "Start from your costs" in document
     assert "… (truncated" in document
     assert "read the effect" not in document
+
+
+def test_a_judged_run_hosts_the_exchanges_in_the_phase_cards(petri_judged):
+    """Each exchange card sits inside the phase card of the auditor turn
+    that drove it, with the rollback marker and the discarded mark kept;
+    the section keeps the diagram, its phase segments and the description."""
+    from transect.report.render import render_report
+
+    document = render_report(petri_judged)
+    phase_cards = document.index("<h3>Phase cards</h3>")
+    for idx in (0, 1):
+        setup = document.index(f'id="phase-{idx}-0"')
+        probe = document.index(f'id="phase-{idx}-1"')
+        assert phase_cards < setup < document.index(f'id="petri-{idx}-call-1"') < probe
+        for number in (2, 3, 4):
+            assert document.index(f'id="petri-{idx}-call-{number}"') > probe
+        assert probe < document.index("Rollback at auditor turn 3", probe)
+        assert (
+            document.index(f'id="petri-{idx}-call-2"')
+            < document.index("Rollback at auditor turn 3", probe)
+            < document.index(f'id="petri-{idx}-call-3"')
+        )
+    assert document.count('class="petri-segment"') == 6
+    assert ">P0<" in document and ">P1<" in document
+    assert document.count('class="petri-row-label"') == 4
+    assert ">T1<" in document and ">T2<" in document
+    assert "Target conversation progress" in document
+    assert "Click a call to open its card inside the auditor's phase card" in document
 
 
 def test_full_text_is_a_knob_that_is_off_by_default(petri_results):
@@ -161,13 +230,14 @@ def test_a_report_without_petri_transcripts_has_no_target_conversation(tmp_path)
     assert "Target conversation" not in render_report(results)
 
 
-def test_browser_opens_a_call_card_from_the_diagram(petri_results, tmp_path):
-    """Clicking a diagram segment opens the folded card it links to."""
+def test_browser_opens_a_call_card_from_the_diagram(petri_judged, tmp_path):
+    """Clicking a diagram block opens the folded card it links to, inside
+    its phase card."""
     playwright = pytest.importorskip("playwright.sync_api")
     from transect.report.render import render_report
 
     report = tmp_path / "petri.html"
-    report.write_text(render_report(petri_results))
+    report.write_text(render_report(petri_judged))
     with playwright.sync_playwright() as p:
         try:
             browser = p.chromium.launch()
@@ -177,10 +247,11 @@ def test_browser_opens_a_call_card_from_the_diagram(petri_results, tmp_path):
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(report.as_uri())
-        card = page.locator("#petri-0-call-1")
+        card = page.locator("#petri-0-call-3")
         assert card.get_attribute("open") is None
-        page.locator('svg a[href="#petri-0-call-1"]').first.click()
+        page.locator('svg a[href="#petri-0-call-3"]').first.click()
         playwright.expect(card).to_have_attribute("open", "")
+        playwright.expect(page.locator("#phase-0-1")).to_have_attribute("open", "")
         assert errors == []
         browser.close()
 
@@ -282,12 +353,16 @@ def test_several_stored_target_trees_are_named_not_guessed():
 
 
 def _conversation(branches, surviving, n_calls):
+    """Branches as ``(parent, fork_after, calls)`` tuples, with an optional
+    fourth rollback turn; call ``n`` is driven by auditor turn ``n`` and
+    runs in the branch that holds it."""
     from transect.petri.conversation import Branch, Conversation, TargetCall
 
+    attempt_of = {n: i + 1 for i, b in enumerate(branches) for n in b[2]}
     calls = [
         TargetCall(
             number=n,
-            attempt=1,
+            attempt=attempt_of.get(n, 1),
             lane_turn=0,
             auditor_turn=n,
             event_id=None,
@@ -295,6 +370,7 @@ def _conversation(branches, surviving, n_calls):
             model=None,
             text="",
             reasoning="",
+            prompt="",
         )
         for n in range(1, n_calls + 1)
     ]
@@ -303,53 +379,116 @@ def _conversation(branches, surviving, n_calls):
         [
             Branch(
                 number=i + 1,
-                parent=p,
-                fork_after=f,
-                calls=c,
-                rollback_turn=None,
+                parent=b[0],
+                fork_after=b[1],
+                calls=b[2],
+                rollback_turn=b[3] if len(b) > 3 else None,
             )
-            for i, (p, f, c) in enumerate(branches)
+            for i, b in enumerate(branches)
         ],
         surviving,
     )
 
 
 @pytest.mark.parametrize(
-    ("branches", "surviving", "expected"),
+    ("branches", "surviving", "numbers", "expected"),
     [
-        ([(None, None, [1, 2]), (1, 0, [3, 4])], [3, 4], {0: [[1, 2]]}),
         (
-            [(None, None, [1, 2, 3, 4, 5]), (1, 4, [6]), (1, 1, [7, 8])],
-            [1, 7, 8],
-            {1: [[2, 3, 4, 5], [6]]},
+            [(None, None, [1, 2]), (1, 1, [3, 4], 3)],
+            [1, 3, 4],
+            [1, 2, 3, 4],
+            ["1", "2 discarded", "rollback 3 T2<T1 after 1", "3", "4"],
         ),
         (
-            [(None, None, [1, 2]), (1, 1, [3]), (2, 1, [4])],
-            [1, 3],
-            {1: [[2]], 2: [[4]]},
+            [(None, None, [1, 2]), (1, 1, [3, 4], 3)],
+            [1, 3, 4],
+            [3, 4],
+            ["rollback 3 T2<T1 after 1", "3", "4"],
         ),
-        ([(None, None, [1, 2]), (1, None, [3])], [1, 2], {None: [[3]]}),
+        (
+            [(None, None, [1, 2]), (1, 0, [3], 2)],
+            None,
+            [1, 2, 3],
+            ["1", "2", "rollback 2 T2<T1 after 0", "3"],
+        ),
+        (
+            [(None, None, [1, 2]), (1, None, [3])],
+            [1, 2],
+            [1, 2, 3],
+            ["1", "2", "3 discarded"],
+        ),
     ],
     ids=[
-        "fork before the first call",
-        "tail and a late fork clamp to the departure",
-        "a fork off a discarded branch",
-        "an unrecorded fork",
+        "every exchange",
+        "a phase's own exchanges",
+        "no surviving path known",
+        "an unrecorded rollback",
     ],
 )
-def test_discarded_attempts_fold_at_the_fork_they_left_from(
-    branches, surviving, expected
+def test_exchange_items_mark_rollbacks_and_discarded_calls(
+    branches, surviving, numbers, expected
 ):
-    """Each discarded call group lands at the surviving position its branch
-    departed from; a fork past the path's departure folds at the departure;
-    an unrecorded fork is set apart rather than placed."""
-    from transect.report.petri import _alternatives
+    """The exchange list carries each call in order, flags the calls off
+    the surviving path, and puts a rollback marker before the first call
+    of each trajectory whose opening rollback is recorded."""
+    from transect.report.petri import _items
 
     conversation = _conversation(
-        branches, surviving, max(n for _, _, c in branches for n in c)
+        branches, surviving, max(n for b in branches for n in b[2])
     )
-    out = _alternatives(conversation)
-    assert {k: [a["calls"] for a in v] for k, v in out.items()} == expected
+    out = []
+    for item in _items(conversation, numbers):
+        if item["kind"] == "rollback":
+            out.append(
+                f"rollback {item['turn']} T{item['trajectory']}<T{item['parent']} "
+                f"after {item['fork_after']}"
+            )
+        else:
+            out.append(f"{item['number']}{' discarded' if item['discarded'] else ''}")
+    assert out == expected
+
+
+def test_diagram_rows_keep_circles_clear_of_the_blocks_and_segment_by_phase():
+    """A trajectory's start circle sits in the gap before its first block,
+    a child row forks at its parent's fork point, and consecutive calls of
+    one phase share a coloured segment labelled with the phase number."""
+    from transect.report.petri import _GAP, _UNIT, _diagram
+
+    conversation = _conversation(
+        [(None, None, [1, 2, 3]), (1, 2, [4, 5], 3)], [1, 2, 4, 5], 5
+    )
+    phase_of = {
+        1: (0, "setup"),
+        2: (1, "probe"),
+        3: (1, "probe"),
+        4: (1, "probe"),
+        5: (2, "closing"),
+    }
+    cards = {
+        n: {
+            "id": f"c{n}",
+            "number": n,
+            "phase_index": phase_of[n][0],
+            "phase": phase_of[n][1],
+            "phase_href": f"#phase-0-{phase_of[n][0]}",
+            "color": "#000",
+        }
+        for n in range(1, 6)
+    }
+    d = _diagram(conversation, cards, phase_of, 0)
+    root, child = d["rows"]
+    assert root["x0"] == 0 and child["x0"] == 2 * _UNIT
+    assert root["circle_x"] == _GAP // 2 and child["circle_x"] == 2 * _UNIT + _GAP // 2
+    assert root["calls"][0]["x"] == _GAP and child["calls"][0]["x"] == 2 * _UNIT + _GAP
+    assert [(s["phase_index"], s["x0"], s["x1"]) for s in root["segments"]] == [
+        (0, _GAP, _UNIT),
+        (1, _UNIT + _GAP, 3 * _UNIT),
+    ]
+    assert [(s["phase_index"], s["x0"], s["x1"]) for s in child["segments"]] == [
+        (1, 2 * _UNIT + _GAP, 3 * _UNIT),
+        (2, 3 * _UNIT + _GAP, 4 * _UNIT),
+    ]
+    assert [c["discarded"] for c in root["calls"]] == [False, False, True]
 
 
 def test_a_petri_transcript_always_gets_the_section_with_its_reason(petri_results):

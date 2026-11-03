@@ -23,6 +23,7 @@ from transect.scanners.helpers import (
 )
 
 _ROLLBACK_TOOLS = frozenset({"rollback_conversation", "restart_conversation"})
+_SEND_TOOL = "send_message"  # the auditor tool whose ``message`` the target reads
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,8 @@ class TargetCall:
     is the trajectory (role lane) the call ran in, ``lane_turn`` its
     ordinal there; ``auditor_turn`` is the orchestrator turn that drove
     it (the auditor turn preceding it in event order), None when none
-    did.
+    did; ``prompt`` is what the auditor sent since the previous target
+    call (its ``send_message`` texts, in order), "" when nothing was.
     """
 
     number: int
@@ -55,6 +57,7 @@ class TargetCall:
     model: str | None
     text: str
     reasoning: str
+    prompt: str = ""
     tools: list[ToolUse] = field(default_factory=list)
 
 
@@ -125,7 +128,11 @@ def target_conversation(transcript: Any) -> Conversation | None:
     results = {e.id: e for e in lanes.events if e.event == "tool"}
     calls: list[TargetCall] = []
     lane_turns: dict[str, int] = {}
+    sent: list[str] = []
     for before, event in lanes.events_before_turn():
+        if event.event == "tool" and event.function == _SEND_TOOL:
+            arguments = event.arguments if isinstance(event.arguments, dict) else {}
+            sent.append(str(arguments.get("message", "")))
         lane = lanes.lane_of(event) if is_model_turn(event) else None
         if lane is None or lane.id not in lane_ids:
             continue
@@ -143,6 +150,7 @@ def target_conversation(transcript: Any) -> Conversation | None:
                 model=getattr(event, "model", None),
                 text=(message.text or "") if message else "",
                 reasoning=message_reasoning(message) if message else "",
+                prompt="\n\n".join(text for text in sent if text),
                 tools=[
                     ToolUse(
                         name=call.function,
@@ -156,6 +164,7 @@ def target_conversation(transcript: Any) -> Conversation | None:
                 ],
             )
         )
+        sent = []
     if not calls:
         return None
     if timeline is None:
