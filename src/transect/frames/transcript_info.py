@@ -173,6 +173,8 @@ def _setup_columns(value: dict) -> dict:
         row[field] = _compact(agent_args.get(field))
     for field in ("task_args", "generate_config", "model_roles"):
         row[field] = _compact(value.get(field))
+    if "eval_family" not in value:
+        raise KeyError("eval_setup value has no eval_family; run a new scan")
     row["eval_family"] = value["eval_family"]
     header = value.get("header")
     row["header_available"] = header is not None

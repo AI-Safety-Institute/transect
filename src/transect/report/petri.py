@@ -10,6 +10,7 @@ or whole with ``full_text`` on, and links to its model event in the
 Scout viewer.
 """
 
+import json
 from itertools import pairwise
 from typing import Any
 
@@ -28,7 +29,8 @@ _tpl: Any = jinja_env().get_template("petri.html.j2").module
 
 
 def target_section(
-    conversation: Conversation,
+    conversation: Conversation | None,
+    note: str | None,
     phase_turns: pd.DataFrame,
     colors: dict[str, tuple[str, str | None]],
     idx: int,
@@ -37,7 +39,10 @@ def target_section(
 ) -> Markup:
     """The section for one transcript: ``idx`` scopes every id on a
     multi-transcript page, ``link`` is the viewer deep-link builder or
-    None, ``colors`` the report's phase colours."""
+    None, ``colors`` the report's phase colours. Without a conversation
+    the section states ``note``, the reason none could be read."""
+    if conversation is None:
+        return sections.section("Target conversation", [_tpl.unavailable(note)])
     prefix = f"petri-{idx}"
     phase_of = {
         int(turn): (int(index), str(label))
@@ -51,7 +56,7 @@ def target_section(
         for call in conversation.calls
     }
     diagram = (
-        _tpl.diagram(_diagram(conversation, cards, prefix, idx))
+        _tpl.diagram(_diagram(conversation, cards, phase_of, idx))
         if conversation.branches
         else None
     )
@@ -74,7 +79,7 @@ def _card(
     link,
     full_text: bool,
 ) -> dict[str, Any]:
-    phase = phase_of.get(call.auditor_turn)
+    phase = phase_of.get(call.auditor_turn) if call.auditor_turn is not None else None
     text = call.text if full_text else " ".join(call.text.split())
     reasoning = call.reasoning if full_text else " ".join(call.reasoning.split())
     truncated = not full_text and (
@@ -98,7 +103,9 @@ def _card(
         "tools": [
             {
                 "name": tool.name,
-                "arguments": tool.arguments,
+                "arguments": json.dumps(
+                    tool.arguments, ensure_ascii=False, default=str
+                ),
                 "result": tool.result,
                 "error": tool.error,
             }
@@ -138,6 +145,18 @@ def _entries(conversation: Conversation, cards: dict[int, dict]) -> list[dict]:
         if number is not None:
             group.append(number)
     entries.extend(_phase_groups(group, cards, True))
+    if alternatives.get(None):
+        entries.append(
+            {
+                "kind": "alternatives",
+                "after": None,
+                "unplaced": True,
+                "branches": [
+                    {**attempt, "groups": _phase_groups(attempt["calls"], cards, False)}
+                    for attempt in alternatives[None]
+                ],
+            }
+        )
     return entries
 
 
@@ -162,10 +181,12 @@ def _phase_groups(numbers: list[int], cards: dict[int, dict], surviving) -> list
     return groups
 
 
-def _alternatives(conversation: Conversation) -> dict[int, list[dict]]:
+def _alternatives(conversation: Conversation) -> dict[int | None, list[dict]]:
     """Discarded calls by branch, keyed by their position in the surviving
     path: the index of the first surviving call after the fork they left
-    from. A path branch's own calls past its child's fork count too."""
+    from. A path branch's own calls past its child's fork count too, and
+    a fork past the path's departure folds at the departure. A branch
+    whose fork point is unrecorded is keyed None."""
     surviving = conversation.surviving or []
     by_number = {b.number: b for b in conversation.branches}
     path: list[Branch] = []  # endpoint branch up to the root
@@ -174,9 +195,13 @@ def _alternatives(conversation: Conversation) -> dict[int, list[dict]]:
         path.append(branch)
         branch = by_number[branch.parent] if branch.parent is not None else None
     before = {b.number: _path_start(by_number, b) for b in path}
-    out: dict[int, list[dict]] = {}
+    # how many of each path branch's calls the path keeps
+    extent = {path[0].number: path[0].calls.index(surviving[-1]) + 1} if path else {}
+    for child, parent in pairwise(path):
+        extent[parent.number] = child.fork_after or 0
+    out: dict[int | None, list[dict]] = {}
 
-    def attach(position: int, branch: Branch, calls: list[int]) -> None:
+    def attach(position: int | None, branch: Branch, calls: list[int]) -> None:
         if calls:
             out.setdefault(position, []).append(
                 {
@@ -186,22 +211,23 @@ def _alternatives(conversation: Conversation) -> dict[int, list[dict]]:
                 }
             )
 
-    for child, parent in pairwise(path):
-        fork = child.fork_after or 0
-        attach(before[parent.number] + fork, parent, parent.calls[fork:])
-    if path:
-        endpoint = path[0]
-        kept = endpoint.calls.index(surviving[-1]) + 1
-        attach(len(surviving), endpoint, endpoint.calls[kept:])
+    for branch in path:
+        kept = extent[branch.number]
+        attach(before[branch.number] + kept, branch, branch.calls[kept:])
     for branch in conversation.branches:
         if branch.number in before:
             continue
-        climb, fork = branch, branch.fork_after or 0
+        climb, fork = branch, branch.fork_after
         while climb.parent is not None and climb.parent not in before:
             climb = by_number[climb.parent]
-            fork = climb.fork_after or 0
-        position = before[climb.parent] + fork if climb.parent is not None else 0
-        attach(position, branch, branch.calls)
+            fork = climb.fork_after
+        departure = climb.parent
+        if departure is None or fork is None:
+            attach(None, branch, branch.calls)
+        else:
+            attach(
+                before[departure] + min(fork, extent[departure]), branch, branch.calls
+            )
     return {
         position: sorted(attempts, key=lambda a: a["number"])
         for position, attempts in out.items()
@@ -218,7 +244,10 @@ def _path_start(by_number: dict[int, Branch], branch: Branch) -> int:
 
 
 def _diagram(
-    conversation: Conversation, cards: dict[int, dict], prefix: str, idx: int
+    conversation: Conversation,
+    cards: dict[int, dict],
+    phase_of: dict[int, tuple[int, str]],
+    idx: int,
 ) -> dict[str, Any]:
     """Row geometry for the tree: each branch's start and its calls' x
     positions, in target-call units."""
@@ -241,8 +270,8 @@ def _diagram(
                 "x0": start * _UNIT,
                 "x1": (start + len(branch.calls)) * _UNIT,
                 "rollback_turn": branch.rollback_turn,
-                "rollback_href": cards[branch.calls[0]]["phase_href"]
-                if branch.calls and branch.rollback_turn is not None
+                "rollback_href": f"#phase-{idx}-{phase_of[branch.rollback_turn][0]}"
+                if branch.rollback_turn in phase_of
                 else None,
                 "calls": [
                     {

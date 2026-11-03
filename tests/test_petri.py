@@ -14,8 +14,18 @@ from transect.scanners.base import eval_setup
 PETRI_LOGS = "examples/petri_logs"
 
 
+def _require_demo_log():
+    from pathlib import Path
+
+    if not Path(PETRI_LOGS, "petri_demo.eval").exists():
+        pytest.fail(
+            "demo Petri log missing - run: python tests/fixtures/generate_petri_eval.py"
+        )
+
+
 def read_petri_transcripts():
     """The demo audit's transcripts as the report reads them, by epoch."""
+    _require_demo_log()
 
     async def read():
         content = TranscriptContent(
@@ -92,6 +102,9 @@ def test_a_conversation_without_a_stored_tree_or_endpoint_says_so():
     assert conversation.surviving is None
     assert "timeline" in (conversation.note or "")
     assert target_conversation(StubTranscript([])) is None
+    transcript = _restarted_scaffold()
+    transcript.messages = []
+    assert "no target reply" in (target_conversation(transcript).note or "")
 
 
 @pytest.fixture(scope="module")
@@ -100,6 +113,7 @@ def petri_results(tmp_path_factory):
     from transect.api import _run
     from transect.spec import Spec
 
+    _require_demo_log()
     scans = tmp_path_factory.mktemp("petri_scans")
     return _run(logs=PETRI_LOGS, spec=Spec(), epochs="all", scans_dir=str(scans))
 
@@ -169,3 +183,182 @@ def test_browser_opens_a_call_card_from_the_diagram(petri_results, tmp_path):
         playwright.expect(card).to_have_attribute("open", "")
         assert errors == []
         browser.close()
+
+
+def _tree(transcript, children, names=None):
+    """A stored target timeline over the scaffold's trajectory spans:
+    ``children`` maps a child span id to ``(parent span id, branched_from)``."""
+    from inspect_ai.event import Timeline, TimelineEvent, TimelineSpan
+
+    by_span: dict[str, list] = {}
+    for event in transcript.events:
+        if getattr(event, "role", None) == "target":
+            by_span.setdefault(event.span_id, []).append(TimelineEvent(event=event))
+    names = names or {}
+
+    def span(span_id, branched_from=None):
+        return TimelineSpan(
+            id=span_id,
+            name=names.get(span_id, f"branch {span_id[-1]}"),
+            span_type="branch",
+            branched_from=branched_from,
+            content=by_span.get(span_id, []),
+            branches=[
+                span(child, anchor)
+                for child, (parent, anchor) in children.items()
+                if parent == span_id
+            ],
+        )
+
+    return Timeline(name="target", description="", root=span("attempt-1"))
+
+
+def _restarted_scaffold():
+    """The scaffold with its second attempt opened by restart_conversation
+    and the final conversation ending on the third target reply."""
+    from inspect_ai.event import ToolEvent
+
+    transcript = auditor_scaffold()
+    events = transcript.events
+    auditor = [e for e in events if e.event == "model" and e.role == "auditor"]
+    auditor[2].output.message.tool_calls[0].function = "restart_conversation"
+    for n, event in enumerate(
+        e for e in events if e.event == "model" and e.role == "target"
+    ):
+        event.output.message.id = f"m{n}"
+    begin = next(
+        i
+        for i, e in enumerate(events)
+        if e.event == "span_begin" and e.id == "attempt-2"
+    )
+    events.insert(
+        begin,
+        ToolEvent(
+            id="call-2", function="restart_conversation", arguments={}, result="ok"
+        ),
+    )
+    last = [e for e in events if getattr(e, "role", None) == "target"][-1]
+    transcript.messages = [last.output.message]
+    transcript.timelines = [_tree(transcript, {"attempt-2": ("attempt-1", "")})]
+    return transcript
+
+
+def test_a_restart_forks_from_the_start_and_names_its_opening_turn():
+    """A restarted trajectory keeps none of its parent's calls, and the
+    restart tool call that opened it is its rollback turn; the branches are
+    numbered by creation order whatever their stored names say."""
+    transcript = _restarted_scaffold()
+    conversation = target_conversation(transcript)
+    assert [
+        (b.number, b.parent, b.fork_after, b.calls, b.rollback_turn)
+        for b in conversation.branches
+    ] == [
+        (1, None, None, [1, 2], None),
+        (2, 1, 0, [3], 2),
+    ]
+    assert conversation.surviving == [3]
+    transcript.timelines = [
+        _tree(
+            transcript,
+            {"attempt-2": ("attempt-1", "")},
+            {"attempt-2": "branch (incomplete)"},
+        )
+    ]
+    assert [b.number for b in target_conversation(transcript).branches] == [1, 2]
+
+
+def test_several_stored_target_trees_are_named_not_guessed():
+    """Two audits in one sample store two target trees; the section says so
+    instead of picking one."""
+    transcript = _restarted_scaffold()
+    tree = transcript.timelines[0]
+    transcript.timelines = [
+        tree.model_copy(update={"name": "a-target"}),
+        tree.model_copy(update={"name": "b-target"}),
+    ]
+    conversation = target_conversation(transcript)
+    assert conversation.branches == []
+    assert "a-target" in conversation.note and "b-target" in conversation.note
+
+
+def _conversation(branches, surviving, n_calls):
+    from transect.petri.conversation import Branch, Conversation, TargetCall
+
+    calls = [
+        TargetCall(
+            number=n,
+            attempt=1,
+            lane_turn=0,
+            auditor_turn=n,
+            event_id=None,
+            message_id=None,
+            model=None,
+            text="",
+            reasoning="",
+        )
+        for n in range(1, n_calls + 1)
+    ]
+    return Conversation(
+        calls,
+        [
+            Branch(
+                number=i + 1,
+                parent=p,
+                fork_after=f,
+                calls=c,
+                rollback_turn=None,
+            )
+            for i, (p, f, c) in enumerate(branches)
+        ],
+        surviving,
+    )
+
+
+@pytest.mark.parametrize(
+    ("branches", "surviving", "expected"),
+    [
+        ([(None, None, [1, 2]), (1, 0, [3, 4])], [3, 4], {0: [[1, 2]]}),
+        (
+            [(None, None, [1, 2, 3, 4, 5]), (1, 4, [6]), (1, 1, [7, 8])],
+            [1, 7, 8],
+            {1: [[2, 3, 4, 5], [6]]},
+        ),
+        (
+            [(None, None, [1, 2]), (1, 1, [3]), (2, 1, [4])],
+            [1, 3],
+            {1: [[2]], 2: [[4]]},
+        ),
+        ([(None, None, [1, 2]), (1, None, [3])], [1, 2], {None: [[3]]}),
+    ],
+    ids=[
+        "fork before the first call",
+        "tail and a late fork clamp to the departure",
+        "a fork off a discarded branch",
+        "an unrecorded fork",
+    ],
+)
+def test_discarded_attempts_fold_at_the_fork_they_left_from(
+    branches, surviving, expected
+):
+    """Each discarded call group lands at the surviving position its branch
+    departed from; a fork past the path's departure folds at the departure;
+    an unrecorded fork is set apart rather than placed."""
+    from transect.report.petri import _alternatives
+
+    conversation = _conversation(
+        branches, surviving, max(n for _, _, c in branches for n in c)
+    )
+    out = _alternatives(conversation)
+    assert {k: [a["calls"] for a in v] for k, v in out.items()} == expected
+
+
+def test_a_petri_transcript_always_gets_the_section_with_its_reason(petri_results):
+    """When the store cannot be read the section still renders and says why."""
+    import dataclasses
+
+    from transect.report.render import render_report
+
+    results = dataclasses.replace(petri_results, transcripts_location="/nonexistent")
+    document = render_report(results)
+    assert document.count("<h3>Target conversation</h3>") == 2
+    assert "could not be read: the transcript store is unreachable" in document

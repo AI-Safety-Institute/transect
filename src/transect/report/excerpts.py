@@ -125,13 +125,15 @@ class TranscriptExtras:
         tool_counts: `_tool_call_counts` output - the phase cards'
             tool-call sort key + tag.
         petri: `target_conversation` output for a Petri transcript, None
-            for any other.
+            for any other and when it could not be read.
+        petri_note: Why ``petri`` is None on a Petri transcript.
     """
 
     excerpts: dict[int, Excerpt] = field(default_factory=dict)
     spawn_prompts: dict[str, SpawnPrompt] = field(default_factory=dict)
     tool_counts: dict[int, int] = field(default_factory=dict)
     petri: Conversation | None = None
+    petri_note: str | None = None
 
 
 def mark_compaction_turns(
@@ -260,14 +262,16 @@ async def _read(
     """Index the store, read the wanted transcripts, derive every extra
     from each.
 
-    ``events`` is the only content asked for: model events for the turns
-    and their text, span events for the lane tree and each sub-agent
-    span's spawn-task metadata. Reading messages as well would
-    double the read for nothing - the turn axis is an event axis.
+    Only events are asked for: model events for the turns and their
+    text, span events for the lane tree and each sub-agent span's
+    spawn-task metadata. A Petri transcript is read with its messages,
+    timelines and tool, anchor and branch events as well, for the
+    target conversation section.
 
     Each transcript's read is guarded on its own, so the result holds
     every transcript that could be read and omits only those that could
-    not (each named on stderr).
+    not (each named on stderr); a Petri projection that fails costs that
+    transcript its target conversation only.
     """
     content = TranscriptContent(events=["model", "span_begin", "span_end"])
     petri_content = TranscriptContent(
@@ -294,7 +298,7 @@ async def _read(
                     excerpts=_turn_excerpts(transcript),
                     spawn_prompts=_spawn_prompts(transcript),
                     tool_counts=_tool_call_counts(transcript),
-                    petri=target_conversation(transcript) if is_petri else None,
+                    **(_petri_extras(transcript) if is_petri else {}),
                 )
             except Exception as failure:
                 print(
@@ -303,6 +307,18 @@ async def _read(
                     file=sys.stderr,
                 )
     return found
+
+
+def _petri_extras(transcript: Any) -> dict[str, Any]:
+    """The target conversation of a Petri transcript, or why none could
+    be read."""
+    try:
+        conversation = target_conversation(transcript)
+    except Exception as failure:
+        return {"petri_note": f"{type(failure).__name__}: {failure}"}
+    if conversation is None:
+        return {"petri_note": "no target trajectory was found"}
+    return {"petri": conversation}
 
 
 def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, Excerpt]:

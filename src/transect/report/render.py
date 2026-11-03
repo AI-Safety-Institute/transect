@@ -357,12 +357,15 @@ def render_report(
                 )
         if spend_blocks:
             add(("token_spend", sections.section("Token spend", spend_blocks)))
-        if my_extras and my_extras.petri is not None:
+        if _info_cell(my_info, "eval_family") == "petri":
             add(
                 (
                     "target_conversation",
                     petri_report.target_section(
-                        my_extras.petri,
+                        my_extras.petri if my_extras else None,
+                        my_extras.petri_note
+                        if my_extras
+                        else "the transcript store is unreachable",
                         my_phase_turns,
                         phase_colors,
                         idx,

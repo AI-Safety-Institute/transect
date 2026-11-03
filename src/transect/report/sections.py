@@ -173,20 +173,6 @@ def run_intro_line(info: pd.DataFrame) -> Markup | None:
     return _notes.intro_line(text + ".")
 
 
-def _score_dimensions(score: object) -> int | None:
-    """How many named dimensions a recorded score holds (a scorer that
-    returns a dict, serialised as JSON text), None for a scalar score."""
-    if isinstance(score, dict):
-        return len(score)
-    if isinstance(score, str) and score.startswith("{"):
-        try:
-            value = json.loads(score)
-        except ValueError:
-            return None
-        return len(value) if isinstance(value, dict) else None
-    return None
-
-
 def eval_setup_blocks(info: pd.DataFrame, flushes: pd.DataFrame) -> Markup:
     """The intro's three default-collapsed expandables: Core Setup,
     Additional Config Details, Run Summary. Every row renders even

@@ -905,3 +905,9 @@ def test_role_lanes_are_neither_spawned_sub_agents_nor_delegated_spend(raw_phase
     (phase,) = phases_df(raw_phases, subagents=subagents).itertuples()
     assert phase.n_subagents == 1
     assert phase.delegated_new_work_tokens == 1100
+
+
+def test_a_setup_value_without_an_eval_family_names_the_rescan():
+    """A store written before eval families existed is not patched over."""
+    with pytest.raises(KeyError, match=r"eval_family.*new scan"):
+        transcript_info_df(pd.DataFrame([{"value": {"compaction_prompt": None}}]))

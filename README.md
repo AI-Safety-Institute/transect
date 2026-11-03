@@ -355,6 +355,7 @@ erDiagram
         int message_limit "None = not set / not found"
         string system_prompt "verbatim; the long prompts sit last"
         string compaction_prompt "configured Inspect template, if recorded"
+        string eval_family "petri on a Petri audit; None otherwise"
     }
     token_timeline["token_timeline (one row per model turn, any lane)"] {
         int turn PK "orchestrator turn; NA on a lane's own turns"
