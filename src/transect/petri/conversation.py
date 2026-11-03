@@ -44,8 +44,9 @@ class TargetCall:
     is the trajectory (role lane) the call ran in, ``lane_turn`` its
     ordinal there; ``auditor_turn`` is the orchestrator turn that drove
     it (the auditor turn preceding it in event order), None when none
-    did; ``prompt`` is what the auditor sent since the previous target
-    call (its ``send_message`` texts, in order), "" when nothing was.
+    did; ``prompts`` are the ``send_message`` texts the auditor sent
+    since the previous target call or rollback, in order, empty when
+    none is recorded.
     """
 
     number: int
@@ -57,7 +58,7 @@ class TargetCall:
     model: str | None
     text: str
     reasoning: str
-    prompt: str = ""
+    prompts: list[str] = field(default_factory=list)
     tools: list[ToolUse] = field(default_factory=list)
 
 
@@ -130,9 +131,13 @@ def target_conversation(transcript: Any) -> Conversation | None:
     lane_turns: dict[str, int] = {}
     sent: list[str] = []
     for before, event in lanes.events_before_turn():
-        if event.event == "tool" and event.function == _SEND_TOOL:
-            arguments = event.arguments if isinstance(event.arguments, dict) else {}
-            sent.append(str(arguments.get("message", "")))
+        if event.event == "tool":
+            if event.function == _SEND_TOOL:
+                arguments = event.arguments if isinstance(event.arguments, dict) else {}
+                if arguments.get("message"):
+                    sent.append(str(arguments["message"]))
+            elif event.function in _ROLLBACK_TOOLS:
+                sent = []
         lane = lanes.lane_of(event) if is_model_turn(event) else None
         if lane is None or lane.id not in lane_ids:
             continue
@@ -150,7 +155,7 @@ def target_conversation(transcript: Any) -> Conversation | None:
                 model=getattr(event, "model", None),
                 text=(message.text or "") if message else "",
                 reasoning=message_reasoning(message) if message else "",
-                prompt="\n\n".join(text for text in sent if text),
+                prompts=sent,
                 tools=[
                     ToolUse(
                         name=call.function,

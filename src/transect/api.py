@@ -215,10 +215,11 @@ def transect(
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``
             (the default) renders no marking.
-        petri_full_text: On a Petri transcript, render each target reply
-            whole in the target conversation section (with its tool
-            arguments and results) instead of capped like an excerpt;
-            the Scout viewer link carries the full text either way.
+        petri_full_text: On a Petri transcript, render each target
+            exchange card whole (the auditor's message, the reply, its
+            tool arguments and results) instead of capped like an
+            excerpt; the Scout viewer link carries the full text either
+            way.
 
     Returns:
         ``TransectResults`` - the frames (plain pandas), plus
@@ -455,10 +456,11 @@ def render(
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``
             (the default) renders no marking.
-        petri_full_text: On a Petri transcript, render each target reply
-            whole in the target conversation section (with its tool
-            arguments and results) instead of capped like an excerpt;
-            the Scout viewer link carries the full text either way.
+        petri_full_text: On a Petri transcript, render each target
+            exchange card whole (the auditor's message, the reply, its
+            tool arguments and results) instead of capped like an
+            excerpt; the Scout viewer link carries the full text either
+            way.
     """
     scan_path = Path(results.scan_location)
     base = scan_path.parent if scan_path.name.startswith("scan_id=") else scan_path

@@ -3,16 +3,16 @@ and the exchange cards the phase cards host.
 
 The section draws the stored branch tree as one row per trajectory:
 a start circle, the target calls as blocks numbered in recorded order
-(surviving solid, discarded grey), and under them a coloured segment
-per auditor phase labelled with the phase number; a child row forks at
-its parent's fork point, where the circle links to the rollback's
-phase card. Each exchange card holds what the auditor sent and the
-target's reply, capped like a phase-card excerpt or whole with
-``full_text`` on, with a link to the reply's model event in the Scout
-viewer. On a judged run the cards sit inside the phase card of the
-auditor turn that drove them, with a marker where a rollback opened a
-trajectory; calls no judged phase covers, and every call on a
-structural run, list in the section in recorded order.
+(surviving in their phase colour, discarded grey), and under them a
+coloured band per auditor phase labelled with the phase number; a
+child row forks at its parent's fork point, where the circle links to
+the rollback's phase card. Each exchange card holds what the auditor
+sent and the target's reply, capped like a phase-card excerpt or whole
+with ``full_text`` on, with a link to the reply's model event in the
+Scout viewer. On a judged run the cards sit inside the phase card of
+the auditor turn that drove them, and a marker sits in the phase card
+of the turn that rolled back; calls no judged phase covers, and every
+call on a structural run, list in the section in recorded order.
 """
 
 import json
@@ -22,7 +22,7 @@ from typing import Any
 import pandas as pd
 from markupsafe import Markup
 
-from transect.petri.conversation import Conversation, TargetCall
+from transect.petri.conversation import Branch, Conversation, TargetCall
 from transect.report import sections
 from transect.report._jinja import jinja_env
 from transect.report.excerpts import TEXT_CHARS
@@ -31,6 +31,7 @@ _UNIT = 36  # px per target call along a row
 _GAP = 14  # px between blocks, where a circle sits
 _ROW = 50  # px per trajectory row
 _LEFT = 40  # px for the row labels
+_CAPTION = 200  # px the axis caption needs (measured at 0.68rem in Chromium)
 _tpl: Any = jinja_env().get_template("petri.html.j2").module
 
 
@@ -72,21 +73,32 @@ def target_report(
         call.number: _card(call, phase_of, colors, idx, prefix, link, full_text)
         for call in conversation.calls
     }
+    # each call under the phase of the auditor turn that drove it; a
+    # rollback marker under the phase of the turn that rolled back
     by_phase: dict[int | None, list[int]] = {}
     for call in conversation.calls:
         phase = (
             phase_of.get(call.auditor_turn) if call.auditor_turn is not None else None
         )
         by_phase.setdefault(phase[0] if phase else None, []).append(call.number)
+    openers: dict[int | None, list[Branch]] = {}
+    for branch in conversation.branches:
+        if branch.calls and branch.rollback_turn is not None:
+            phase = phase_of.get(branch.rollback_turn)
+            openers.setdefault(phase[0] if phase else None, []).append(branch)
     blocks = {
-        index: _tpl.exchanges(_items(conversation, numbers), cards, "Target exchanges")
+        index: _tpl.exchanges(
+            _items(conversation, numbers, openers.get(index, [])),
+            cards,
+            "Target exchanges",
+        )
         for index, numbers in by_phase.items()
         if index is not None
     }
     unhosted = by_phase.get(None, [])
     listed = (
         _tpl.exchanges(
-            _items(conversation, unhosted),
+            _items(conversation, unhosted, openers.get(None, [])),
             cards,
             "Target exchanges without a judged phase" if blocks else "Target exchanges",
             open=not blocks,
@@ -132,9 +144,9 @@ def _card(
         "phase": phase[1] if phase else None,
         "phase_href": f"#phase-{idx}-{phase[0]}" if phase else None,
         "color": colors[phase[1]][0] if phase and phase[1] in colors else None,
-        "prompt": shown(call.prompt),
+        "prompts": [shown(prompt) for prompt in call.prompts],
         "prompt_truncated": not full_text
-        and len(" ".join(call.prompt.split())) > TEXT_CHARS,
+        and any(len(" ".join(p.split())) > TEXT_CHARS for p in call.prompts),
         "text": text,
         "reasoning": reasoning,
         "truncated": not full_text
@@ -157,30 +169,30 @@ def _card(
     }
 
 
-def _items(conversation: Conversation, numbers: list[int]) -> list[dict]:
+def _items(
+    conversation: Conversation, numbers: list[int], openers: list[Branch]
+) -> list[dict]:
     """The exchange list for the calls ``numbers``, in recorded order:
     each call flagged when it is off the surviving path, and a rollback
-    marker before the first call of a trajectory whose opening rollback
-    is recorded."""
+    marker for each trajectory in ``openers`` before the first listed
+    call at or after the trajectory's first call (at the end when none
+    follows)."""
     surviving = conversation.surviving
-    opened = {
-        branch.calls[0]: branch
-        for branch in conversation.branches
-        if branch.calls and branch.rollback_turn is not None
-    }
+    markers: list[dict[str, Any]] = [
+        {
+            "kind": "rollback",
+            "turn": branch.rollback_turn,
+            "trajectory": branch.number,
+            "parent": branch.parent,
+            "fork_after": branch.fork_after,
+            "first_call": branch.calls[0],
+        }
+        for branch in sorted(openers, key=lambda b: b.calls[0])
+    ]
     items: list[dict] = []
-    for number in sorted(numbers):
-        if number in opened:
-            branch = opened[number]
-            items.append(
-                {
-                    "kind": "rollback",
-                    "turn": branch.rollback_turn,
-                    "trajectory": branch.number,
-                    "parent": branch.parent,
-                    "fork_after": branch.fork_after,
-                }
-            )
+    for number in numbers:
+        while markers and markers[0]["first_call"] <= number:
+            items.append(markers.pop(0))
         items.append(
             {
                 "kind": "call",
@@ -188,7 +200,7 @@ def _items(conversation: Conversation, numbers: list[int]) -> list[dict]:
                 "discarded": surviving is not None and number not in surviving,
             }
         )
-    return items
+    return items + markers
 
 
 def _diagram(
@@ -262,7 +274,7 @@ def _diagram(
         "unit": _UNIT,
         "gap": _GAP,
         "row_height": _ROW,
-        "width": _LEFT + max(r["x1"] for r in rows) + _UNIT,
+        "width": _LEFT + max(_CAPTION, max(r["x1"] for r in rows) + _UNIT),
         "height": len(rows) * _ROW + 36,
         "path_known": conversation.surviving is not None,
     }

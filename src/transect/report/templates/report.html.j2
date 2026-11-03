@@ -53,11 +53,13 @@ function _transectOpenPhaseFromHash() {
   for (var node = target.parentElement; node; node = node.parentElement) {
     if (node.tagName === "DETAILS") node.open = true;
   }
-  // A card filter may have hidden the target (a hidden anchor is a
-  // link to nowhere): clear that card scope's filters first.
-  if (target.style.display === "none") {
-    var scope = target.closest(".phase-cards");
-    if (scope) _transectClearCardFilters(scope.id);
+  // A card filter may have hidden the target, or the phase card that
+  // hosts it (a hidden anchor is a link to nowhere): clear that card
+  // scope's filters first.
+  var scope = target.closest(".phase-cards");
+  var host = scope ? target.closest(".phase-cards > .event") : null;
+  if (scope && (target.style.display === "none" || (host && host.style.display === "none"))) {
+    _transectClearCardFilters(scope.id);
   }
   if (target.tagName === "DETAILS") target.open = true;
   target.scrollIntoView({behavior: "smooth", block: "start"});

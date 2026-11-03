@@ -3,10 +3,17 @@ surviving path, and the report's target conversation section and
 exchange cards."""
 
 import asyncio
-import re
 
 import pytest
-from helpers import MODEL, StubTranscript, auditor_scaffold, run_item, seg, seg_answer
+from helpers import (
+    MODEL,
+    StubTranscript,
+    auditor_scaffold,
+    run_item,
+    seg,
+    seg_answer,
+    segment_range,
+)
 from inspect_ai.model import get_model
 from inspect_scout import TranscriptContent, transcripts_from
 
@@ -93,11 +100,11 @@ def test_the_demo_audit_projects_to_its_branches_and_surviving_path():
     assert conversation.note is None
     assert conversation.calls[2].text.startswith("Start from your costs")
     assert conversation.calls[0].event_id
-    assert [c.prompt[:20] for c in conversation.calls] == [
-        "I run a bakery and I",
-        "My partner disagrees",
-        "I run a bakery and I",
-        "Should I announce th",
+    assert [[p[:20] for p in c.prompts] for c in conversation.calls] == [
+        ["I run a bakery and I"],
+        ["My partner disagrees"],
+        ["I run a bakery and I"],
+        ["Should I announce th"],
     ]
 
 
@@ -138,9 +145,7 @@ def petri_judged(tmp_path_factory):
 
     def route(input, tools, tool_choice, config):
         text = "\n".join(getattr(m, "text", "") or "" for m in input)
-        first, last = map(
-            int, re.search(r"Segment turns (\d+)\.\.(\d+)", text).groups()
-        )
+        first, last = segment_range(text)
         segments = [seg(first, min(1, last), "setup")] if first <= 1 else []
         if last > 1:
             segments.append(seg(max(first, 2), last, "probe"))
@@ -231,8 +236,8 @@ def test_a_report_without_petri_transcripts_has_no_target_conversation(tmp_path)
 
 
 def test_browser_opens_a_call_card_from_the_diagram(petri_judged, tmp_path):
-    """Clicking a diagram block opens the folded card it links to, inside
-    its phase card."""
+    """Clicking a diagram block opens the folded card it links to inside
+    its phase card, clearing a card filter that hid that phase card."""
     playwright = pytest.importorskip("playwright.sync_api")
     from transect.report.render import render_report
 
@@ -247,11 +252,16 @@ def test_browser_opens_a_call_card_from_the_diagram(petri_judged, tmp_path):
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(report.as_uri())
-        card = page.locator("#petri-0-call-3")
+        card, host = page.locator("#petri-0-call-3"), page.locator("#phase-0-1")
         assert card.get_attribute("open") is None
+        page.locator(
+            '.filter-bar[data-scope="phase-cards-0"] input[data-label-value="probe"]'
+        ).uncheck()
+        playwright.expect(host).to_be_hidden()
         page.locator('svg a[href="#petri-0-call-3"]').first.click()
         playwright.expect(card).to_have_attribute("open", "")
-        playwright.expect(page.locator("#phase-0-1")).to_have_attribute("open", "")
+        playwright.expect(host).to_have_attribute("open", "")
+        playwright.expect(host).to_be_visible()
         assert errors == []
         browser.close()
 
@@ -370,7 +380,6 @@ def _conversation(branches, surviving, n_calls):
             model=None,
             text="",
             reasoning="",
-            prompt="",
         )
         for n in range(1, n_calls + 1)
     ]
@@ -391,53 +400,67 @@ def _conversation(branches, surviving, n_calls):
 
 
 @pytest.mark.parametrize(
-    ("branches", "surviving", "numbers", "expected"),
+    ("branches", "surviving", "numbers", "openers", "expected"),
     [
         (
             [(None, None, [1, 2]), (1, 1, [3, 4], 3)],
             [1, 3, 4],
             [1, 2, 3, 4],
+            [2],
             ["1", "2 discarded", "rollback 3 T2<T1 after 1", "3", "4"],
         ),
         (
             [(None, None, [1, 2]), (1, 1, [3, 4], 3)],
             [1, 3, 4],
             [3, 4],
+            [2],
             ["rollback 3 T2<T1 after 1", "3", "4"],
+        ),
+        (
+            [(None, None, [1, 2]), (1, 1, [3, 4], 3)],
+            [1, 3, 4],
+            [4],
+            [],
+            ["4"],
+        ),
+        (
+            [(None, None, [1, 2]), (1, 1, [3, 4], 2)],
+            [1, 3, 4],
+            [1, 2],
+            [2],
+            ["1", "2 discarded", "rollback 2 T2<T1 after 1"],
         ),
         (
             [(None, None, [1, 2]), (1, 0, [3], 2)],
             None,
             [1, 2, 3],
+            [2],
             ["1", "2", "rollback 2 T2<T1 after 0", "3"],
-        ),
-        (
-            [(None, None, [1, 2]), (1, None, [3])],
-            [1, 2],
-            [1, 2, 3],
-            ["1", "2", "3 discarded"],
         ),
     ],
     ids=[
         "every exchange",
         "a phase's own exchanges",
+        "a later call of the trajectory alone",
+        "the rollback's phase ends before the trajectory's first call",
         "no surviving path known",
-        "an unrecorded rollback",
     ],
 )
 def test_exchange_items_mark_rollbacks_and_discarded_calls(
-    branches, surviving, numbers, expected
+    branches, surviving, numbers, openers, expected
 ):
     """The exchange list carries each call in order, flags the calls off
-    the surviving path, and puts a rollback marker before the first call
-    of each trajectory whose opening rollback is recorded."""
+    the surviving path, and puts each opener's rollback marker before the
+    first listed call of its trajectory, or at the end of the list that
+    holds the rollback's own phase."""
     from transect.report.petri import _items
 
     conversation = _conversation(
         branches, surviving, max(n for b in branches for n in b[2])
     )
+    opened = [b for b in conversation.branches if b.number in openers]
     out = []
-    for item in _items(conversation, numbers):
+    for item in _items(conversation, numbers, opened):
         if item["kind"] == "rollback":
             out.append(
                 f"rollback {item['turn']} T{item['trajectory']}<T{item['parent']} "
@@ -448,11 +471,27 @@ def test_exchange_items_mark_rollbacks_and_discarded_calls(
     assert out == expected
 
 
+def test_a_call_without_a_recorded_send_says_so():
+    """An exchange card whose call no send_message preceded states the
+    absence instead of showing an empty prompt; without phases the
+    section lists the exchanges itself."""
+    import pandas as pd
+
+    from transect.report.petri import target_report
+
+    conversation = _conversation([(None, None, [1])], [1], 1)
+    turns = pd.DataFrame({"turn": [], "phase_index": [], "phase": []})
+    report = target_report(conversation, None, turns, {}, 0, None, False)
+    assert report.card_blocks == {}
+    assert "No send_message recorded before this call." in report.section
+    assert "Target exchanges" in report.section
+
+
 def test_diagram_rows_keep_circles_clear_of_the_blocks_and_segment_by_phase():
     """A trajectory's start circle sits in the gap before its first block,
     a child row forks at its parent's fork point, and consecutive calls of
     one phase share a coloured segment labelled with the phase number."""
-    from transect.report.petri import _GAP, _UNIT, _diagram
+    from transect.report.petri import _GAP, _UNIT, _card, _diagram
 
     conversation = _conversation(
         [(None, None, [1, 2, 3]), (1, 2, [4, 5], 3)], [1, 2, 4, 5], 5
@@ -465,15 +504,8 @@ def test_diagram_rows_keep_circles_clear_of_the_blocks_and_segment_by_phase():
         5: (2, "closing"),
     }
     cards = {
-        n: {
-            "id": f"c{n}",
-            "number": n,
-            "phase_index": phase_of[n][0],
-            "phase": phase_of[n][1],
-            "phase_href": f"#phase-0-{phase_of[n][0]}",
-            "color": "#000",
-        }
-        for n in range(1, 6)
+        call.number: _card(call, phase_of, {}, 0, "petri-0", None, False)
+        for call in conversation.calls
     }
     d = _diagram(conversation, cards, phase_of, 0)
     root, child = d["rows"]

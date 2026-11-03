@@ -204,6 +204,12 @@ def verify_answer(*verdicts):
     )
 
 
+def segment_range(text):
+    """The inclusive turn range a phase judge's chunk prompt asks about."""
+    first, last = re.search(r"Segment turns (\d+)\.\.(\d+)", text).groups()
+    return int(first), int(last)
+
+
 def demo_judge(model=MODEL, phase_label="model_development", subagent_labels=None):
     """A content-routing scripted judge for whole-pipeline runs."""
     labels = subagent_labels or {
@@ -237,9 +243,8 @@ def demo_judge(model=MODEL, phase_label="model_development", subagent_labels=Non
                     for k, label in re.findall(r"PHASE (\d+) \[(\w+),", text)
                 )
             )
-        segment_range = re.search(r"Segment turns (\d+)\.\.(\d+)", text)
-        if segment_range:
-            first, last = map(int, segment_range.groups())
+        if "Segment turns" in text:
+            first, last = segment_range(text)
             return seg_answer(seg(first, last, phase_label, 0.9))
         lane = re.search(r"name: (\w+)", text)
         if lane and "spawn task" in text:
