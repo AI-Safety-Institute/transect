@@ -111,6 +111,7 @@ model calls:
 
 ```bash
 uv run python examples/transect_kroll.py --structural
+uv run python examples/transect_petri.py             # a scripted Petri audit, no judge
 ```
 
 It renders `examples/scans/structural/report.html` and opens it with a
@@ -253,9 +254,25 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
   named as such and never classified.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
+- **Target conversation** (Petri audits): the target's branch tree and surviving
+  conversation, each call under the auditor phase that drove it.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
 - **Custom layers**: user layers' own sections; `section_order` rearranges the report.
 - **Reliability & provenance audit**: per judged surface, how every label was produced.
+
+### Petri audits
+
+An [inspect_petri](https://meridianlabs-ai.github.io/inspect_petri/) log
+is recognised from its recorded model roles (`transcript_info.eval_family`
+is `petri`). The auditor's turns are the orchestrator axis, so the phases,
+digests and cards describe the auditor; each target trajectory is a lane.
+The report adds a **Target conversation** section: the stored branch tree
+as a diagram, and the target's replies as cards in the surviving
+conversation's order, grouped by the auditor phase that drove them, with
+the attempts a rollback discarded folded at their fork. Replies are
+capped like excerpts and link to the Scout viewer; `petri_full_text=True`
+renders them whole. `examples/transect_petri.py` runs the shipped
+scripted audit.
 
 ### Building your own UI
 

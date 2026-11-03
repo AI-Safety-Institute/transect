@@ -139,6 +139,21 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
   cursor: pointer; box-shadow: 0 1px 3px rgba(33, 37, 41, 0.25); }}
 #transect-back-top:hover {{ background: var(--transect-color-link-hover);
   border-color: var(--transect-color-link-hover); }}
+.petri-diagram {{ overflow-x: auto; border: 1px solid var(--transect-color-border);
+  border-radius: 2px; background: #fff; margin: 0.5rem 0; }}
+.petri-diagram svg {{ display: block; font-size: 0.72rem; }}
+.petri-row-label {{ fill: var(--transect-color-muted); }}
+.petri-track {{ stroke: var(--transect-color-border); stroke-width: 2; }}
+.petri-unresolved {{ stroke-dasharray: 4 3; }}
+.petri-connector {{ fill: none; stroke: var(--transect-color-border);
+  stroke-width: 1.5; }}
+.petri-fork {{ fill: #fff; stroke: var(--transect-color-link); stroke-width: 1.5; }}
+.petri-call {{ fill: #8896a2; }}
+.petri-discarded {{ opacity: 0.35; }}
+.petri-call-label {{ fill: #fff; pointer-events: none; }}
+.petri-diagram a:hover rect, .petri-diagram a:focus rect {{
+  stroke: var(--transect-color-accent); stroke-width: 2; }}
+.petri-full {{ white-space: pre-wrap; }}
 .event {{ background: #fff; border: 1px solid var(--transect-color-border-subtle);
          border-radius: var(--transect-radius); padding: 0.625rem; margin: 6px 0; }}
 /* verbatim prompt text in the eval-setup expandables: preserve the

@@ -34,6 +34,7 @@ from typing import Any
 
 from inspect_scout import TranscriptContent, transcripts_from
 
+from transect.petri.conversation import Conversation, target_conversation
 from transect.scanners.helpers import (
     Lanes,
     message_reasoning,
@@ -123,11 +124,14 @@ class TranscriptExtras:
             section's own per-span spawn-task text.
         tool_counts: `_tool_call_counts` output - the phase cards'
             tool-call sort key + tag.
+        petri: `target_conversation` output for a Petri transcript, None
+            for any other.
     """
 
     excerpts: dict[int, Excerpt] = field(default_factory=dict)
     spawn_prompts: dict[str, SpawnPrompt] = field(default_factory=dict)
     tool_counts: dict[int, int] = field(default_factory=dict)
+    petri: Conversation | None = None
 
 
 def mark_compaction_turns(
@@ -150,7 +154,7 @@ def mark_compaction_turns(
 
 
 def read_transcript_extras(
-    location: str | None, transcript_ids: list[str]
+    location: str | None, transcript_ids: list[str], petri_ids: set[str] | None = None
 ) -> dict[str, TranscriptExtras]:
     """Read the transcript store once and derive every extra for each
     wanted transcript.
@@ -165,6 +169,9 @@ def read_transcript_extras(
             transcript database directory or an eval-log path.
         transcript_ids: The transcripts the report renders. Anything
             else in the store is indexed but never read.
+        petri_ids: The Petri transcripts among them, read with their
+            messages, timelines, tool, anchor and branch events as well
+            for the target conversation section.
 
     Returns:
         ``{transcript_id: TranscriptExtras}``, with an entry for each
@@ -181,7 +188,7 @@ def read_transcript_extras(
     if not location or not transcript_ids or not Path(location).exists():
         return {}
     try:
-        return _run_sync(_read(location, set(transcript_ids)))
+        return _run_sync(_read(location, set(transcript_ids), petri_ids or set()))
     # deliberately broad, and store-level only (`_read` guards each
     # transcript's own read): the excerpts are an addition to a report
     # that rendered without them for its whole life, so no store failure
@@ -247,7 +254,9 @@ def card_excerpts(
     return selected
 
 
-async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
+async def _read(
+    location: str, wanted: set[str], petri: set[str]
+) -> dict[str, TranscriptExtras]:
     """Index the store, read the wanted transcripts, derive every extra
     from each.
 
@@ -261,6 +270,11 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
     not (each named on stderr).
     """
     content = TranscriptContent(events=["model", "span_begin", "span_end"])
+    petri_content = TranscriptContent(
+        messages="all",
+        events=["model", "span_begin", "span_end", "tool", "anchor", "branch"],
+        timeline=True,
+    )
     found: dict[str, TranscriptExtras] = {}
     async with transcripts_from(location).reader() as reader:
         infos = [info async for info in reader.index() if info.transcript_id in wanted]
@@ -272,11 +286,15 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
             # transcript on the page because of one bad record - the
             # grain the module docstring's honesty claim is about.
             try:
-                transcript = await reader.read(info, content)
+                is_petri = info.transcript_id in petri
+                transcript = await reader.read(
+                    info, petri_content if is_petri else content
+                )
                 found[info.transcript_id] = TranscriptExtras(
                     excerpts=_turn_excerpts(transcript),
                     spawn_prompts=_spawn_prompts(transcript),
                     tool_counts=_tool_call_counts(transcript),
+                    petri=target_conversation(transcript) if is_petri else None,
                 )
             except Exception as failure:
                 print(

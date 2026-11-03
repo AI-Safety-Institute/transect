@@ -1,0 +1,48 @@
+{#- The target conversation section of a Petri transcript (report/petri.py).
+    `intro` states what the section holds and what is absent; `diagram`
+    draws the stored branch tree as rows of call blocks, each linking to
+    its card; `cards` lays the calls out as <details> cards in reading
+    order: the surviving conversation grouped by auditor phase, the
+    discarded attempts folded at the fork they left from. Call text is
+    agent/user content, interpolated raw into autoescape. -#}
+
+{% macro intro(conversation, judged) -%}
+<p class="meta explainer">The target's side of the audit: {{ conversation.calls|length }} target call{{ "" if conversation.calls|length == 1 else "s" }} over {{ conversation.branches|length or "an unknown number of" }} trajector{{ "y" if conversation.branches|length == 1 else "ies" }}. Each call is driven by the auditor turn before it{% if judged %}, whose judged phase colours and labels it; the labels describe the auditor, not the target{% endif %}.{% if conversation.surviving is not none %} The surviving conversation is the final message list; {{ conversation.discarded|length }} call{{ "" if conversation.discarded|length == 1 else "s" }} from earlier attempts are folded at the fork they left from.{% else %} No surviving path is shown: {{ conversation.note }}; calls are listed in recorded order.{% endif %}</p>
+{%- endmacro %}
+
+{% macro diagram(d) -%}
+<div class="petri-diagram"><svg width="{{ d.width }}" height="{{ d.height }}" viewBox="0 0 {{ d.width }} {{ d.height }}" role="group" aria-label="Target conversation branches">
+{%- for row in d.rows %}{% set y = 20 + loop.index0 * d.row_height %}
+{%- if row.parent_row is not none and not row.unresolved %}<path class="petri-connector" d="M {{ d.left + row.x0 }} {{ 20 + row.parent_row * d.row_height }} V {{ y }}"/>{% endif %}
+<text class="petri-row-label" x="4" y="{{ y + 4 }}">B{{ row.number }}</text>
+<line class="petri-track{% if row.unresolved %} petri-unresolved{% endif %}" x1="{{ d.left + row.x0 }}" y1="{{ y }}" x2="{{ d.left + row.x1 }}" y2="{{ y }}"/>
+{%- if row.parent_row is not none %}{% if row.rollback_href %}<a href="{{ row.rollback_href }}"><title>rollback at auditor turn {{ row.rollback_turn }}{% if row.unresolved %} · fork point not recorded{% endif %}</title>{% endif %}<circle class="petri-fork" cx="{{ d.left + row.x0 }}" cy="{{ y }}" r="5"/>{% if row.rollback_href %}</a>{% endif %}{% endif %}
+{%- for call in row.calls %}{% set c = call.card %}<a href="#{{ c.id }}"><title>call #{{ c.number }} · attempt {{ c.attempt }} · reply {{ c.lane_turn + 1 }} · auditor turn {{ c.auditor_turn }}{% if c.phase %} · phase {{ c.phase_index }} ({{ c.phase }}){% endif %}{% if d.path_known %} · {{ "surviving" if call.surviving else "discarded" }}{% endif %}</title><rect class="petri-call{% if d.path_known and not call.surviving %} petri-discarded{% endif %}" x="{{ d.left + call.x + 3 }}" y="{{ y - 9 }}" width="{{ d.unit - 6 }}" height="18" rx="3"{% if c.color %} style="fill:{{ c.color }}"{% endif %}/><text class="petri-call-label" x="{{ d.left + call.x + d.unit / 2 }}" y="{{ y + 4 }}" text-anchor="middle">{{ c.number }}</text></a>{% endfor %}
+{%- if not row.calls %}<text class="petri-row-label" x="{{ d.left + row.x0 + 10 }}" y="{{ y + 4 }}">no target call</text>{% endif %}
+{%- endfor %}
+</svg></div>
+<p class="meta">One row per trajectory, forks at the auditor rollback that opened them; a block is one target call, numbered in recorded order{% if d.path_known %}, muted when discarded{% endif %}. Click a block to open its card{% if d.rows|selectattr("rollback_href")|list %}, a fork to open the auditor's phase{% endif %}.</p>
+{%- endmacro %}
+
+{% macro call_card(c) -%}
+<details class="event petri-call-card" id="{{ c.id }}"><summary><strong>Call #{{ c.number }}</strong> · attempt {{ c.attempt }}, reply {{ c.lane_turn + 1 }} · driven by auditor turn {{ c.auditor_turn }}{% if c.phase_href %} (<a href="{{ c.phase_href }}">phase {{ c.phase_index }} · {{ c.phase }}</a>){% endif %}{% if c.model %} · <span class="meta">{{ c.model }}</span>{% endif %}</summary>
+{%- if c.reasoning %}<p class="excerpt-thinking">[thinking] {{ c.reasoning }}{% if c.truncated and not c.text %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
+{%- if c.text %}<p class="{{ 'petri-full' if c.full_text else '' }}">{{ c.text }}{% if c.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
+{%- if not c.text and not c.reasoning and not c.tools %}<p class="meta">No text or tool call recorded.</p>{% endif %}
+{%- for t in c.tools %}<p class="meta">tool call: <strong>{{ t.name }}</strong>{% if c.full_text %}<br>arguments: {{ t.arguments }}{% if t.result is not none %}<br>result: {{ t.result }}{% endif %}{% if t.error %}<br>error: {{ t.error }}{% endif %}{% endif %}</p>{% endfor %}
+{%- if c.open_link %}<p class="meta"><a href="{{ c.open_link }}" target="_blank">Open in Scout viewer ↗</a></p>{% endif %}</details>
+{%- endmacro %}
+
+{% macro phase_group(g, cards) -%}
+<details class="event petri-group"{% if g.surviving %} open{% endif %}><summary>{% if g.color %}<span class="swatch" style="background:{{ g.color }};"></span> {% endif %}{% if g.phase %}<strong>Phase {{ g.phase_index }}</strong> · {{ g.phase }}{% else %}<strong>Unlabelled</strong> · no judged auditor phase{% endif %} · {{ g.calls|length }} target call{{ "" if g.calls|length == 1 else "s" }}{% if g.phase_href %} · <a href="{{ g.phase_href }}">auditor's phase card</a>{% endif %}</summary>
+{%- for n in g.calls %}{{ call_card(cards[n]) }}{% endfor %}</details>
+{%- endmacro %}
+
+{% macro cards(entries, cards) -%}
+<div class="petri-cards">
+{%- for e in entries %}{% if e.kind == "phase" %}{{ phase_group(e, cards) }}{% else %}
+<details class="event petri-alternatives"><summary><strong>Earlier attempt{{ "" if e.branches|length == 1 else "s" }}</strong> · {{ e.branches|length }} branch{{ "" if e.branches|length == 1 else "es" }} discarded {% if e.after %}after call #{{ e.after }}{% else %}before the first surviving call{% endif %}</summary>
+{%- for b in e.branches %}<p class="meta">Branch B{{ b.number }}{% if b.rollback_turn is not none %} · rolled back at auditor turn {{ b.rollback_turn }}{% endif %}</p>{% for g in b.groups %}{{ phase_group(g, cards) }}{% endfor %}{% endfor %}</details>
+{%- endif %}{% endfor %}
+</div>
+{%- endmacro %}

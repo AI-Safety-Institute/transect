@@ -46,9 +46,13 @@
 // shape without parsing it.
 function _transectOpenPhaseFromHash() {
   var hash = location.hash;
-  if (!hash || hash.indexOf("#phase-") !== 0) return;
+  if (!hash || (hash.indexOf("#phase-") !== 0 && hash.indexOf("#petri-") !== 0)) return;
   var target = document.getElementById(hash.slice(1));
   if (!target) return;
+  // a Petri call card sits inside folded group cards: open them too
+  for (var node = target.parentElement; node; node = node.parentElement) {
+    if (node.tagName === "DETAILS") node.open = true;
+  }
   // A card filter may have hidden the target (a hidden anchor is a
   // link to nowhere): clear that card scope's filters first.
   if (target.style.display === "none") {

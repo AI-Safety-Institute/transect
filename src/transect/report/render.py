@@ -18,7 +18,7 @@ from inspect_viz.plot import HtmlPage
 from markupsafe import Markup
 
 from transect.frames import TransectResults, spine
-from transect.report import charts, custom, sections
+from transect.report import charts, custom, petri as petri_report, sections
 from transect.report._jinja import jinja_env
 from transect.report.colors import _UNJUDGED_GREY, _label_colors, _phase_colors
 from transect.report.display import MEMBER_NO_VOTE, member_display, multi_roll_models
@@ -40,6 +40,7 @@ SECTION_KEYS = (
     "token_telemetry",
     "subagents",
     "token_spend",
+    "target_conversation",
     "phase_cards",
 )
 
@@ -63,6 +64,7 @@ def render_report(
     viewer_base_url: str | None = None,
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
+    petri_full_text: bool = False,
 ) -> str:
     validate_section_order(
         section_order, [layer.name for layer in results.extra_layers]
@@ -88,7 +90,11 @@ def render_report(
                 tag_layer_of[family] = layer.name
     # read once for all transcripts; empty when the store is unreachable
     # at render time, and the affected surfaces render without extras
-    transcript_extras = read_transcript_extras(results.transcripts_location, order)
+    info = results.transcript_info
+    petri_ids = set(info.transcript_id[info.eval_family == "petri"])
+    transcript_extras = read_transcript_extras(
+        results.transcripts_location, order, petri_ids
+    )
     # every chart is a fragment of this one page (`embed.embed_section`);
     # each fragment it produces must reach the template, since a fragment
     # waits without a timeout for a table an earlier one embeds
@@ -351,6 +357,22 @@ def render_report(
                 )
         if spend_blocks:
             add(("token_spend", sections.section("Token spend", spend_blocks)))
+        if my_extras and my_extras.petri is not None:
+            add(
+                (
+                    "target_conversation",
+                    petri_report.target_section(
+                        my_extras.petri,
+                        my_phase_turns,
+                        phase_colors,
+                        idx,
+                        _viewer_link(
+                            viewer_base_url, results.transcripts_location, transcript_id
+                        ),
+                        petri_full_text,
+                    ),
+                )
+            )
         if phase_cards_section is not None:
             add(("phase_cards", phase_cards_section))
 

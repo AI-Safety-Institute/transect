@@ -380,7 +380,11 @@ def test_transcript_info_keeps_index_metadata_and_stamps_the_scan_error():
                 {
                     "transcript_id": "ok",
                     "transcript_model": "mockllm/model",
-                    "value": {"compaction_prompt": None, "system_prompt": "sys"},
+                    "value": {
+                        "compaction_prompt": None,
+                        "eval_family": None,
+                        "system_prompt": "sys",
+                    },
                     "scan_error": None,
                 },
             ]
@@ -399,7 +403,14 @@ def test_transcript_info_keeps_index_metadata_and_stamps_the_scan_error():
 def test_transcript_info_preserves_unrecorded_setup_facts(error):
     """A successful setup with no recorded prompt is still a valid result."""
     frame = transcript_info_df(
-        pd.DataFrame([{"value": {"compaction_prompt": None}, "scan_error": error}])
+        pd.DataFrame(
+            [
+                {
+                    "value": {"compaction_prompt": None, "eval_family": None},
+                    "scan_error": error,
+                }
+            ]
+        )
     )
     assert len(frame) == 1 and frame.compaction_prompt.iloc[0] is None
 

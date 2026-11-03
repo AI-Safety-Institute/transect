@@ -42,6 +42,21 @@ badge-marked report section, phase-card chips and filter, a
 "Group by: skill" option in Token spend, and an entity block in
 the reliability audit.
 
+## 4. Petri audit
+
+    uv run python examples/transect_petri.py
+
+`petri_logs/petri_demo.eval` is a scripted
+[inspect_petri](https://meridianlabs-ai.github.io/inspect_petri/) audit
+(two epochs; `tests/fixtures/generate_petri_eval.py` regenerates it):
+an auditor sets up a target, probes it twice, rolls it back to its first
+message and probes twice more. The run is structural ($0): the auditor's
+turns are the axis and the report's Target conversation section shows the
+target's two trajectories, the surviving conversation and the discarded
+attempt. Pass `--full-text` to render every target reply whole, or
+`--judge` to label the auditor's phases with a judge model (needs
+`ANTHROPIC_API_KEY`).
+
 ## Sample and epoch selection
 
 A run scans one sample: `sample=` picks it (required when the log

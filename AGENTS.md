@@ -156,6 +156,21 @@ scanner change take effect; run a new scan and retain both results for compariso
   coordinates. Headlines and summaries store unclipped, and
   `narration_group_status` stamps the outcome (`complete` checks
   partition coordinates, not factual correctness).
+- **Petri eval family.** A run whose recorded model roles name an
+  `auditor` and a `target` is a Petri audit (`transect.petri.is_petri`,
+  stamped as `transcript_info.eval_family`); nothing else detects it.
+  The auditor is the orchestrator and each target trajectory a role
+  lane, so every judged surface describes the auditor. The report's
+  Target conversation section (`report/petri.py`) reads the target's
+  calls, the stored `target` branch timeline and the final message
+  list at render time through `petri.conversation.target_conversation`:
+  branches and fork points come from the timeline's `branched_from`
+  anchors, the surviving path from the last target reply in the
+  messages, rollbacks from the tool call preceding each branch event.
+  A missing timeline or endpoint is stated, never inferred. Replies
+  render capped unless `petri_full_text` is set; the viewer link
+  carries the whole text. The scripted demo audit is
+  `examples/petri_logs/petri_demo.eval` (`tests/fixtures/generate_petri_eval.py`).
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
   stored scan on every load. It records execution only: completed vs total
   transcripts, recorded errors, and the model usage each scanner billed

@@ -7,6 +7,7 @@ from inspect_ai.log import read_eval_log
 from inspect_scout import Result, Scanner, Transcript, scanner
 from pydantic import JsonValue
 
+from transect.petri import EVAL_FAMILY, is_petri
 from transect.scanners.compaction import compaction_texts
 from transect.scanners.helpers import (
     Lanes,
@@ -125,6 +126,8 @@ def eval_setup() -> Scanner[Transcript]:
       template from agent_args.compaction.prompt, not a resolved default.
     - ``task_args`` / ``generate_config`` / ``model_roles``: from the
       importer's per-sample transcript metadata; None where absent.
+    - ``eval_family``: ``"petri"`` when the model roles name an auditor
+      and a target (`transect.petri.is_petri`), else None.
     - ``header``: the source log's header subset (eval config incl.
       limits, sandbox, dataset, scorers, task file + version), read
       here from ``transcript.source_uri`` (header-only, memoised per
@@ -158,6 +161,7 @@ def eval_setup() -> Scanner[Transcript]:
             "task_args": meta.get("task_args"),
             "generate_config": meta.get("generate_config"),
             "model_roles": meta.get("model_roles"),
+            "eval_family": EVAL_FAMILY if is_petri(meta.get("model_roles")) else None,
             "header": header,
             "compaction_prompt": prompt if isinstance(prompt, str) else None,
         }

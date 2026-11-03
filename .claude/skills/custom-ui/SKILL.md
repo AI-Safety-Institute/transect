@@ -54,7 +54,7 @@ Grains and join keys, in one table:
 
 | grain | frame(s) | key |
 |---|---|---|
-| transcript | transcript_info | `transcript_id` (every frame carries the identity prefix: `sample_id`, `task_set`, `epoch`, `transcript_id`, `agent`) |
+| transcript | transcript_info | `transcript_id` (every frame carries the identity prefix: `sample_id`, `task_set`, `epoch`, `transcript_id`, `agent`); `eval_family` is `petri` on a Petri audit |
 | orchestrator turn | token_timeline, phase_turns, turn_tags | `turn` (0-based orchestrator turn; a lane's own turns are not on the axis and carry `turn` NA with a `lane_turn`) |
 | phase | phases, turn_groups | `phase_index`; `phase` is the label |
 | lane span (a sub-agent, or another model role's conversation: `lane_kind`) | subagents, lane_activity | `agent_span_id` |
