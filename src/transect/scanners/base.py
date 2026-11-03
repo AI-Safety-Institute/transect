@@ -39,6 +39,7 @@ def token_timeline() -> Scanner[Transcript]:
     an init/scorer call, which are off the axis), ``lane_turn`` (0-based
     within the turn's own lane; None on an off-axis call, which is in no
     lane), ``agent_lane`` / ``agent_span_id`` (None on the orchestrator),
+    ``role`` (the call's recorded model role; None when role-less),
     ``n_tool_calls``, ``timestamp`` / ``completed``
     (ISO strings; None when unrecorded), and the ModelUsage fields
     (None = not reported, never 0).
@@ -83,6 +84,7 @@ def token_timeline() -> Scanner[Transcript]:
                 "lane_turn": lane_turn,
                 "agent_lane": sub.name if sub else None,
                 "agent_span_id": sub.id if sub else None,
+                "role": getattr(event, "role", None),
                 "n_tool_calls": len(calls),
                 "timestamp": _iso(getattr(event, "timestamp", None)),
                 "completed": _iso(getattr(event, "completed", None)),

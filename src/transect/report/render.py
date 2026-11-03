@@ -178,7 +178,9 @@ def render_report(
                 "Phase timeline",
                 [
                     sections.phase_explanation(),
-                    sections.phase_summary_line(my_phases, my_phase_turns),
+                    sections.phase_summary_line(
+                        my_phases, my_phase_turns, _axis_role(main)
+                    ),
                     sections.reliability_warnings(
                         sections.phase_reliability_flags(
                             my_phases, my_turn_votes, my_phase_turns
@@ -313,6 +315,7 @@ def render_report(
                 n_turns,
                 lanes,
                 my_subagents,
+                one,
                 my_subagent_votes,
                 all_flushes,
                 my_extras.spawn_prompts if my_extras else {},
@@ -339,6 +342,10 @@ def render_report(
             elif subagent_message:
                 spend_blocks.append(sections.spend_group_heading("By sub-agent label"))
                 spend_blocks.append(sections.spend_subagent_unavailable())
+        role_bars = sections.spend_role_bars(one)
+        if role_bars:
+            spend_blocks.append(sections.spend_group_heading("By model role"))
+            spend_blocks.append(_chart(page, [charts.spend_bars(role_bars)]))
         if family_groups:
             scope = f"spend-tags-{idx}"
             spend_blocks.append(
@@ -476,6 +483,7 @@ def _subagent_section(
     n_turns: int,
     lanes: list[SpanGeometry],
     subagents: pd.DataFrame,
+    one: pd.DataFrame,
     subagent_votes: pd.DataFrame,
     flushes: pd.DataFrame,
     spawn_prompts: dict[str, SpawnPrompt],
@@ -499,21 +507,21 @@ def _subagent_section(
         if pd.notna(row.label)
     }
 
-    role_ids = sections.role_lane_ids(subagents)
+    role_of = sections.role_lanes(subagents, one)
+    role_groups = set(role_of.values())
 
     def _label(span_id) -> str:
-        return sections.lane_group(span_id, label_of, role_ids, classification_ran)
+        return sections.lane_group(span_id, label_of, role_of, classification_ran)
 
     by_label: dict[str, list[SpanGeometry]] = {}
     for span in lanes:
         by_label.setdefault(_label(span.span_id), []).append(span)
     colors = (
-        _label_colors(sorted(g for g in by_label if g != sections.ROLE_LANE_GROUP))
+        _label_colors(sorted(g for g in by_label if g not in role_groups))
         if classification_ran
         else dict.fromkeys(by_label, _UNJUDGED_GREY)
     )
-    if sections.ROLE_LANE_GROUP in by_label:
-        colors[sections.ROLE_LANE_GROUP] = _UNJUDGED_GREY
+    colors.update(dict.fromkeys(role_groups & set(by_label), _UNJUDGED_GREY))
 
     # the packing footprint matches what is drawn: a tick's fixed
     # footprint when any span is a tick, else the box floor, so two
@@ -629,7 +637,7 @@ def _subagent_section(
         key=lambda row: int(row["turn"] or 0),
     )
     return sections.section(
-        "Sub-agent activity",
+        "Sub-agent / lane activity",
         [
             # honesty case (1): with no judge run the explanation would
             # describe a scan that never happened
@@ -639,6 +647,8 @@ def _subagent_section(
                 label_of,
                 subagents,
                 classification_ran,
+                role_of,
+                _axis_role(one[one.turn.notna()]),
             ),
             sections.reliability_warnings(flags),
             _chart(page, [component]),
@@ -691,6 +701,13 @@ def _span_lanes(subagents: pd.DataFrame, main: pd.DataFrame) -> list[SpanGeometr
                 )
             )
     return spans
+
+
+def _axis_role(main: pd.DataFrame) -> str | None:
+    """The model role the orchestrator's turns record, when they record
+    one role."""
+    roles = list(main.role.dropna().unique())
+    return str(roles[0]) if len(roles) == 1 else None
 
 
 def _transcript_title(one: pd.DataFrame, info: pd.DataFrame) -> str:

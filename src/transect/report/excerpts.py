@@ -364,9 +364,10 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
 
 
 def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
-    """Each sub-agent span's own spawn prompt, in full, keyed by
-    ``agent_span_id``. Uncapped: the expandable exists for a human to
-    read the whole task. The judge's own capped copy fills in per span
+    """Each lane's own spawn prompt, in full, keyed by ``agent_span_id``:
+    a sub-agent span's task, or the message that opened another role's
+    conversation. Uncapped: the expandable exists for a human to read
+    the whole task. The judge's own capped copy fills in per span
     when this read yields nothing for it (no store, or a span whose
     metadata carries no task text).
 
@@ -393,7 +394,7 @@ def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
     """
     lanes = Lanes(transcript)
     found: dict[str, SpawnPrompt] = {}
-    for begin in lanes.begins:
+    for begin in [*lanes.begins, *lanes.role_begins]:
         text, _source = span_task_text(begin, lanes.first_models.get(begin.id))
         if text:
             found[begin.id] = SpawnPrompt(text=text, truncated=False)

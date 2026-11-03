@@ -773,9 +773,9 @@ def test_a_sub_agents_first_model_skips_inspects_utility_wrapped_calls():
     assert lanes.first_models["C"] is real
 
 
-def test_role_lanes_reach_no_sub_agent_surface():
-    """A target trajectory is never classified, digested as a delegation
-    or listed as a spawn: those surfaces read sub-agent lanes only."""
+def test_role_lanes_reach_no_judged_sub_agent_surface():
+    """A target trajectory is never classified or digested as a delegation;
+    the report's spawn list does show what opened it."""
     import asyncio
 
     from transect.report.excerpts import _spawn_prompts
@@ -793,4 +793,4 @@ def test_role_lanes_reach_no_sub_agent_surface():
     assert all(
         not d.delegations and "[DELEGATES]" not in digest_line(d) for d in digests
     )
-    assert _spawn_prompts(transcript) == {}
+    assert set(_spawn_prompts(transcript)) == {"attempt-1", "attempt-2"}

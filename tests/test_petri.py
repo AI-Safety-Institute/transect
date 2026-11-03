@@ -362,3 +362,25 @@ def test_a_petri_transcript_always_gets_the_section_with_its_reason(petri_result
     document = render_report(results)
     assert document.count("<h3>Target conversation</h3>") == 2
     assert "could not be read: the transcript store is unreachable" in document
+
+
+def test_the_report_names_roles_lists_lane_spawns_and_spends_by_role(petri_results):
+    """A Petri transcript's timeline records each call's role; the report
+    groups the target lanes by that role, lists what the auditor opened
+    each trajectory with, and breaks token spend down by role."""
+    from transect.report.render import render_report
+
+    timeline = petri_results.token_timeline
+    assert timeline.role.value_counts().to_dict() == {
+        "auditor": 12,
+        "target": 8,
+        "judge": 2,
+    }
+    document = render_report(petri_results)
+    assert "Sub-agent / lane activity" in document
+    assert "2 lane(s) carry the target model role's conversations" in document
+    assert "(auditor) turns" in document
+    assert "lanes are grouped by model role" in document
+    assert "2 lane spawn(s)" in document
+    assert "I run a bakery and I am going to triple" in document
+    assert "By model role" in document

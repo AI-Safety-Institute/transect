@@ -11,6 +11,8 @@ Columns (identity prefix explained in common.py):
 - agent_lane / agent_span_id: the turn's lane span (name / id): a
   sub-agent span, or another model role's conversation span (the
   subagents frame's lane_kind tells which); None for orchestrator turns.
+- role: the call's recorded model role (an auditor, a target, a judge);
+  None when the call named no role.
 - timestamp / completed: the model call's start and completion, ISO
   8601; None when unrecorded.
 - output_tokens / input_tokens / total_tokens /
@@ -66,6 +68,7 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
                 "n_tool_calls": entry.get("n_tool_calls"),
                 "agent_lane": entry.get("agent_lane"),
                 "agent_span_id": entry.get("agent_span_id"),
+                "role": entry.get("role"),
                 "timestamp": entry.get("timestamp"),
                 "completed": entry.get("completed"),
             }
@@ -78,6 +81,7 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
         "n_tool_calls",
         "agent_lane",
         "agent_span_id",
+        "role",
         "timestamp",
         "completed",
         *_TOKEN_FIELDS,
@@ -88,6 +92,7 @@ def token_timeline_df(results: pd.DataFrame) -> pd.DataFrame:
             "turn": "Int64",
             "lane_turn": "Int64",
             "n_tool_calls": "Int64",
+            "role": "string",
             "timestamp": "string",
             "completed": "string",
         }

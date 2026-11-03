@@ -248,10 +248,10 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions
   and any recorded compaction threshold marked.
-- **Sub-agent activity**: one swimlane box per lane spanning the orchestrator
-  turns active while it ran: a spawned sub-agent with its classified role, or
-  another model role's conversation (a target driven by an auditor), which is
-  named as such and never classified.
+- **Sub-agent / lane activity**: one swimlane box per lane spanning the
+  orchestrator turns active while it ran: a spawned sub-agent with its
+  classified label, or another model role's conversation (a target driven by
+  an auditor) grouped under its role; each lane's opening message is listed.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
 - **Target conversation** (Petri audits): the target's branch tree and surviving
@@ -361,6 +361,7 @@ erDiagram
         int turn PK "orchestrator turn; NA on a lane's own turns"
         int lane_turn "ordinal within the turn's own lane"
         string agent_span_id FK "lane span; NA on the orchestrator"
+        string role "recorded model role; NA when role-less"
         string timestamp "model call start, ISO"
         string completed "model call completion, ISO"
         int output_tokens
