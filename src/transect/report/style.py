@@ -152,9 +152,12 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-segment {{ stroke-width: 4; stroke-linecap: butt; }}
 .petri-segment-label {{ fill: var(--transect-color-muted); font-size: 0.62rem; }}
 .petri-call {{ fill: #8896a2; }}
-.petri-discarded {{ fill: #a0a8b0; }}
+.petri-discarded {{ fill: #d5dadf; }}
 .petri-call-label {{ fill: #fff; pointer-events: none; }}
+.petri-discarded-label {{ fill: var(--transect-color-muted); }}
 .petri-axis {{ fill: var(--transect-color-muted); font-size: 0.68rem; }}
+.petri-legend svg {{ vertical-align: -2px; margin-right: 4px; }}
+.petri-legend-band {{ height: 4px; vertical-align: 2px; }}
 .petri-discarded-card > summary {{ color: var(--transect-color-muted); }}
 .petri-rollback, .petri-prompt {{ border-left: 3px solid var(--transect-color-border);
   padding-left: 0.5rem; }}

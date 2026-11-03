@@ -27,8 +27,8 @@ from transect.report import sections
 from transect.report._jinja import jinja_env
 from transect.report.excerpts import TEXT_CHARS
 
-_UNIT = 36  # px per target call along a row
-_GAP = 14  # px between blocks, where a circle sits
+_UNIT = 46  # px per target call along a row
+_GAP = 24  # px between blocks, where a circle (r=5) sits with 7 px clear each side
 _ROW = 50  # px per trajectory row
 _LEFT = 40  # px for the row labels
 _CAPTION = 200  # px the axis caption needs (measured at 0.68rem in Chromium)
@@ -211,7 +211,7 @@ def _diagram(
 ) -> dict[str, Any]:
     """Row geometry for the tree, in pixels from the row origin: each
     trajectory's start, its circle, its blocks and its phase segments
-    (consecutive calls of one phase)."""
+    (consecutive calls of one phase), plus the legend's phases."""
     surviving = set(conversation.surviving or [])
     starts: dict[int, int] = {}
     rows: list[dict[str, Any]] = []
@@ -268,8 +268,19 @@ def _diagram(
                 "segments": segments,
             }
         )
+    phases = sorted(
+        {
+            (s["phase_index"], s["phase"], s["color"])
+            for r in rows
+            for s in r["segments"]
+        }
+    )
     return {
         "rows": rows,
+        "legend": [
+            {"index": index, "phase": phase, "color": color}
+            for index, phase, color in phases
+        ],
         "left": _LEFT,
         "unit": _UNIT,
         "gap": _GAP,
