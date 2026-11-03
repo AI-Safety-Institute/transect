@@ -136,9 +136,9 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
   `judge_models` is set and the Spec declares their vocabulary.
 - **Turn digests**: what the phase judges read - one line per
   orchestrator turn with content, carrying its reasoning, text, tool
-  calls and sub-agent tasks (and, on a Petri audit, the target's
-  replies), each part capped by a `DigestSettings` passed as `digest=`
-  to `transect()`.
+  calls and sub-agent tasks, each part capped by a `DigestSettings`
+  passed as `digest=` to `transect()` (and, on a Petri audit, the
+  target's replies, capped at 1000 characters).
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.

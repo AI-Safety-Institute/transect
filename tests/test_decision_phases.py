@@ -11,6 +11,8 @@ from helpers import (
     model_turn,
     narrate_answer,
     narrative,
+    petri_scaffold,
+    run_item,
     run_scan,
     scripted_judge,
     seg,
@@ -571,24 +573,34 @@ def test_the_target_rule_renders_only_for_digests_with_target_replies(build):
 @pytest.mark.parametrize("roles", [True, False], ids=["petri", "no model roles"])
 def test_the_judge_of_a_petri_audit_reads_the_target_rule_and_replies(roles):
     """A Petri transcript's judge gets the [TARGET] rule in its system
-    prompt and the replies in its digest lines; any other transcript's
-    judge gets neither."""
-    from helpers import petri_scaffold, run_item
-    from inspect_ai.model import get_model
-
+    prompt and the replies in its digest lines, and its verifier the same
+    rule; any other transcript's judge and verifier get neither."""
     seen = []
 
     def judge(input, tools, tool_choice, config):
         seen.append(input)
-        return seg_answer(seg(0, 2, "experiment"))
+        if (
+            "verdicts"
+            in next(t for t in tools if t.name == "answer").parameters.properties
+        ):
+            return verify_answer(
+                {
+                    "phase_index": 0,
+                    "phase": "experiment",
+                    "confidence": 0.9,
+                    "explanation": "ok",
+                }
+            )
+        return seg_answer(seg(0, 2, "experiment", confidence=0.3))
 
     scan = decision_phases(
         PHASES_SPEC,
         get_model(MODEL, custom_outputs=judge, memoize=False),
-        verify=False,
+        verify=True,
+        verify_sample=1.0,
         narrate=False,
     )
     run_item(scan, petri_scaffold(roles))
-    system, user = seen[0][0].text, seen[0][-1].text
-    assert ("[TARGET]" in system) is roles
-    assert ("[TARGET] target 0" in user) is roles
+    assert len({prompt[0].text for prompt in seen}) == 2  # judge and verifier
+    assert all(("[TARGET]" in prompt[0].text) is roles for prompt in seen)
+    assert ("[TARGET] target 0" in seen[0][-1].text) is roles

@@ -411,6 +411,7 @@ def decision_phases(
                 chunk=verify_chunk,
                 cache=cache,
                 sample=verify_sample,
+                target=target,
             )
             audit.verifier_model = str(verifier)
         if n_members > 1:

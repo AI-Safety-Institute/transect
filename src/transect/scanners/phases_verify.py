@@ -167,6 +167,7 @@ async def verify_phases(
     chunk: int,
     cache: bool | CachePolicy,
     sample: float | None = None,
+    target: bool = False,
 ) -> tuple[list[StitchedPhase], VerifierAudit]:
     """Run the second-round verifier and apply its overturns.
 
@@ -188,6 +189,7 @@ async def verify_phases(
         chunk: Phases per verifier call.
         cache: Judge-call caching.
         sample: The spot-checked share (see `select_for_verify`).
+        target: Whether the digests carry a Petri target's replies.
 
     Returns:
         ``(phases, audit)`` - the (possibly re-stitched) phases carrying
@@ -208,9 +210,7 @@ async def verify_phases(
     )
     if not selected:
         return phases, audit
-    system = verify_system_prompt(
-        spec, task_prompt, target=any(d.target_replies for d in digests)
-    )
+    system = verify_system_prompt(spec, task_prompt, target=target)
     answer = _verify_answer_spec(phase_names)
     ids_chunks = [
         selected[offset : offset + chunk] for offset in range(0, len(selected), chunk)

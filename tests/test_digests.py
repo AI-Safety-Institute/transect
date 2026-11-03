@@ -296,5 +296,8 @@ def test_petri_target_replies_ride_the_auditor_turn_that_produced_them(
     rendered = [
         digest_line(d) for d in turn_digests(petri_scaffold(roles, reply, reply_tools))
     ]
-    assert len(rendered) == 3
-    assert rendered[0] == "0: auditor 0 (tools: send_message)" + tail
+    assert rendered == [
+        f"{n}: auditor {n} (tools: send_message)"
+        + tail.replace("target 0", f"target {n}")
+        for n in range(3)
+    ]

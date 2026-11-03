@@ -85,7 +85,9 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     ``digest.tool_only_turns``) a tool call. On a Petri audit
     (`transect.petri.is_petri`) an auditor turn's digest also carries
     the target replies its calls produced: the role lanes' model turns
-    before the next auditor turn, each capped at 1000 characters.
+    before the next auditor turn, each capped at 1000 characters. The
+    replies ride their turn's eligibility: a turn with nothing to judge
+    yields no digest, and the replies it produced are shown nowhere.
 
     Args:
         transcript: The transcript to digest.
@@ -293,9 +295,9 @@ def _tool_digest(
 def _target_replies(lanes: Lanes, start: int, end: int) -> list[str]:
     """The replies the target produced within one auditor turn: the
     role lanes' model turns between event positions ``start`` and
-    ``end``, each as its text, or as the names of the tools a text-less
-    reply called; an empty reply is left out."""
-    replies = []
+    ``end``, each as its text; tool calls are listed, by name, only for
+    a text-less reply; an empty reply is left out."""
+    replies: list[str] = []
     for event in lanes.events[start + 1 : end]:
         if not is_model_turn(event):
             continue
