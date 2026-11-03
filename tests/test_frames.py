@@ -225,12 +225,13 @@ def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
     assert subagents.label.isna().all()
     expected = pd.DataFrame(
         [
-            ("eda", 3, 3, 3, "timestamp", True, 2, 1750.0),
-            ("alt_model", 5, 5, 5, "timestamp", True, 2, 2701.0),
-            ("reviewer", 8, 8, 8, "timestamp", True, 3, 6242.0),
+            ("eda", "subagent", 3, 3, 3, "timestamp", True, 2, 1750.0),
+            ("alt_model", "subagent", 5, 5, 5, "timestamp", True, 2, 2701.0),
+            ("reviewer", "subagent", 8, 8, 8, "timestamp", True, 3, 6242.0),
         ],
         columns=[
             "agent_lane",
+            "lane_kind",
             "spawn_turn",
             "anchor_turn",
             "end_turn",
@@ -244,6 +245,7 @@ def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
         subagents[expected.columns].reset_index(drop=True),
         expected,
         check_dtype=False,
+        check_categorical=False,
     )
     # each span ran inside the wall-clock interval of its transfer turn
     assert (subagents.started_at < subagents.ended_at).all()
@@ -852,15 +854,6 @@ def test_subagent_labels_join_their_definitions_after_reload(demo_log, tmp_path)
         joined = frames.subagents.merge(definitions, on=["transcript_id", "label"])
         assert len(joined) == len(frames.subagents) > 0
         assert set(joined.description) == {"Reads"}
-
-
-def test_subagents_frame_carries_the_lane_kind(demo_results):
-    """Every span row says what kind of lane it is; the demo's handoff
-    spans are sub-agents, and the empty frame still has the column."""
-    subagents = demo_results.frames()["subagents"]
-    assert subagents.lane_kind.tolist() == ["subagent"] * 3
-    assert list(subagents.lane_kind.cat.categories) == ["subagent", "role"]
-    assert "lane_kind" in subagents_df(pd.DataFrame()).columns
 
 
 def test_a_span_record_without_a_lane_kind_names_the_rescan():

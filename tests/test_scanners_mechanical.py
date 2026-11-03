@@ -567,49 +567,189 @@ def test_human_approvals_are_interventions_and_automatic_ones_are_not(approver, 
         assert intervention["turn"] == 1
 
 
-@pytest.mark.parametrize("target_tools", [False, True])
-def test_the_role_opening_the_tool_loop_is_the_axis_and_other_roles_are_lanes(
-    target_tools,
-):
-    """The auditor's turns are the axis, each target trajectory span is a
-    lane of kind role, and the scorer's judge call is off the axis, whether
-    or not Inspect's timeline wraps the target calls as utility helpers."""
-    value = run_item(token_timeline(), auditor_scaffold(target_tools)).value
-    rows = [
-        (e["turn"], e["lane_turn"], e["agent_lane"], e["agent_span_id"])
-        for e in value["timeline"]
+def _roled(event, role, span_id=None, tools=False):
+    event.role = role
+    if span_id is not None:
+        event.span_id = span_id
+    if tools:
+        event.output.message.tool_calls = [
+            ToolCall(id=f"call-{id(event)}", function="bash", arguments={})
+        ]
+    return event
+
+
+def _one_role():
+    events = [*agent_span("R", "react", inner=[model_turn("a"), model_turn("b")])]
+    for event in events:
+        if isinstance(event, ModelEvent):
+            event.role = "target"
+    return StubTranscript(events)
+
+
+def _sub_agent():
+    inner = [
+        model_turn("lead"),
+        *agent_span("C", "eda", [model_turn("s0")], parent_id="R"),
     ]
-    assert rows == [
-        (0, 0, None, None),
-        (None, 0, "trajectory", "attempt-1"),
-        (1, 1, None, None),
-        (None, 1, "trajectory", "attempt-1"),
-        (2, 2, None, None),
-        (None, 0, "trajectory", "attempt-2"),
-        (None, None, None, None),
+    return StubTranscript(agent_span("R", "react", inner=inner))
+
+
+def _target_span_opened_first():
+    transcript = auditor_scaffold(target_tools=True)
+    begins = {
+        e.id: i for i, e in enumerate(transcript.events) if e.event == "span_begin"
+    }
+    i, j = begins["auditor"], begins["target"]
+    transcript.events[i], transcript.events[j] = (
+        transcript.events[j],
+        transcript.events[i],
+    )
+    return transcript
+
+
+def _critic_in_the_orchestrators_span():
+    turns = [
+        _roled(model_turn("a"), None, tools=True),
+        _roled(model_turn("c"), "critic"),
     ]
+    return StubTranscript(agent_span("R", "react", inner=[*turns, model_turn("a2")]))
+
+
+def _critic_beside_the_orchestrator_in_a_solver_span():
+    turns = [
+        _roled(model_turn("a"), None, "s", tools=True),
+        _roled(model_turn("c"), "critic", "s"),
+        _roled(model_turn("a2"), None, "s"),
+    ]
+    return StubTranscript(
+        [
+            SpanBeginEvent(
+                id="solvers", parent_id=None, type="solvers", name="solvers"
+            ),
+            SpanBeginEvent(id="s", parent_id="solvers", type="solver", name="s"),
+            *turns,
+            SpanEndEvent(id="s"),
+            SpanEndEvent(id="solvers"),
+        ]
+    )
+
+
+def _critic_inside_a_sub_agent():
+    inner = [
+        model_turn("s0"),
+        SpanBeginEvent(id="S", parent_id="C", type="solver", name="s"),
+        _roled(model_turn("critic"), "critic", "S"),
+        SpanEndEvent(id="S"),
+    ]
+    events = agent_span(
+        "R",
+        "react",
+        inner=[model_turn("lead"), *agent_span("C", "eda", inner, parent_id="R")],
+    )
+    return StubTranscript(events)
+
+
+def _grader_in_a_tool_span():
+    inner = [
+        model_turn("lead"),
+        SpanBeginEvent(id="T", parent_id="R", type="tool", name="ask_expert"),
+        _roled(model_turn("grade"), "grader", "T"),
+        SpanEndEvent(id="T"),
+        model_turn("lead 2"),
+    ]
+    return StubTranscript(agent_span("R", "react", inner=inner))
+
+
+SCAFFOLD_ROWS = [
+    (0, 0, None),
+    (None, 0, "attempt-1"),
+    (1, 1, None),
+    (None, 1, "attempt-1"),
+    (2, 2, None),
+    (None, 0, "attempt-2"),
+    (None, None, None),
+]
+SCAFFOLD_SPANS = [("attempt-1", "role", 0), ("attempt-2", "role", 2)]
+SOLO_ROWS = [(0, 0, None), (None, None, None), (1, 1, None)]
+
+
+@pytest.mark.parametrize(
+    ("make", "axis", "rows", "spans"),
+    [
+        (_one_role, "target", [(0, 0, None), (1, 1, None)], []),
+        (_sub_agent, None, [(0, 0, None), (None, 0, "C")], [("C", "subagent", 0)]),
+        (auditor_scaffold, "auditor", SCAFFOLD_ROWS, SCAFFOLD_SPANS),
+        (lambda: auditor_scaffold(True), "auditor", SCAFFOLD_ROWS, SCAFFOLD_SPANS),
+        (_target_span_opened_first, "auditor", SCAFFOLD_ROWS, SCAFFOLD_SPANS),
+        (_critic_in_the_orchestrators_span, None, SOLO_ROWS, []),
+        (_critic_beside_the_orchestrator_in_a_solver_span, None, SOLO_ROWS, []),
+        (
+            _critic_inside_a_sub_agent,
+            None,
+            [(0, 0, None), (None, 0, "C"), (None, 1, "C")],
+            [("C", "subagent", 0)],
+        ),
+        (_grader_in_a_tool_span, None, SOLO_ROWS, []),
+    ],
+    ids=[
+        "one role",
+        "sub-agent",
+        "auditor and target",
+        "target with tools",
+        "target span opened first",
+        "critic in the orchestrator's span",
+        "critic beside the orchestrator in a solver span",
+        "critic inside a sub-agent",
+        "grader in a tool span",
+    ],
+)
+def test_the_axis_role_and_the_lanes_of_each_shape(make, axis, rows, spans):
+    """The role that opens the main span and makes its first tool call is
+    the axis; a sub-agent span or another role's own conversation span is a
+    lane of its kind; another role's call anywhere else is off the axis."""
+    transcript = make()
+    assert helpers.Lanes(transcript).axis_role == axis
+    value = run_item(token_timeline(), transcript).value
     assert [
-        (r["agent_span_id"], r["lane_kind"], r["spawn_turn"], r["end_recorded"])
-        for r in value["spans"]
-    ] == [("attempt-1", "role", 0, True), ("attempt-2", "role", 2, True)]
+        (e["turn"], e["lane_turn"], e["agent_span_id"]) for e in value["timeline"]
+    ] == rows
+    assert [
+        (r["agent_span_id"], r["lane_kind"], r["spawn_turn"]) for r in value["spans"]
+    ] == spans
 
 
-def test_sub_agent_spans_record_lane_kind_subagent():
-    """An agent-type span below the orchestrator is a lane of kind subagent."""
-    events = [
-        *agent_span(
-            "R",
-            "react",
-            inner=[
-                model_turn("lead"),
-                *agent_span("C", "eda", inner=[model_turn("s0")], parent_id="R"),
-            ],
-        )
-    ]
-    value = run_scan(token_timeline(), events).value
-    assert [(r["agent_span_id"], r["lane_kind"]) for r in value["spans"]] == [
-        ("C", "subagent")
-    ]
+@pytest.mark.parametrize(
+    ("act", "error", "match"),
+    [
+        (
+            lambda: helpers.Lanes(
+                StubTranscript(
+                    agent_span(
+                        "R",
+                        "react",
+                        inner=[
+                            model_turn("plan"),
+                            _roled(model_turn("c"), "critic", tools=True),
+                            _roled(model_turn("act"), None, tools=True),
+                        ],
+                    )
+                )
+            ),
+            ValueError,
+            "critic",
+        ),
+        (
+            lambda: helpers.Lanes(auditor_scaffold()).lane_kind("auditor"),
+            KeyError,
+            "auditor",
+        ),
+    ],
+    ids=["opening turn and first tool call disagree", "kind of a span that is no lane"],
+)
+def test_lanes_raise_rather_than_guess(act, error, match):
+    """No single orchestrator role, or a span that is no lane, is an error."""
+    with pytest.raises(error, match=match):
+        act()
 
 
 def test_the_orchestrators_compaction_stays_on_the_axis_beside_role_lanes():
@@ -620,189 +760,37 @@ def test_the_orchestrators_compaction_stays_on_the_axis_beside_role_lanes():
     ] == [("summary", None, 2, "auditor")]
 
 
-def test_a_single_role_span_has_no_role_lanes():
-    """A main span of one role keeps that role on the axis with no lanes."""
-    events = [*agent_span("R", "react", inner=[model_turn("a"), model_turn("b")])]
-    for event in events:
-        if isinstance(event, ModelEvent):
-            event.role = "target"
-    lanes = helpers.Lanes(StubTranscript(events))
-    assert lanes.axis_role == "target"
-    assert lanes.begins == [] and lanes.role_begins == []
-    assert [turn for turn, _event, _calls in lanes.turns()] == [0, 1]
-
-
-def test_another_roles_calls_outside_any_span_of_their_own_are_off_the_axis():
-    """A critic's calls interleaved in the orchestrator's own span, with no
-    span of their own, are neither axis turns nor a lane: off the axis,
-    like an init or scorer call."""
-    agent, critic, again = model_turn("a"), model_turn("c"), model_turn("a2")
-    agent.role = again.role = None
-    critic.role = "critic"
-    agent.output.message.tool_calls = [ToolCall(id="c0", function="bash", arguments={})]
-    events = [*agent_span("R", "react", inner=[agent, critic, again])]
-    lanes = helpers.Lanes(StubTranscript(events))
-    assert lanes.axis_role is None
-    assert lanes.role_begins == []
-    value = run_scan(token_timeline(), events).value
-    assert [(e["turn"], e["lane_turn"]) for e in value["timeline"]] == [
-        (0, 0),
-        (None, None),
-        (1, 1),
-    ]
-
-
-def test_a_span_holding_the_axis_roles_turns_is_never_a_role_lane():
-    """A primitive solver span holding the orchestrator's own turns beside
-    a critic's call is the orchestrator's span, not a lane: its turns stay
-    on the axis and the critic's call is off it."""
-    agent, critic, again = model_turn("a"), model_turn("c"), model_turn("a2")
-    critic.role = "critic"
-    agent.output.message.tool_calls = [ToolCall(id="c0", function="bash", arguments={})]
-    for event in (agent, critic, again):
-        event.span_id = "my_solver"
-    events = [
-        SpanBeginEvent(id="solvers", parent_id=None, type="solvers", name="solvers"),
-        SpanBeginEvent(id="my_solver", parent_id="solvers", type="solver", name="s"),
-        agent,
-        critic,
-        again,
-        SpanEndEvent(id="my_solver"),
-        SpanEndEvent(id="solvers"),
-    ]
-    lanes = helpers.Lanes(StubTranscript(events))
-    assert lanes.role_begins == []
-    assert [turn for turn, _event, _calls in lanes.turns()] == [0, 1]
-    value = run_scan(token_timeline(), events).value
-    assert [
-        (e["turn"], e["lane_turn"], e["agent_span_id"]) for e in value["timeline"]
-    ] == [
-        (0, 0, None),
-        (None, None, None),
-        (1, 1, None),
-    ]
-
-
-def test_another_roles_call_inside_a_sub_agent_belongs_to_that_sub_agent():
-    """A critic call a sub-agent makes in a span of its own is the
-    sub-agent's activity, not a role lane of its own."""
-    critic = model_turn("critic", span_id="S")
-    critic.role = "critic"
-    events = [
-        *agent_span(
-            "R",
-            "react",
-            inner=[
-                model_turn("lead"),
-                *agent_span(
-                    "C",
-                    "eda",
-                    inner=[
-                        model_turn("s0"),
-                        SpanBeginEvent(id="S", parent_id="C", type="solver", name="s"),
-                        critic,
-                        SpanEndEvent(id="S"),
-                    ],
-                    parent_id="R",
-                ),
-            ],
-        )
-    ]
-    lanes = helpers.Lanes(StubTranscript(events))
-    assert lanes.role_begins == []
-    value = run_scan(token_timeline(), events).value
-    assert [
-        (e["turn"], e["lane_turn"], e["agent_span_id"]) for e in value["timeline"]
-    ] == [
-        (0, 0, None),
-        (None, 0, "C"),
-        (None, 1, "C"),
-    ]
-
-
-def test_lane_kind_of_a_span_that_is_no_lane_raises():
-    """Asking the kind of a span that is no lane is a caller error."""
-    lanes = helpers.Lanes(auditor_scaffold())
-    assert lanes.lane_kind("attempt-1") == "role"
-    with pytest.raises(KeyError, match="auditor"):
-        lanes.lane_kind("auditor")
-
-
 def test_a_sub_agents_first_model_skips_inspects_utility_wrapped_calls():
     """A sub-agent whose first call is a cache-priming warmup hands its
     real first call to the task-text readers."""
-    from inspect_ai.model import ChatMessageUser, GenerateConfig
+    from inspect_ai.model import GenerateConfig
 
     warmup = model_turn("w", input=[ChatMessageUser(content="hi")])
     warmup.config = GenerateConfig(max_tokens=1)
     real = model_turn("real first", input=[ChatMessageUser(content="do the task")])
-    events = [
-        *agent_span(
-            "R",
-            "react",
-            inner=[
-                model_turn("lead"),
-                *agent_span("C", "eda", inner=[warmup, real], parent_id="R"),
-            ],
-        )
-    ]
-    lanes = helpers.Lanes(StubTranscript(events))
+    inner = [model_turn("lead"), *agent_span("C", "eda", [warmup, real], parent_id="R")]
+    lanes = helpers.Lanes(StubTranscript(agent_span("R", "react", inner=inner)))
     assert lanes.first_models["C"] is real
 
 
-def test_the_axis_role_follows_event_order_not_span_opening_order():
-    """Which role's span was opened first says nothing: the auditor drives
-    whether or not the target span was opened before the auditor's."""
-    transcript = auditor_scaffold(target_tools=True)
-    events = transcript.events
-    auditor_begin = next(
-        e for e in events if e.event == "span_begin" and e.id == "auditor"
+def test_role_lanes_reach_no_sub_agent_surface():
+    """A target trajectory is never classified, digested as a delegation
+    or listed as a spawn: those surfaces read sub-agent lanes only."""
+    import asyncio
+
+    from transect.report.excerpts import _spawn_prompts
+    from transect.scanners.digests import digest_line, resolve_digest, turn_digests
+    from transect.scanners.subagents import agent_spans
+
+    transcript = auditor_scaffold()
+
+    async def items():
+        return [item async for item in agent_spans()(transcript)]
+
+    assert asyncio.run(items()) == []
+    digests = turn_digests(transcript, resolve_digest(None))
+    assert [d.turn for d in digests] == [0, 1, 2]
+    assert all(
+        not d.delegations and "[DELEGATES]" not in digest_line(d) for d in digests
     )
-    target_begin = next(
-        e for e in events if e.event == "span_begin" and e.id == "target"
-    )
-    i, j = events.index(auditor_begin), events.index(target_begin)
-    events[i], events[j] = events[j], events[i]
-    assert helpers.Lanes(transcript).axis_role == "auditor"
-
-
-def test_a_main_span_whose_opening_turn_and_first_tool_call_disagree_raises():
-    """A plan turn of one role followed by another role's tool call names no
-    single orchestrator; the transcript raises rather than guessing."""
-    plan, critic, act = model_turn("plan"), model_turn("c"), model_turn("act")
-    critic.role = "critic"
-    critic.output.message.tool_calls = [
-        ToolCall(id="c0", function="bash", arguments={})
-    ]
-    act.output.message.tool_calls = [ToolCall(id="c1", function="bash", arguments={})]
-    events = [*agent_span("R", "react", inner=[plan, critic, act])]
-    with pytest.raises(ValueError, match="critic"):
-        helpers.Lanes(StubTranscript(events))
-
-
-def test_a_tool_span_calling_another_role_is_no_lane():
-    """A tool whose implementation calls a grader model is a helper call,
-    off the axis and in no lane, not a conversation of its own."""
-    grader = model_turn("grade", span_id="T")
-    grader.role = "grader"
-    events = [
-        *agent_span(
-            "R",
-            "react",
-            inner=[
-                model_turn("lead"),
-                SpanBeginEvent(id="T", parent_id="R", type="tool", name="ask_expert"),
-                grader,
-                SpanEndEvent(id="T"),
-                model_turn("lead 2"),
-            ],
-        )
-    ]
-    lanes = helpers.Lanes(StubTranscript(events))
-    assert lanes.role_begins == []
-    value = run_scan(token_timeline(), events).value
-    assert [(e["turn"], e["agent_span_id"]) for e in value["timeline"]] == [
-        (0, None),
-        (None, None),
-        (1, None),
-    ]
+    assert _spawn_prompts(transcript) == {}

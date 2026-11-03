@@ -771,50 +771,66 @@ def test_every_basis_has_a_strip_tooltip_phrase():
     assert set(charts._STRIP_BASIS_WHY) == set(get_args(TurnBasis))
 
 
-def test_subagent_notes_say_which_lanes_are_another_roles_conversations():
-    """A role lane (a target trajectory driven by an auditor) is named as
-    such above the swimlanes, so the section never calls it a sub-agent."""
-    spans = pd.DataFrame(
+def _lane_rows(kinds):
+    return pd.DataFrame(
         {
-            "agent_span_id": ["t1", "t2", "s"],
-            "lane_kind": ["role", "role", "subagent"],
-            "judge_models": [None] * 3,
-            "judge_agreement": [None] * 3,
-            "verifier_model": [None] * 3,
-            "end_recorded": [True] * 3,
+            "agent_span_id": [f"s{i}" for i in range(len(kinds))],
+            "lane_kind": kinds,
+            "judge_models": [None] * len(kinds),
+            "judge_agreement": [None] * len(kinds),
+            "verifier_model": [None] * len(kinds),
+            "end_recorded": [True] * len(kinds),
         }
     )
-    notes = str(sections.subagent_notes([], {}, spans, classification_ran=False))
-    assert "2 lane(s) are another model role's conversations" in notes
-    only_subagents = str(
-        sections.subagent_notes([], {}, spans.iloc[2:], classification_ran=False)
-    )
-    assert "another model role" not in only_subagents
 
 
-def test_role_lanes_never_count_as_unjoined_sub_agents():
-    """When the classifier ran elsewhere in the scan, a transcript whose
-    lanes are all another role's conversations gets no span-id mismatch
-    warning and no sub-agent count, and its lanes group as other model
-    roles rather than as unclassified sub-agents."""
-    spans = pd.DataFrame(
-        {
-            "agent_span_id": ["t1", "t2"],
-            "lane_kind": ["role", "role"],
-            "judge_models": [None, None],
-            "judge_agreement": [None, None],
-            "verifier_model": [None, None],
-            "end_recorded": [True, True],
-        }
+@pytest.mark.parametrize(
+    ("kinds", "classification_ran", "present", "absent"),
+    [
+        (
+            ["role", "role", "subagent"],
+            False,
+            "2 lane(s) are another model role's",
+            "mismatch",
+        ),
+        (["subagent"], False, "", "another model role"),
+        (["role", "role"], True, "2 lane(s) are another model role's", "mismatch"),
+        (["role", "subagent"], True, "mismatch", "sub-agent span(s)"),
+    ],
+    ids=[
+        "mixed, no classifier",
+        "sub-agents only",
+        "role lanes only, classifier ran",
+        "unjoined sub-agent",
+    ],
+)
+def test_subagent_notes_keep_role_lanes_out_of_the_classification_states(
+    kinds, classification_ran, present, absent
+):
+    """Role lanes are named as another role's conversations and never count
+    as unjoined or unclassified sub-agents; a real unjoined sub-agent still
+    warns."""
+    lanes = [SpanGeometry(f"s{i}", "lane", 0.0, 1.0, True) for i in range(len(kinds))]
+    notes = str(
+        sections.subagent_notes(lanes, {}, _lane_rows(kinds), classification_ran)
     )
-    lanes = [
-        SpanGeometry("t1", "trajectory", 0.0, 1.0, True),
-        SpanGeometry("t2", "trajectory", 1.0, 2.0, True),
-    ]
-    notes = str(sections.subagent_notes(lanes, {}, spans, classification_ran=True))
-    assert "mismatch" not in notes
-    assert "sub-agent span(s)" not in notes
-    assert sections.lane_group("t1", {}, {"t1", "t2"}, True) == "other model roles"
-    assert sections.lane_group("s", {}, {"t1", "t2"}, True) == "unclassified"
-    assert sections.lane_group("s", {"s": "lit"}, {"t1"}, True) == "lit"
-    assert sections.lane_group("s", {}, set(), False) == "sub-agents"
+    assert present in notes
+    assert absent not in notes
+
+
+@pytest.mark.parametrize(
+    ("span_id", "label_of", "role_ids", "classification_ran", "group"),
+    [
+        ("t", {}, {"t"}, True, "other model roles"),
+        ("s", {}, {"t"}, True, "unclassified"),
+        ("s", {"s": "lit"}, {"t"}, True, "lit"),
+        ("s", {}, set(), False, "sub-agents"),
+    ],
+    ids=["role lane", "unlabelled, classifier ran", "labelled", "no classifier"],
+)
+def test_lane_group_places_each_lane(
+    span_id, label_of, role_ids, classification_ran, group
+):
+    """A role lane groups outside the classification states; a sub-agent
+    lane groups by its label, else by whether a classifier ran."""
+    assert sections.lane_group(span_id, label_of, role_ids, classification_ran) == group
