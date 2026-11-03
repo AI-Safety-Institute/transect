@@ -225,12 +225,13 @@ def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
     assert subagents.label.isna().all()
     expected = pd.DataFrame(
         [
-            ("eda", 3, 3, 3, "timestamp", True, 2, 1750.0),
-            ("alt_model", 5, 5, 5, "timestamp", True, 2, 2701.0),
-            ("reviewer", 8, 8, 8, "timestamp", True, 3, 6242.0),
+            ("eda", "subagent", 3, 3, 3, "timestamp", True, 2, 1750.0),
+            ("alt_model", "subagent", 5, 5, 5, "timestamp", True, 2, 2701.0),
+            ("reviewer", "subagent", 8, 8, 8, "timestamp", True, 3, 6242.0),
         ],
         columns=[
             "agent_lane",
+            "lane_kind",
             "spawn_turn",
             "anchor_turn",
             "end_turn",
@@ -244,6 +245,7 @@ def test_subagent_spans_are_placed_on_the_orchestrator_axis(demo_results):
         subagents[expected.columns].reset_index(drop=True),
         expected,
         check_dtype=False,
+        check_categorical=False,
     )
     # each span ran inside the wall-clock interval of its transfer turn
     assert (subagents.started_at < subagents.ended_at).all()
@@ -695,6 +697,7 @@ def test_phase_rollups_split_orchestrator_and_delegated_spend(raw_phases):
         {
             "transcript_id": ["tr1", "tr1", "tr1"],
             "agent_span_id": ["A", "B", "C"],
+            "lane_kind": ["subagent"] * 3,
             "spawn_turn": [1, 3, 9],
             "new_work": [1100.0, None, 5.0],
         }
@@ -719,6 +722,7 @@ def test_phase_rollups_split_orchestrator_and_delegated_spend(raw_phases):
                 {
                     "transcript_id": ["tr1"],
                     "agent_span_id": ["A"],
+                    "lane_kind": ["subagent"],
                     "spawn_turn": [1],
                     "new_work": [None],
                 }
@@ -756,6 +760,7 @@ def test_a_skewed_orchestrator_clock_falls_back_to_event_order():
             {
                 "agent_span_id": "A",
                 "agent_lane": "a",
+                "lane_kind": "subagent",
                 "spawn_turn": 1,
                 "first_at": "2026-01-01T10:00:10",
                 "last_at": "2026-01-01T10:00:20",
@@ -849,3 +854,43 @@ def test_subagent_labels_join_their_definitions_after_reload(demo_log, tmp_path)
         joined = frames.subagents.merge(definitions, on=["transcript_id", "label"])
         assert len(joined) == len(frames.subagents) > 0
         assert set(joined.description) == {"Reads"}
+
+
+def test_a_span_record_without_a_lane_kind_names_the_rescan():
+    """A store written before lane kinds existed is not patched over: the
+    frame builder raises naming the missing field and the fix."""
+    value = {
+        "timeline": [{"turn": 0, "timestamp": None, "completed": None}],
+        "spans": [
+            {
+                "agent_span_id": "A",
+                "agent_lane": "a",
+                "spawn_turn": 0,
+                "first_at": None,
+                "last_at": None,
+                "end_at": None,
+                "end_recorded": False,
+                "event_order_end_turn": 0,
+            }
+        ],
+        "lane_activity": [],
+    }
+    with pytest.raises(KeyError, match=r"lane_kind.*new scan"):
+        subagents_df(pd.DataFrame(), timeline_results=pd.DataFrame([value_row(value)]))
+
+
+def test_role_lanes_are_neither_spawned_sub_agents_nor_delegated_spend(raw_phases):
+    """A target trajectory under an auditor spawned inside a phase is not a
+    sub-agent of that phase: the count and the delegated spend skip it."""
+    subagents = pd.DataFrame(
+        {
+            "transcript_id": ["tr1", "tr1"],
+            "agent_span_id": ["A", "T"],
+            "lane_kind": ["subagent", "role"],
+            "spawn_turn": [1, 1],
+            "new_work": [1100.0, 999.0],
+        }
+    )
+    (phase,) = phases_df(raw_phases, subagents=subagents).itertuples()
+    assert phase.n_subagents == 1
+    assert phase.delegated_new_work_tokens == 1100

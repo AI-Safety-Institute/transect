@@ -474,25 +474,21 @@ def _subagent_section(
         if pd.notna(row.label)
     }
 
-    # three honesty cases: (1) no classification scan ran - the label
-    # dimension disappears (neutral grey "sub-agents", no chips, no
-    # classification tooltip row); (2) it ran but joined zero lanes -
-    # "unclassified" plus the loud template warning; (3) it ran and some
-    # spans got no label - "unclassified" is the honest fallback
+    role_ids = sections.role_lane_ids(subagents)
+
     def _label(span_id) -> str:
-        label = label_of.get(span_id)
-        if isinstance(label, str) and label:
-            return label
-        return "unclassified" if classification_ran else "sub-agents"
+        return sections.lane_group(span_id, label_of, role_ids, classification_ran)
 
     by_label: dict[str, list[SpanGeometry]] = {}
     for span in lanes:
         by_label.setdefault(_label(span.span_id), []).append(span)
     colors = (
-        _label_colors(sorted(by_label))
+        _label_colors(sorted(g for g in by_label if g != sections.ROLE_LANE_GROUP))
         if classification_ran
         else dict.fromkeys(by_label, _UNJUDGED_GREY)
     )
+    if sections.ROLE_LANE_GROUP in by_label:
+        colors[sections.ROLE_LANE_GROUP] = _UNJUDGED_GREY
 
     # the packing footprint matches what is drawn: a tick's fixed
     # footprint when any span is a tick, else the box floor, so two

@@ -113,15 +113,28 @@ scanner change take effect; run a new scan and retain both results for compariso
 - **Orchestrator turn axis.** `turn` is the 0-based ordinal of the
   orchestrator's (main lane's) model turns, from
   `scanners.helpers.orchestrator_turns`, in every scanner value, frame,
-  judge digest and chart. Sub-agent turns are off the axis: they carry
-  `agent_span_id` and `lane_turn`, never a turn number. The subagents
-  frame records the orchestrator turns active at each span's start and
-  end by wall-clock (`frames/spine.py`), and the swimlane chart maps the
-  same timestamps to fractional positions when it draws; frames hold
-  timestamps and integer turns only. A custom scanner numbers turns with
-  the same helper. The main lane
-  is the span Scout would scan at depth 1; a transcript with model turns
-  but no single orchestrator agent raises rather than guessing.
+  judge digest and chart. Lane turns are off the axis: they carry
+  `agent_span_id` and `lane_turn`, never a turn number. A lane is a
+  sub-agent span (`lane_kind` subagent) or the conversation span of
+  another model role (`lane_kind` role: an auditor driving a target has
+  each target trajectory span as a lane, `scanners.helpers.Lanes`).
+  Only sub-agent lanes are classified, digested as delegations or
+  listed as spawns; role lanes appear in the frames and the swimlanes.
+  The axis role is the role that opens the main span and makes its
+  first tool call (`scanners.helpers.axis_role`; the driven side cannot
+  act before it is driven); when those disagree the transcript raises.
+  Another role's calls with no span of their own, or in a tool span,
+  are off the axis.
+  The subagents frame records the orchestrator turns active at each
+  span's start and end by wall-clock (`frames/spine.py`), and the
+  swimlane chart maps the same timestamps to fractional positions when
+  it draws; frames hold timestamps and integer turns only. A custom
+  scanner numbers turns with the same helper. The main lane is the span
+  Scout would scan at depth 1, resolved from the event stream
+  (`timeline_build`), never from a stored timeline (a scaffold's stored
+  timelines are its own per-role or branch-tree views, and only some
+  scanners receive them); a transcript with model turns but no single
+  orchestrator agent raises rather than guessing.
 - **Judge digests.** `scanners.digests.turn_digests` is the one builder
   of what the phase judge, its verifier, the narrator and the
   `digest_turns` loader read per orchestrator turn, and one

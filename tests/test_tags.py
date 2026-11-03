@@ -62,6 +62,7 @@ def test_reserved_vocabulary_covers_the_cohort_bookkeeping():
         "agent",
         "agent_span_id",
         "agent_lane",
+        "lane_kind",
         "schema_version",
         "spawn_turn",
         "anchor_turn",

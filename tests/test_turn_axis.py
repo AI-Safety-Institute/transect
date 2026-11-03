@@ -376,3 +376,30 @@ def test_a_box_at_the_axis_edge_is_shifted_left_not_drawn_off_canvas():
     assert geo.hx2.iloc[1] - geo.hx1.iloc[1] == pytest.approx(
         charts.span_min_box_width(10)
     )
+
+
+def test_main_span_is_built_from_events_never_from_a_stored_timeline():
+    """A scaffold's stored timeline is its own view (here a target-only
+    branch tree, first in the list); the axis comes from the event stream."""
+    from helpers import auditor_scaffold
+    from inspect_ai.event import Timeline, TimelineEvent, TimelineSpan
+
+    transcript = auditor_scaffold()
+    target = [e for e in transcript.events if getattr(e, "role", None) == "target"]
+    transcript.timelines = [
+        Timeline(
+            name="target",
+            description="",
+            root=TimelineSpan(
+                id="branch-1",
+                name="branch 1",
+                span_type="branch",
+                content=[TimelineEvent(event=e) for e in target],
+            ),
+        )
+    ]
+    assert [e.output.message.text for _, e, _ in orchestrator_turns(transcript)] == [
+        "auditor 0",
+        "auditor 1",
+        "auditor 2",
+    ]

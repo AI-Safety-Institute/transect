@@ -247,8 +247,10 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions
   and any recorded compaction threshold marked.
-- **Sub-agent activity**: one swimlane box per spawned sub-agent spanning the
-  orchestrator turns active while it ran, with its classified role.
+- **Sub-agent activity**: one swimlane box per lane spanning the orchestrator
+  turns active while it ran: a spawned sub-agent with its classified role, or
+  another model role's conversation (a target driven by an auditor), which is
+  named as such and never classified.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
@@ -276,12 +278,12 @@ frames["transcript_info"]  # one row per transcript: task, model, outcome, setup
 frames["token_timeline"]  # per-turn token usage + context size
 frames["flushes"]  # compaction tokens, role, metadata, Inspect prompt + nudge
 frames["interventions"]  # mid-run human interventions
-frames["lane_activity"]  # sub-agent tool activity per orchestrator turn
+frames["lane_activity"]  # lane tool activity per orchestrator turn
 frames["phases"]  # stitched phases + reliability
 frames["phase_turns"]  # per-turn phase attribution
 frames["turn_groups"]  # narrated turn groups within each phase
 frames["phase_turn_votes"]  # per-judge per-turn votes
-frames["subagents"]  # one row per sub-agent span, classification when judged
+frames["subagents"]  # one row per lane span, classification when judged
 frames["subagent_votes"]  # per-judge votes behind each label
 frames["label_definitions"]  # the label rubric the judges classified against
 ```
@@ -338,9 +340,9 @@ erDiagram
         string compaction_prompt "configured Inspect template, if recorded"
     }
     token_timeline["token_timeline (one row per model turn, any lane)"] {
-        int turn PK "orchestrator turn; NA on a sub-agent's own turns"
+        int turn PK "orchestrator turn; NA on a lane's own turns"
         int lane_turn "ordinal within the turn's own lane"
-        string agent_span_id FK "sub-agent lane; NA on the orchestrator"
+        string agent_span_id FK "lane span; NA on the orchestrator"
         string timestamp "model call start, ISO"
         string completed "model call completion, ISO"
         int output_tokens
@@ -349,7 +351,7 @@ erDiagram
     }
     flushes["flushes (one row per context compaction)"] {
         int turn FK
-        string agent_span_id "sub-agent lane; NA on the orchestrator"
+        string agent_span_id "lane span; NA on the orchestrator"
         int lane_turn "first post-flush turn of the compacted lane"
         string type
         int tokens_before
@@ -370,7 +372,7 @@ erDiagram
         string prompt "the question or tool call put to the human; None when human-initiated"
         string outcome "accepted/declined/cancelled or the approval decision"
     }
-    lane_activity["lane_activity (one row per (orchestrator turn, sub-agent span))"] {
+    lane_activity["lane_activity (one row per (orchestrator turn, lane span))"] {
         int turn FK "orchestrator turn preceding the tool event"
         string agent_span_id FK
         int tool_calls
@@ -418,9 +420,10 @@ erDiagram
         string title
         string gist
     }
-    subagents["subagents (one row per sub-agent span)"] {
+    subagents["subagents (one row per lane span)"] {
         string agent_span_id PK
         string agent_lane
+        string lane_kind "subagent or role (another model role's conversation)"
         int spawn_turn "orchestrator turn that spawned it"
         int anchor_turn "orchestrator turn active at its first activity"
         int end_turn "orchestrator turn active at its end"

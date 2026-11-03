@@ -769,3 +769,86 @@ def test_phase_runs_split_refused_and_unattributed_turns_into_grey_runs():
 def test_every_basis_has_a_strip_tooltip_phrase():
     """A basis the strip cannot explain would fall through as its raw name."""
     assert set(charts._STRIP_BASIS_WHY) == set(get_args(TurnBasis))
+
+
+def _lane_rows(kinds):
+    return pd.DataFrame(
+        {
+            "agent_span_id": [f"s{i}" for i in range(len(kinds))],
+            "lane_kind": kinds,
+            "judge_models": [None] * len(kinds),
+            "judge_agreement": [None] * len(kinds),
+            "verifier_model": [None] * len(kinds),
+            "end_recorded": [True] * len(kinds),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("kinds", "classification_ran", "present", "absent"),
+    [
+        (
+            ["role", "role", "subagent"],
+            False,
+            "2 lane(s) are another model role's",
+            "mismatch",
+        ),
+        (["subagent"], False, "", "another model role"),
+        (["role", "role"], True, "2 lane(s) are another model role's", "mismatch"),
+        (["role", "subagent"], True, "mismatch", "sub-agent span(s)"),
+    ],
+    ids=[
+        "mixed, no classifier",
+        "sub-agents only",
+        "role lanes only, classifier ran",
+        "unjoined sub-agent",
+    ],
+)
+def test_subagent_notes_keep_role_lanes_out_of_the_classification_states(
+    kinds, classification_ran, present, absent
+):
+    """Role lanes are named as another role's conversations and never count
+    as unjoined or unclassified sub-agents; a real unjoined sub-agent still
+    warns."""
+    lanes = [SpanGeometry(f"s{i}", "lane", 0.0, 1.0, True) for i in range(len(kinds))]
+    notes = str(
+        sections.subagent_notes(lanes, {}, _lane_rows(kinds), classification_ran)
+    )
+    assert present in notes
+    assert absent not in notes
+
+
+@pytest.mark.parametrize(
+    ("span_id", "label_of", "role_ids", "classification_ran", "group"),
+    [
+        ("t", {}, {"t"}, True, "other model roles"),
+        ("s", {}, {"t"}, True, "unclassified"),
+        ("s", {"s": "lit"}, {"t"}, True, "lit"),
+        ("s", {}, set(), False, "sub-agents"),
+    ],
+    ids=["role lane", "unlabelled, classifier ran", "labelled", "no classifier"],
+)
+def test_lane_group_places_each_lane(
+    span_id, label_of, role_ids, classification_ran, group
+):
+    """A role lane groups outside the classification states; a sub-agent
+    lane groups by its label, else by whether a classifier ran."""
+    assert sections.lane_group(span_id, label_of, role_ids, classification_ran) == group
+
+
+@pytest.mark.parametrize(
+    ("score", "expected"),
+    [
+        ("C", "Scored C."),
+        ('{"concerning": 2, "admirable": 8}', "Scored on 2 dimensions (Run summary)."),
+        (None, None),
+    ],
+    ids=["scalar", "dimensions", "unscored"],
+)
+def test_the_intro_line_summarises_a_multi_dimension_score(score, expected):
+    """A judge that scores many dimensions is summarised by count; the
+    dimensions themselves stay in the Run summary rows."""
+    info = pd.DataFrame([{"model": "m", "task_name": "t", "score": score}])
+    line = str(sections.run_intro_line(info))
+    assert (expected in line) if expected else ("cored" not in line)
+    assert "concerning" not in line

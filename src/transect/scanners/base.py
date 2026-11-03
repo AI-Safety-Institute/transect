@@ -34,7 +34,7 @@ def token_timeline() -> Scanner[Transcript]:
     value = {"timeline": [...], "spans": [...], "lane_activity": [...]}.
 
     ``timeline``: one entry per model turn in any lane, in event order:
-    ``turn`` (the orchestrator ordinal; None on a sub-agent turn and on
+    ``turn`` (the orchestrator ordinal; None on a lane's own turn and on
     an init/scorer call, which are off the axis), ``lane_turn`` (0-based
     within the turn's own lane; None on an off-axis call, which is in no
     lane), ``agent_lane`` / ``agent_span_id`` (None on the orchestrator),
@@ -42,9 +42,14 @@ def token_timeline() -> Scanner[Transcript]:
     (ISO strings; None when unrecorded), and the ModelUsage fields
     (None = not reported, never 0).
 
-    ``spans``: one entry per sub-agent span (`helpers.subagent_span_begins`'
-    definition): ``agent_span_id`` / ``agent_lane`` (the span's id and
-    name), ``spawn_turn`` (the orchestrator turn preceding the
+    Lanes are `helpers.Lanes`: sub-agent spans, plus the conversation
+    spans of other model roles (an auditor driving a target: the
+    auditor's turns are the axis and each target trajectory span is a
+    lane).
+
+    ``spans``: one entry per lane span: ``agent_span_id`` / ``agent_lane``
+    (the span's id and name), ``lane_kind`` (``subagent`` or ``role``,
+    `helpers.LaneKind`), ``spawn_turn`` (the orchestrator turn preceding the
     span_begin in event order; 0 when none does), ``first_at`` /
     ``last_at`` (the span's first and last model or tool event, start
     and completion), ``end_at`` and ``end_recorded`` (the span_end's
@@ -52,7 +57,7 @@ def token_timeline() -> Scanner[Transcript]:
     so recorded is False there), ``event_order_end_turn`` (the
     orchestrator turn preceding the span_end; None when never closed).
 
-    ``lane_activity``: tool events inside sub-agent spans, one entry
+    ``lane_activity``: tool events inside lane spans, one entry
     ``{turn, agent_span_id, agent_lane, tool_calls, busy_seconds,
     started_at}`` per (orchestrator turn preceding the event, span).
     """
@@ -62,10 +67,10 @@ def token_timeline() -> Scanner[Transcript]:
         timeline: list[dict[str, Any]] = []
         lane_counts: dict[str, int] = {}
         for event, calls in all_model_turns(transcript):
-            sub = lanes.sub_agent_of(event)
+            sub = lanes.lane_of(event)
             is_main = lanes.is_main(event)
             # an off-axis call (init/scorer/utility: neither orchestrator
-            # nor sub-agent) belongs to no lane and counts in none
+            # nor lane) belongs to no lane and counts in none
             lane_key = sub.id if sub else "__main__" if is_main else None
             lane_turn = None
             if lane_key is not None:
@@ -191,13 +196,13 @@ def context_flush() -> Scanner[Transcript]:
         lane_counts: dict[str, int] = {}
         for turn, event in lanes.events_before_turn():
             if is_model_turn(event):
-                sub = lanes.sub_agent_of(event)
+                sub = lanes.lane_of(event)
                 if sub is not None:
                     lane_counts[sub.id] = lane_counts.get(sub.id, 0) + 1
                 continue
             if event.event != "compaction":
                 continue
-            lane = lanes.sub_agent_of(event)
+            lane = lanes.lane_of(event)
             flushes.append(
                 {
                     "turn": turn,
@@ -423,18 +428,19 @@ def _iso(value: Any) -> str | None:
 
 
 def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
-    """One record per sub-agent span: spawn and end anchors in
-    orchestrator turns, activity timestamps (see `token_timeline`)."""
-    sub_ids = lanes.sub_ids
+    """One record per lane span: spawn and end anchors in orchestrator
+    turns, activity timestamps (see `token_timeline`)."""
+    lane_ids = lanes.lane_ids
     records: dict[str, dict[str, Any]] = {}
     for before, event in lanes.events_before_turn():
         kind = event.event
         if kind == "span_begin":
-            if event.id not in sub_ids:
+            if event.id not in lane_ids:
                 continue
             records[event.id] = {
                 "agent_span_id": event.id,
                 "agent_lane": event.name,
+                "lane_kind": lanes.lane_kind(event.id),
                 "spawn_turn": max(before - 1, 0),
                 "first_at": None,
                 "last_at": None,
@@ -452,7 +458,7 @@ def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
             continue
         if kind not in ("model", "tool"):
             continue
-        sub = lanes.sub_agent_of(event)
+        sub = lanes.lane_of(event)
         if sub is None or sub.id not in records:
             continue
         record = records[sub.id]
@@ -470,7 +476,7 @@ def _span_records(lanes: Lanes, ends_recorded: bool) -> list[dict[str, Any]]:
 
 
 def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
-    """Tool activity per (orchestrator turn preceding the event, sub-agent
+    """Tool activity per (orchestrator turn preceding the event, lane
     span): calls, busy time, start. Sub-agents whose activity is
     tool-events-only (no model turns of their own, as some OpenClaw
     exports record them) show up only here."""
@@ -478,7 +484,7 @@ def _lane_activity(lanes: Lanes) -> list[dict[str, Any]]:
     for before, event in lanes.events_before_turn():
         if event.event != "tool":
             continue
-        sub = lanes.sub_agent_of(event)
+        sub = lanes.lane_of(event)
         if sub is None:
             continue
         row = rows.setdefault(
