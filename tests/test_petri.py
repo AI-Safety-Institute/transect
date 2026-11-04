@@ -4,7 +4,6 @@ its phase cards host."""
 
 import asyncio
 import dataclasses
-import runpy
 from collections import Counter
 from pathlib import Path
 
@@ -22,9 +21,10 @@ from helpers import (
     segment_range,
 )
 from inspect_ai.event import SpanBeginEvent, SpanEndEvent, TimelineSpan
-from inspect_ai.log import read_eval_log, write_eval_log
+from inspect_ai.log import write_eval_log
 from inspect_ai.model import ChatMessageSystem, get_model
 from inspect_scout import TranscriptContent, transcripts_from
+from nested_petri import nested_audit_log
 
 from transect.petri import is_petri
 from transect.petri.conversation import target_conversation
@@ -36,9 +36,6 @@ from transect.scanners.digests import turn_digests
 from transect.scanners.helpers import Lanes
 
 PETRI_LOGS = "examples/petri_logs"
-FIXTURES = Path(__file__).parent / "fixtures"
-NESTED_LOG = FIXTURES / "nested_petri" / "nested_audit.json"
-NESTED_GENERATOR = FIXTURES / "generate_nested_petri_eval.py"
 READ_ALL = TranscriptContent(
     messages="all",
     events=["model", "span_begin", "span_end", "tool", "anchor", "branch"],
@@ -51,14 +48,6 @@ def _require_demo_log():
     if not Path(PETRI_LOGS, "petri_demo.eval").exists():
         pytest.fail(
             "demo Petri log missing - run: python tests/fixtures/generate_petri_eval.py"
-        )
-
-
-def _require_nested_log():
-    if not NESTED_LOG.exists():
-        pytest.fail(
-            "nested Petri fixture missing - run: "
-            "python tests/fixtures/generate_nested_petri_eval.py"
         )
 
 
@@ -138,11 +127,11 @@ def browser():
 
 @pytest.fixture(scope="module")
 def nested_logs(tmp_path_factory):
-    """The nested audit fixture as a log directory Scout can discover: the
-    committed text is an Inspect JSON log, and Scout only indexes ``.eval``."""
-    _require_nested_log()
+    """The nested audit, built from the demo log, as a log directory Scout
+    can discover."""
+    _require_demo_log()
     logs = tmp_path_factory.mktemp("nested_petri_logs")
-    write_eval_log(read_eval_log(str(NESTED_LOG)), str(logs / "nested_audit.eval"))
+    write_eval_log(nested_audit_log(), str(logs / "nested_audit.eval"))
     return str(logs)
 
 
@@ -860,11 +849,18 @@ def test_independent_audits_in_one_transcript_are_rejected():
 
 
 def test_the_nested_fixture_puts_the_auditor_on_the_axis(nested_transcript):
-    """The committed nested log, an outer seed writer whose tool call runs
-    the demo audit and then a classifier's feedback, narrows the main lane
-    to the auditor's own span: the writer's and the classifier's calls are
-    no turns and no target replies, and each of their spans is a role lane
+    """The nested log, an outer seed writer whose tool call runs the demo
+    audit and then a classifier's feedback, narrows the main lane to the
+    auditor's own span: the writer's and the classifier's calls are no
+    turns and no target replies, and each of their spans is a role lane
     beside the two target trajectories."""
+    events = nested_transcript.events
+    assert Counter(e.role for e in events if e.event == "model") == {
+        "contestant": 2,
+        "auditor": 6,
+        "target": 4,
+        "classifier": 1,
+    }
     lanes = Lanes(nested_transcript)
     assert lanes.axis_role == "auditor"
     assert lanes.main.span_type == "auditor"
@@ -937,24 +933,6 @@ def test_a_structural_run_over_the_nested_fixture_reports_every_role(
     )
     assert "(auditor) turns" in document
     assert "the auditor's token stream" in document
-
-
-def test_the_nested_fixture_regenerates_from_the_demo_without_model_calls():
-    """The committed text is byte-for-byte what the generator builds from
-    the demo audit, so regenerating the demo means regenerating this too."""
-    _require_demo_log()
-    _require_nested_log()
-    log = read_eval_log(str(NESTED_LOG))
-    assert log.samples is not None and len(log.samples) == 1
-    assert Counter(e.role for e in log.samples[0].events if e.event == "model") == {
-        "contestant": 2,
-        "auditor": 6,
-        "target": 4,
-        "classifier": 1,
-    }
-    module = runpy.run_path(str(NESTED_GENERATOR))
-    regenerated = module["build"]().model_dump_json(indent=2, exclude_none=True) + "\n"
-    assert regenerated == NESTED_LOG.read_text()
 
 
 def _after_first_auditor_turn(transcript, *events):

@@ -192,11 +192,9 @@ scanner change take effect; run a new scan and retain both results for compariso
   `petri_full_text` is set; the viewer link carries the whole text. The
   scripted demo audit is
   `examples/petri_logs/petri_demo.eval` (`tests/fixtures/generate_petri_eval.py`);
-  `tests/fixtures/nested_petri/nested_audit.json`
-  (`tests/fixtures/generate_nested_petri_eval.py`) wraps its first epoch
-  in a seed writer's tool call and a classifier's feedback, the embedded
-  shape, as a readable Inspect JSON log that the tests compress to
-  `.eval` for Scout.
+  `tests/nested_petri.py` builds the embedded shape from it at test time,
+  its first epoch wrapped in a seed writer's tool call and a classifier's
+  feedback, with no committed log.
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
   stored scan on every load. It records execution only: completed vs total
   transcripts, recorded errors, and the model usage each scanner billed

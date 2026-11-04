@@ -1,22 +1,42 @@
-"""Generate the readable nested Petri fixture without model calls.
+"""A synthetic nested Petri audit: the demo audit's first epoch wrapped
+in a seed-design loop, built without model calls.
 
-Run from the repository root:
+The outer writer makes a tool-calling seed-design turn, launches the
+inner audit, receives separate classifier feedback and writes its final
+review:
 
-    uv run python tests/fixtures/generate_nested_petri_eval.py
+    outer-solver (solver)
+      seed-writer (writer): 2 contestant model turns, including run_trial
+      trial-launch (launch)
+        audit-loop (audit_loop)
+          auditor: 6 model turns
+          target: 4 model turns over 2 trajectories, with 1 rollback
+        feedback (launch): 1 classifier model turn
 
-The inner audit is the committed public mockllm bakery example. Only its
-conversation events and timelines are reused; its eval header is not copied.
-The outer seed writer and feedback call are synthetic. Fixed identities and
-source-relative timestamps make regeneration byte-for-byte reproducible.
+Parent ids record ownership; the writer's span stays open while the trial
+runs, and the custom wrapper types exercise Inspect's flattened timeline
+shape. Only the demo's conversation events and timelines are reused,
+renamed ``nested-audit-target`` and ``nested-audit-auditor``; its eval
+header is not copied, the auditor's long system prompt and repeated tool
+schemas are replaced with a short synthetic prompt and empty schemas, and
+the final sample messages belong to the outer writer, so the target's
+surviving path is deliberately unavailable while its branches and
+rollback remain. Fixed identities and source-relative timestamps make
+the build reproducible, so regenerating the demo log changes this log
+with it. The tests build it into a temporary ``.eval``; to open it in
+the viewer, write one yourself:
+
+    uv run python tests/nested_petri.py /tmp/nested_audit.eval
 """
 
+import sys
 from collections import Counter
 from copy import deepcopy
 from datetime import timedelta
 from pathlib import Path
 
 from inspect_ai.event import ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
-from inspect_ai.log import EvalLog, EvalSample, EvalSpec, read_eval_log
+from inspect_ai.log import EvalLog, EvalSample, EvalSpec, read_eval_log, write_eval_log
 from inspect_ai.model import (
     ChatCompletionChoice,
     ChatMessageAssistant,
@@ -27,15 +47,13 @@ from inspect_ai.model import (
 )
 from inspect_ai.tool import ToolCall
 
-ROOT = Path(__file__).parents[2]
-SOURCE = ROOT / "examples/petri_logs/petri_demo.eval"
-OUTPUT = Path(__file__).parent / "nested_petri/nested_audit.json"
+SOURCE = Path(__file__).parents[1] / "examples/petri_logs/petri_demo.eval"
 MODEL = "mockllm/model"
 PROMPT = "Design a bakery pricing audit, run one trial, and review the feedback."
 
 
-def build() -> EvalLog:
-    """Wrap the public scripted conversation in a separate seed-design loop."""
+def nested_audit_log() -> EvalLog:
+    """Wrap the demo audit's first epoch in a separate seed-design loop."""
     original = read_eval_log(SOURCE, resolve_attachments=True)
     inner = deepcopy(next(s for s in original.samples or [] if s.epoch == 1))
     begins = {e.id: e for e in inner.events if e.event == "span_begin"}
@@ -239,14 +257,10 @@ def build() -> EvalLog:
     return EvalLog(eval=spec, status="success", samples=[sample])
 
 
-def main() -> None:
-    log = build()
-    text = log.model_dump_json(indent=2, exclude_none=True) + "\n"
-    assert "/home/" not in text and "/Users/" not in text
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(text)
-    print(f"Wrote {OUTPUT.relative_to(ROOT)} ({len(text.encode()):,} bytes)")
+def main(output: str) -> None:
+    write_eval_log(nested_audit_log(), output)
+    print(f"Wrote {output}")
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1])
