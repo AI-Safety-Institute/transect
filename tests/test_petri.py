@@ -212,6 +212,10 @@ def test_a_judged_run_hosts_the_exchanges_in_the_phase_cards(petri_judged):
     assert document.count('class="petri-row-label"') == 4
     assert ">T1<" in document and ">T2<" in document
     assert "Target conversation progress" in document
+    legend = document.split('class="chips petri-legend"')[1].split("</p>")[0]
+    assert legend.count("probe") == 1 and "P1" not in legend
+    assert "trajectory start" in legend
+    assert "Zoom in" in document and "Show full height" in document
     assert "Click a call to open its card inside the auditor's phase card" in document
 
 
@@ -239,7 +243,8 @@ def test_a_report_without_petri_transcripts_has_no_target_conversation(tmp_path)
 
 def test_browser_opens_a_call_card_from_the_diagram(petri_judged, tmp_path):
     """Clicking a diagram block opens the folded card it links to inside
-    its phase card, clearing a card filter that hid that phase card."""
+    its phase card, clearing a card filter that hid that phase card; the
+    zoom control rescales the tree."""
     playwright = pytest.importorskip("playwright.sync_api")
     from transect.report.render import render_report
 
@@ -264,6 +269,10 @@ def test_browser_opens_a_call_card_from_the_diagram(petri_judged, tmp_path):
         playwright.expect(card).to_have_attribute("open", "")
         playwright.expect(host).to_have_attribute("open", "")
         playwright.expect(host).to_be_visible()
+        svg = page.locator(".petri-tree svg").first
+        before = svg.bounding_box()["width"]
+        page.get_by_role("button", name="Zoom in").first.click()
+        assert svg.bounding_box()["width"] > before
         assert errors == []
         browser.close()
 

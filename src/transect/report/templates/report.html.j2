@@ -65,6 +65,30 @@ function _transectOpenPhaseFromHash() {
   target.scrollIntoView({behavior: "smooth", block: "start"});
 }
 window.addEventListener("hashchange", _transectOpenPhaseFromHash);
+
+// Petri tree controls: the SVG is server-rendered, so zoom scales its
+// width. The per-call unit stays between 4 and 100 px, and "fit" never
+// enlarges past the rendered size.
+function _transectPetriZoom(button, factor) {
+  var tree = button.closest(".petri-tree");
+  var svg = tree.querySelector("svg");
+  var natural = svg.viewBox.baseVal.width;
+  var unit = parseFloat(tree.getAttribute("data-unit"));
+  var scale = svg.getBoundingClientRect().width / natural;
+  if (factor === "fit") {
+    scale = Math.min(1, (tree.querySelector(".petri-diagram").clientWidth - 2) / natural);
+  } else {
+    scale = scale * factor;
+  }
+  scale = Math.max(4 / unit, Math.min(100 / unit, scale));
+  svg.style.width = (natural * scale) + "px";
+  svg.style.height = "auto";
+}
+function _transectPetriHeight(button) {
+  var viewport = button.closest(".petri-tree").querySelector(".petri-diagram");
+  var open = viewport.classList.toggle("petri-expanded");
+  button.textContent = open ? "Limit height" : "Show full height";
+}
 document.addEventListener("DOMContentLoaded", _transectOpenPhaseFromHash);
 
 // Sort/filter handlers for the phase cards (".filter-bar[data-scope]"

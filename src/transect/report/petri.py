@@ -31,6 +31,7 @@ _UNIT = 46  # px per target call along a row
 _GAP = 24  # px between blocks, where a circle (r=5) sits with 7 px clear each side
 _ROW = 50  # px per trajectory row
 _LEFT = 40  # px for the row labels
+_TOP = 44  # px above the first row: the axis caption and a segment label
 _CAPTION = 200  # px the axis caption needs (measured at 0.68rem in Chromium)
 _tpl: Any = jinja_env().get_template("petri.html.j2").module
 
@@ -211,7 +212,8 @@ def _diagram(
 ) -> dict[str, Any]:
     """Row geometry for the tree, in pixels from the row origin: each
     trajectory's start, its circle, its blocks and its phase segments
-    (consecutive calls of one phase), plus the legend's phases."""
+    (consecutive calls of one phase), plus the legend's phase labels in
+    order of first appearance."""
     surviving = set(conversation.surviving or [])
     starts: dict[int, int] = {}
     rows: list[dict[str, Any]] = []
@@ -268,24 +270,19 @@ def _diagram(
                 "segments": segments,
             }
         )
-    phases = sorted(
-        {
-            (s["phase_index"], s["phase"], s["color"])
-            for r in rows
-            for s in r["segments"]
-        }
-    )
+    legend: dict[str, str | None] = {}
+    for row in rows:
+        for segment in row["segments"]:
+            legend.setdefault(segment["phase"], segment["color"])
     return {
         "rows": rows,
-        "legend": [
-            {"index": index, "phase": phase, "color": color}
-            for index, phase, color in phases
-        ],
+        "legend": [{"phase": phase, "color": color} for phase, color in legend.items()],
         "left": _LEFT,
+        "top": _TOP,
         "unit": _UNIT,
         "gap": _GAP,
         "row_height": _ROW,
         "width": _LEFT + max(_CAPTION, max(r["x1"] for r in rows) + _UNIT),
-        "height": len(rows) * _ROW + 36,
+        "height": _TOP + (len(rows) - 1) * _ROW + 18,
         "path_known": conversation.surviving is not None,
     }

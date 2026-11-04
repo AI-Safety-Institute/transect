@@ -139,8 +139,12 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
   cursor: pointer; box-shadow: 0 1px 3px rgba(33, 37, 41, 0.25); }}
 #transect-back-top:hover {{ background: var(--transect-color-link-hover);
   border-color: var(--transect-color-link-hover); }}
-.petri-diagram {{ overflow-x: auto; border: 1px solid var(--transect-color-border);
+.petri-diagram {{ overflow: auto; max-height: 480px;
+  border: 1px solid var(--transect-color-border);
   border-radius: 2px; background: #fff; margin: 0.5rem 0; }}
+.petri-diagram.petri-expanded {{ max-height: none; }}
+@media (max-width: 650px) {{ .petri-diagram {{ max-height: 380px; }} }}
+.petri-controls button {{ font: inherit; font-size: 0.8rem; padding: 2px 8px; }}
 .petri-diagram svg {{ display: block; font-size: 0.72rem; }}
 .petri-row-label {{ fill: var(--transect-color-muted); }}
 .petri-track {{ stroke: var(--transect-color-border); stroke-width: 2; }}
@@ -148,7 +152,7 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-connector {{ fill: none; stroke: var(--transect-color-border);
   stroke-width: 1.5; }}
 .petri-fork {{ fill: #fff; stroke: var(--transect-color-link); stroke-width: 1.5; }}
-.petri-start {{ fill: #fff; stroke: var(--transect-color-muted); stroke-width: 1.5; }}
+.petri-start {{ fill: var(--transect-color-muted); }}
 .petri-segment {{ stroke-width: 4; stroke-linecap: butt; }}
 .petri-segment-label {{ fill: var(--transect-color-muted); font-size: 0.62rem; }}
 .petri-call {{ fill: #8896a2; }}
@@ -157,7 +161,6 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-discarded-label {{ fill: var(--transect-color-muted); }}
 .petri-axis {{ fill: var(--transect-color-muted); font-size: 0.68rem; }}
 .petri-legend svg {{ vertical-align: -2px; margin-right: 4px; }}
-.petri-legend-band {{ height: 4px; vertical-align: 2px; }}
 .petri-discarded-card > summary {{ color: var(--transect-color-muted); }}
 .petri-rollback, .petri-prompt {{ border-left: 3px solid var(--transect-color-border);
   padding-left: 0.5rem; }}
