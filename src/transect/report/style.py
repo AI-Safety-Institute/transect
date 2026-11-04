@@ -22,6 +22,7 @@ _STYLE = f"""
 :root {{
   --transect-color-text: #212529;          /* [bootstrap] --bs-body-color */
   --transect-color-muted: rgba(33, 37, 41, 0.75); /* [bootstrap] --bs-secondary-color */
+  --transect-color-text-soft: #40464d;     /* message blocks: lighter than body text */
   --transect-color-border: #dee2e6;        /* [bootstrap] --bs-border-color */
   /* message blocks: the Scout viewer's readable theme, so a card reads
      like the viewer (--inspect-readable-*-bg / -border) */
@@ -172,6 +173,9 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
   padding-left: 0.5rem; }}
 .petri-rollback {{ margin: 0.5rem 0; }}
 .petri-side {{ margin-top: 0.6rem; }}
+/* an exchange card's body reads like a turn excerpt dropdown */
+.petri-call-card > :not(summary) {{ font-size: 0.9rem; }}
+.petri-call-card > .meta {{ font-size: 0.85rem; }}
 .petri-diagram a:hover rect, .petri-diagram a:focus rect {{
   stroke: var(--transect-color-accent); stroke-width: 2; }}
 .petri-full {{ white-space: pre-wrap; }}
@@ -272,7 +276,8 @@ body.classified {{ padding-top: 30px; padding-bottom: 30px; }}
 .excerpt-list .excerpt-thinking {{ font-style: italic; }}
 /* one block per message kind, coloured as the Scout viewer colours them */
 .msg {{ display: block; border-left: 3px solid; border-radius: 2px;
-       padding: 0.3rem 0.6rem; margin: 0.3rem 0; }}
+       padding: 0.3rem 0.6rem; margin: 0.3rem 0; font-size: 0.85rem;
+       color: var(--transect-color-text-soft); }}
 .msg::before {{ content: attr(data-kind); display: block; font-size: 0.68rem;
                text-transform: uppercase; letter-spacing: 0.04em;
                color: var(--transect-color-muted); margin-bottom: 2px; }}
