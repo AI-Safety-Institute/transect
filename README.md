@@ -111,7 +111,6 @@ model calls:
 
 ```bash
 uv run python examples/transect_kroll.py --structural
-uv run python examples/transect_petri.py             # a scripted Petri audit, no judge
 ```
 
 It renders `examples/scans/structural/report.html` and opens it with a
@@ -270,16 +269,10 @@ is `petri`). The auditor's turns are the orchestrator axis, so the phases
 and cards describe the auditor; each target trajectory is a lane, and the
 replies an auditor turn produced join that turn's digest as `[TARGET]`
 context, so the phase judge reads both sides of the audit.
-The report adds a **Target conversation** section: the stored branch tree
-as a diagram, one row per trajectory with the target calls as blocks,
-the discarded ones grey, and a coloured segment per auditor phase. Each
-phase card hosts the target exchanges its auditor turns drove (the
-auditor's turn and tool calls, what it sent, the target's reply, how
-many messages each side saw, a marker where a rollback opened a
-trajectory, every event linked into the Scout viewer); a run without
-phase cards lists the exchanges in the section. Replies are capped like excerpts and link to the Scout viewer;
-`petri_full_text=True` renders them whole. `examples/transect_petri.py`
-runs the shipped scripted audit.
+The report adds a **Target conversation** section with the stored branch
+tree, and each phase card hosts the target exchanges its auditor turns
+drove. `petri_full_text=True` renders the exchange text whole;
+`examples/transect_petri.py` runs the shipped scripted audit.
 
 ### Building your own UI
 
