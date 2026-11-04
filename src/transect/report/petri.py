@@ -283,6 +283,6 @@ def _diagram(
         "gap": _GAP,
         "row_height": _ROW,
         "width": _LEFT + max(_CAPTION, max(r["x1"] for r in rows) + _UNIT),
-        "height": _TOP + (len(rows) - 1) * _ROW + 18,
+        "height": _TOP + (len(rows) - 1) * _ROW + 30,
         "path_known": conversation.surviving is not None,
     }
