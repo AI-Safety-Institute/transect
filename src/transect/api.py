@@ -55,8 +55,7 @@ from transect.layers import (
 )
 from transect.report import render_report
 from transect.report.blocks import validate_section
-from transect.report.index import render_index
-from transect.report.render import validate_section_order
+from transect.report.render import render_index, validate_section_order
 from transect.scan_status import build_scan_status, scan_error
 from transect.scanners.base import (
     context_flush,
@@ -431,12 +430,12 @@ def render(
     transect() or load().
 
     Fills ``report_paths``/``viewer_url`` on the given results and
-    returns that same object. Single runs render one report. Multiple
-    transcripts render individual run/epoch reports
-    (``report_run001_epoch2.html``, ...), plus
-    a separate run index (``report_index.html``), listed first in
-    ``report_paths`` and opened by default. It links to each run and
-    shows collection reliability without additional model calls.
+    returns that same object. Normally one report file renders; when
+    the sample was scanned over several epochs, one file renders per
+    epoch (``report_epoch2.html``, ...) plus a run index
+    (``report_index.html``), listed first in ``report_paths`` and
+    opened by default, that links each epoch's report and pools the
+    scan's judge reliability.
 
     Args:
         results: The frames to render (from transect() or load()).
@@ -479,48 +478,45 @@ def render(
             else base.name
         )
         title = f"Transect report · {stem}"
+    plain_title = title
     if sensitivity:
         title = f"{title} · {sensitivity}"
     viewer_url = None
     if viewer and results.transcripts_location:
         viewer_url = _spawn_viewer(results.transcripts_location)
     path.parent.mkdir(parents=True, exist_ok=True)
-    identities = (
-        pd.concat(
-            [
-                results.transcript_info[
-                    ["agent", "sample_id", "epoch", "transcript_id"]
-                ],
-                results.token_timeline[
-                    ["agent", "sample_id", "epoch", "transcript_id"]
-                ],
-            ]
+    # one file per epoch when the sample was scanned over several
+    # (epochs="all"/list), plus a run index; auto-selection picks one
+    info = results.transcript_info.sort_values("epoch")
+    if info.epoch.isna().any():
+        raise ValueError("transcript_info records a transcript without an epoch")
+    epochs: list[tuple[int, str]] = (
+        list(
+            zip(
+                info.epoch.astype(int).tolist(),
+                info.transcript_id.astype(str).tolist(),
+                strict=True,
+            )
         )
-        .drop_duplicates("transcript_id")
-        .sort_values(["agent", "sample_id", "epoch"])
+        if info.epoch.nunique() > 1
+        else []
     )
-    transcript_ids = identities.transcript_id.tolist()
     views = (
         [
             (
-                path.with_name(
-                    f"{path.stem}_run{position:03d}_epoch{row.epoch}{path.suffix}"
-                ),
-                f"{title} · sample {row.sample_id} · epoch {row.epoch}",
-                _transcript_view(results, str(row.transcript_id)),
+                path.with_name(f"{path.stem}_epoch{epoch}{path.suffix}"),
+                f"{title} · epoch {epoch}",
+                _epoch_view(results, transcript_id),
+                transcript_id,
             )
-            for position, row in enumerate(identities.itertuples(), 1)
+            for epoch, transcript_id in epochs
         ]
-        if len(transcript_ids) > 1
-        else [(path, title, results)]
+        if epochs
+        else [(path, title, results, None)]
     )
-    index_path = (
-        path.with_name(f"{path.stem}_index{path.suffix}")
-        if len(transcript_ids) > 1
-        else None
-    )
+    index_path = path.with_name(f"{path.stem}_index{path.suffix}") if epochs else None
     paths: list[str] = []
-    for out, view_title, view in views:
+    for out, view_title, view, _ in views:
         out.write_text(
             render_report(
                 view,
@@ -537,8 +533,8 @@ def render(
         index_path.write_text(
             render_index(
                 results,
-                [(out.name, view) for out, _, view in views],
-                title=title,
+                [(out.name, str(transcript_id)) for out, _, _, transcript_id in views],
+                title=plain_title,
                 sensitivity=sensitivity,
             )
         )
@@ -770,8 +766,10 @@ async def _import_openclaw(files: list[Path], db_dir: str) -> None:
         await db.disconnect()
 
 
-def _transcript_view(results: TransectResults, transcript_id: str) -> TransectResults:
-    """Cut every frame to one run, retaining the full scan execution status."""
+def _epoch_view(results: TransectResults, transcript_id: str) -> TransectResults:
+    """Per-epoch view: every frame cut to the epoch's transcript, the
+    run-wide scan status kept whole. The original results object is
+    untouched, views only feed the report."""
     tids = {transcript_id}
 
     def cut(frame: pd.DataFrame) -> pd.DataFrame:

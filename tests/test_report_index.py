@@ -1,187 +1,166 @@
-"""Multi-run indexes expose scoped reliability and link to detailed reports."""
+"""The run index of a multi-epoch render: one report per epoch, an index
+that links them with their scan status, and the collection reliability
+pooled over the epochs."""
 
-import dataclasses
 from pathlib import Path
 
-import pandas as pd
 import pytest
 from bs4 import BeautifulSoup
+from helpers import PHASES_SPEC, demo_judge
 
-from transect import Layer, load, render
-from transect.report.index import render_index
+from transect import Layer, render, transect
+from transect.report.render import render_index
 from transect.scan_status import ScanError
 
 
-@pytest.fixture
-def runs(monkeypatch):
-    """Two runs use distinct judge regimes without making provider requests."""
-    sources = [
-        load(f"tests/fixtures/{name}") for name in ("demo_scan", "demo_scan_cohort")
-    ]
-    combined = {}
-    for name in sources[0].frames():
-        frames = []
-        for index, source in enumerate(sources):
-            frame = source.frames()[name].copy()
-            frame["transcript_id"] = f"run-{index}"
-            frame["sample_id"] = f"sample-{index}"
-            frames.append(frame)
-        combined[name] = pd.concat(frames, ignore_index=True)
-    monkeypatch.setattr("transect.report.render.read_transcript_extras", lambda *_: {})
-    return dataclasses.replace(sources[0], **combined)
-
-
-def test_render_creates_separate_index_with_scoped_metrics_and_links(runs, tmp_path):
-    """The default entry is a separate index whose metrics keep judge setups apart."""
-    render(
-        runs,
-        report_path=str(tmp_path / "details.html"),
-        viewer=False,
-        open_report=False,
-    )
-    assert [Path(p).name for p in runs.report_paths] == [
-        "details_index.html",
-        "details_run001_epoch1.html",
-        "details_run002_epoch1.html",
-    ]
-    document = BeautifulSoup(Path(runs.report_paths[0]).read_text(), "html.parser")
-    rows = document.select(".runs-table tbody tr")
-    assert len(rows) == 2
-    assert [cell.get_text() for cell in document.select(".runs-table thead th")] == [
-        "Report",
-        "Scan status",
-    ]
-    assert all(len(row.find_all(["th", "td"])) == 2 for row in rows)
-    assert all(row.find("td").get_text() == "Ran" for row in rows)
-    assert [section["id"] for section in document.select("section.section")] == [
+def test_a_multi_epoch_render_writes_the_index_first_and_links_each_epoch(
+    epoch_runs, tmp_path, monkeypatch
+):
+    """Each epoch gets its own report named by epoch, the index lists them
+    with their status and links them by file, every report links back,
+    the index opens by default, and recorded text is escaped."""
+    opened = []
+    monkeypatch.setattr("transect.api.webbrowser.open", opened.append)
+    epoch_runs.transcript_info["model"] = "<script>unsafe()</script>"
+    render(epoch_runs, report_path=str(tmp_path / "runs.html"), viewer=False)
+    names = [Path(p).name for p in epoch_runs.report_paths]
+    assert names == ["runs_index.html", "runs_epoch1.html", "runs_epoch2.html"]
+    assert opened == [Path(epoch_runs.report_paths[0]).as_uri()]
+    index = BeautifulSoup(Path(epoch_runs.report_paths[0]).read_text(), "html.parser")
+    rows = index.select(".runs-table tbody tr")
+    assert [row.select("td")[-1].get_text() for row in rows] == ["Ran", "Ran"]
+    assert [row.find("a")["href"] for row in rows] == names[1:]
+    assert index.find("script") is None and "unsafe()" in index.get_text()
+    for name in names[1:]:
+        report = BeautifulSoup((tmp_path / name).read_text(), "html.parser")
+        assert report.select_one('a[href="runs_index.html"]') is not None
+        assert len(report.select(".transcript")) == 1
+    assert [s["id"] for s in index.select("section.section")] == [
         "runs",
         "collection-reliability",
         "scan-status",
     ]
-    collection = document.select(".collection-reliability-table tbody tr")
-    assert len(collection) == 4
-    assert "solo + k-rolls" in collection[0].get_text()
-    assert "cohort of" in collection[1].get_text()
-    for link in document.select(".runs-table tbody a"):
-        filename, anchor = link["href"].split("#")
-        details = BeautifulSoup((tmp_path / filename).read_text(), "html.parser")
-        assert details.find(id=anchor) is not None
-        assert details.select_one('a[href="details_index.html"]') is not None
-        assert len(details.select(".transcript")) == 1
-    assert document.find("script") is None
-    assert document.find(id="scan-status") is not None
 
 
-@pytest.mark.parametrize("source", ["eval_log", "openclaw_telemetry_hal"])
-def test_structural_and_failed_runs_remain_in_index(runs, source):
-    """Runs without judgment or structural rows stay visible without fake scores."""
-    runs.phases = runs.phases.iloc[:0]
-    runs.phase_turns = runs.phase_turns.iloc[:0]
-    runs.subagents = runs.subagents.iloc[:0]
-    runs.transcript_info["source_type"] = source
-    runs.token_timeline = runs.token_timeline[
-        runs.token_timeline.transcript_id == "run-0"
+@pytest.mark.parametrize(
+    ("errored", "timeline"),
+    [(True, True), (False, False)],
+    ids=["error recorded", "no timeline rows"],
+)
+def test_an_errored_or_timeline_less_epoch_keeps_its_row(epoch_runs, errored, timeline):
+    """A recorded scanner error marks the epoch's status; an epoch with no
+    timeline rows still lists from its transcript_info row."""
+    if errored:
+        epoch_runs.scan_status.errors.append(
+            ScanError("token_timeline", "run-1", "failed")
+        )
+    if not timeline:
+        epoch_runs.token_timeline = epoch_runs.token_timeline[
+            epoch_runs.token_timeline.transcript_id == "run-0"
+        ]
+    index = BeautifulSoup(
+        render_index(epoch_runs, [("e1.html", "run-0"), ("e2.html", "run-1")], "Index"),
+        "html.parser",
+    )
+    rows = index.select(".runs-table tbody tr")
+    assert [row.select("td")[-1].get_text() for row in rows] == [
+        "Ran",
+        "Errors recorded" if errored else "Ran",
     ]
-    runs.scan_status.errors.append(
-        ScanError("token_timeline", "run-1", "recorded failure")
-    )
-    document = BeautifulSoup(
-        render_index(runs, [("runs.html", runs)], "Index"), "html.parser"
-    )
-    rows = document.select(".runs-table tbody tr")
-    assert len(rows) == 2
-    assert rows[0].find("td").get_text() == "Ran"
-    assert rows[1].find("td").get_text() == "Errors recorded"
-    assert "recorded failure" in document.get_text()
-    assert rows[1].find("a")["href"] == "runs.html#scan-status"
-    assert "No heuristic flags" not in document.get_text()
+    assert rows[1].find("a")["href"] == "e2.html"
+    assert ("failed" in index.get_text()) is errored
 
 
-@pytest.mark.parametrize("broken", [False, True])
-def test_index_includes_custom_judged_layers_and_honest_audit_failures(runs, broken):
-    """Custom layers use the audit contract and expose unavailable metrics."""
-    frame = runs.subagents.copy()
-    if broken:
-        frame = frame.drop(columns="judge_regime")
-    runs.extra_layers = [
-        Layer(name="custom_judge", frame=frame, audit=("agent_span_id", "label"))
+@pytest.mark.parametrize(
+    ("audit", "frame", "rows", "text"),
+    [
+        (("agent_span_id", "label"), "subagents", 2, "cohort of"),
+        (("agent_span_id", "label"), "broken", 1, "not audited"),
+        (("agent_span_id", "label"), None, 1, "no retained frame"),
+        (None, "subagents", 0, ""),
+    ],
+    ids=["audited", "contract breach", "no frame", "no audit declared"],
+)
+def test_custom_layers_join_the_collection_only_through_their_audit(
+    epoch_runs, audit, frame, rows, text
+):
+    """A custom layer that declares an audit gets its rows, a failing
+    one a stated reason, a frame-less one a stated absence, and one
+    without an audit nothing."""
+    layer_frame = {
+        "subagents": epoch_runs.subagents,
+        "broken": epoch_runs.subagents.drop(columns="judge_regime"),
+        None: None,
+    }[frame]
+    epoch_runs.extra_layers = [
+        Layer(name="custom_judge", frame=layer_frame, audit=audit)
     ]
-    runs.layer_frames = {"custom_judge": frame}
-    document = BeautifulSoup(
-        render_index(runs, [("runs.html", runs)], "Index"), "html.parser"
+    epoch_runs.layer_frames = (
+        {"custom_judge": layer_frame} if layer_frame is not None else {}
     )
-    rows = [
-        row
-        for row in document.select(".collection-reliability-table tbody tr")
+    index = BeautifulSoup(
+        render_index(epoch_runs, [("e1.html", "run-0")], "Index"), "html.parser"
+    )
+    found = [
+        row.get_text()
+        for row in index.select(".collection-reliability-table tbody tr")
         if "custom_judge" in row.get_text()
     ]
-    assert len(rows) == (1 if broken else 2)
-    assert all(("Not audited" in row.get_text()) == broken for row in rows)
+    assert len(found) == rows
+    assert text in " ".join(found)
 
 
-@pytest.mark.parametrize("missing_timeline", [False, True])
-def test_index_links_all_epochs_and_opens_by_default(
-    runs, tmp_path, monkeypatch, missing_timeline
-):
-    """An epoch-split report opens one index linking every epoch's detailed run."""
-    for frame in runs.frames().values():
-        frame["sample_id"] = "same-sample"
-        frame["epoch"] = frame.transcript_id.map({"run-0": 1, "run-1": 2})
-    if missing_timeline:
-        runs.token_timeline = runs.token_timeline[
-            runs.token_timeline.transcript_id == "run-0"
-        ]
-    opened = []
-    monkeypatch.setattr("transect.api.webbrowser.open", opened.append)
-    render(runs, report_path=str(tmp_path / "runs.html"), viewer=False)
-    assert len(runs.report_paths) == 3
-    assert opened == [Path(runs.report_paths[0]).as_uri()]
-    document = BeautifulSoup(Path(runs.report_paths[0]).read_text(), "html.parser")
-    links = {link["href"].split("#")[0] for link in document.select("tbody a")}
-    assert {"runs_run001_epoch1.html", "runs_run002_epoch2.html"} <= links
+def test_a_single_judge_over_the_epochs_pools_without_agreement(epochs_logs, tmp_path):
+    """A solo judge through the real pipeline yields an index whose
+    collection row says there is no agreement to measure."""
+    results = transect(
+        logs=str(epochs_logs),
+        spec=PHASES_SPEC,
+        sample="epoch-sample-1",
+        epochs="all",
+        judge_models=demo_judge(phase_label="setup"),
+        verify=False,
+        narrate=False,
+        scans_dir=str(tmp_path / "scans"),
+        report_path=str(tmp_path / "report.html"),
+        viewer=False,
+        open_report=False,
+    )
+    assert [Path(p).name for p in results.report_paths] == [
+        "report_index.html",
+        "report_epoch1.html",
+        "report_epoch2.html",
+        "report_epoch3.html",
+    ]
+    index = BeautifulSoup(Path(results.report_paths[0]).read_text(), "html.parser")
+    rows = [
+        r.get_text() for r in index.select(".collection-reliability-table tbody tr")
+    ]
+    assert len(rows) == 1
+    assert "Phases" in rows[0] and "single judge" in rows[0] and "3 epoch(s)" in rows[0]
 
 
-def test_index_browser_navigation_and_escaping(runs, tmp_path):
-    """A real browser follows report links and preserves the simple section order."""
+def test_browser_follows_an_epoch_link_and_back(epoch_runs, tmp_path):
+    """A real browser lands on the epoch report from the index and returns."""
     playwright = pytest.importorskip("playwright.sync_api")
-    runs.transcript_info["model"] = "<script>unsafe()</script>"
     render(
-        runs,
+        epoch_runs,
         report_path=str(tmp_path / "runs.html"),
         viewer=False,
         open_report=False,
-        sensitivity="TEST MARKING",
     )
-    errors = []
     with playwright.sync_playwright() as p:
         try:
             browser = p.chromium.launch()
         except playwright.Error as error:
             pytest.skip(f"browser unavailable: {error}")
-        page = browser.new_page(viewport={"width": 1440, "height": 1000})
+        page = browser.new_page()
+        errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
-        page.goto(Path(runs.report_paths[0]).as_uri())
-        playwright.expect(page.locator(".runs-table tbody tr")).to_have_count(2)
-        assert page.locator("#collection-reliability details.definitions").count() == 1
-        assert page.locator(".collection-reliability-table td[style]").count() == 20
-        assert page.locator(
-            ".collection-reliability-table thead th"
-        ).all_text_contents()[:3] == [
-            "Scanner / setup",
-            "Valid / expected ballots",
-            "Mean unit agreement",
-        ]
-        assert page.locator("script").count() == 0
-        assert page.locator(".sensitivity-banner").count() == 2
-        page.screenshot(path=str(tmp_path / "run-index.png"), full_page=False)
-        assert errors == []
-        page.locator(
-            'tbody a[href="runs_run002_epoch1.html#transcript-0"]'
-        ).first.click()
-        playwright.expect(page.locator("#transcript-0")).to_be_visible()
-        page.get_by_role("link", name="Run index", exact=False).click()
+        page.goto(Path(epoch_runs.report_paths[0]).as_uri())
+        page.locator('tbody a[href="runs_epoch2.html"]').click()
+        playwright.expect(page.locator(".transcript")).to_have_count(1)
+        page.get_by_role("link", name="Run index").click()
         playwright.expect(page.locator(".runs-table")).to_be_visible()
-        assert page.locator("section.section").evaluate_all(
-            "sections => sections.map(section => section.id)"
-        ) == ["runs", "collection-reliability", "scan-status"]
+        assert errors == []
         browser.close()

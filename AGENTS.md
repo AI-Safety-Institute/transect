@@ -207,32 +207,16 @@ scanner change take effect; run a new scan and retain both results for compariso
   this run-wide status outside optional sections. Keep it in custom UIs,
   including when an epoch filter hides other scan transcripts.
 
-The public `transect()` entry point still selects one sample per invocation.
-Multi-transcript scans normally cover selected epochs of that sample;
-there is no automatic batching of different samples or merging saved scans.
-Multi-transcript renders produce a separate run index, listed first in
-`report_paths` and opened by default. Its two-column report/status table
-comes first, followed by collection reliability, then scan execution and
-coverage. Collection agreement cells use the detailed audits' colour ramp;
-expanded audit details belong in the individual reports.
-Each detail file contains one run/epoch. Collection statistics pool original
-ballots with transcript-scoped unit keys, partitioned by judge setup and
-label vocabulary. Unit agreement requires at least two valid ballots;
-equal-sample agreement balances runs within (task_set, sample_id). Keep
-original verifier review units and separate failed verdicts from completed
-reviews. Missing units have unknown ballot counts, not fabricated zeros.
-Structural-only and missing judged results show explicit absence, with execution tracked separately. The
-index applies to every source and stays outside `section_order`. Include
-failed transcripts and keep run-wide execution status visible there too.
-
-Cross-run narrative customisations follow the shipped
-[custom-ui recipe](.claude/skills/custom-ui/references/cross-run-narratives.md).
-This is an extension pattern, not a built-in index section: retain all phases
-and their provenance, present context/summary/themes in a Narrative analysis
-box, include independent overview/themes critics and separate theme-fit
-confidences by default, and render only saved model artifacts. Critics annotate
-proposed corrections without changing source labels, memberships or counts.
-Broader collections require a project-owned manifest over exact saved scans.
+- **Run index.** `transect()` scans one sample per invocation; when that
+  sample was scanned over several epochs, `render()` writes one report
+  file per epoch (`report_epoch2.html`, ...) plus `report_index.html`,
+  listed first in `report_paths` and opened by default. The index holds
+  the epoch reports with their recorded execution status, the
+  collection reliability (each judged surface pooled per recorded judge
+  setup and vocabulary, from the frames' own `judge_agreement` and the
+  original ballots with transcript-scoped unit keys) and the run-wide
+  scan status; it sits outside `section_order`, reads no transcripts
+  and needs no chart runtime. A single epoch renders no index.
 
 ## Report code: read before touching
 

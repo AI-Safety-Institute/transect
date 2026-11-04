@@ -4,7 +4,8 @@
 <thead><tr><th scope="col">Report</th><th scope="col">Scan status</th></tr></thead>
 <tbody>
 {% for t in transcripts %}
-<tr><th scope="row"><a href="{{ t.href }}">{{ t.heading }}</a></th><td>{{ t.status }}</td></tr>
-{% else %}<tr><td colspan="2">No runs available.</td></tr>{% endfor %}
+<tr><td><a href="{{ t.href }}">{{ t.heading }}</a></td><td>{{ t.status }}</td></tr>
+{% endfor %}
 </tbody></table></div>
+<p class="meta">Scan status is execution only: <em>Errors recorded</em> when any scanner recorded an error for that epoch (the details are under Scan execution &amp; coverage).</p>
 </section>

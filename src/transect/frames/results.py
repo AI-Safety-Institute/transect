@@ -78,8 +78,8 @@ class TransectResults:
     """The user layer declarations, as passed to ``extra_layers``."""
 
     report_paths: list[str] = field(default_factory=list)
-    """Rendered files; a separate run index comes first for multiple
-    transcripts, followed by one detailed file per run/epoch."""
+    """Rendered files: one report, or for a sample scanned over several
+    epochs the run index first and then one report per epoch."""
 
     viewer_url: str | None = None
     """The spawned Scout viewer's URL; None when viewer=False."""

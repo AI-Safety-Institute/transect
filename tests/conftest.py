@@ -145,3 +145,36 @@ def _log_dir(name: str, generator: str) -> Path:
     if not any(directory.glob("*.eval")):
         pytest.skip(f"fixture log missing - run: uv run python {generator}")
     return directory
+
+
+@pytest.fixture(scope="session")
+def judged_stores():
+    """The two committed judged stores: a k-roll with verifier and a cohort."""
+    return [
+        transect.load(f"tests/fixtures/{name}")
+        for name in ("demo_scan", "demo_scan_cohort")
+    ]
+
+
+@pytest.fixture
+def epoch_runs(judged_stores, monkeypatch):
+    """Two epochs of one sample, each from its own store, so the scan
+    carries two judge setups; excerpt reads are skipped."""
+    import dataclasses
+
+    combined = {}
+    for name in judged_stores[0].frames():
+        frames = []
+        for epoch, source in enumerate(judged_stores, 1):
+            frame = source.frames()[name].copy()
+            frame["transcript_id"] = f"run-{epoch - 1}"
+            frame["sample_id"] = "same-sample"
+            frame["epoch"] = epoch
+            frames.append(frame)
+        combined[name] = pd.concat(frames, ignore_index=True)
+    monkeypatch.setattr("transect.report.render.read_transcript_extras", lambda *_: {})
+    return dataclasses.replace(
+        judged_stores[0],
+        scan_status=dataclasses.replace(judged_stores[0].scan_status, errors=[]),
+        **combined,
+    )

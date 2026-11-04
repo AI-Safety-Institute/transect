@@ -20,7 +20,13 @@ from markupsafe import Markup
 from transect.frames import TransectResults, spine
 from transect.report import charts, custom, petri as petri_report, sections
 from transect.report._jinja import jinja_env
-from transect.report.colors import _UNJUDGED_GREY, _label_colors, _phase_colors
+from transect.report.collection import collection_reliability
+from transect.report.colors import (
+    _UNJUDGED_GREY,
+    _label_colors,
+    _phase_colors,
+    ramp_anchors,
+)
 from transect.report.display import MEMBER_NO_VOTE, member_display, multi_roll_models
 from transect.report.embed import embed_section
 from transect.report.excerpts import (
@@ -437,7 +443,6 @@ def render_report(
             {
                 "heading": _transcript_title(one, my_info),
                 "run_meta": sections.run_intro_line(my_info),
-                "anchor": f"transcript-{idx}",
                 "sections": sections_html,
             }
         )
@@ -458,6 +463,51 @@ def render_report(
         logo_uri=_brand_asset("logo.svg", "image/svg+xml"),
         favicon_uri=_brand_asset("favicon-32.png", "image/png"),
         package_version=_package_version(),
+    )
+
+
+def render_index(
+    results: TransectResults,
+    runs: list[tuple[str, str]],
+    title: str,
+    sensitivity: str | None = None,
+) -> str:
+    """The run index of a multi-epoch render: one row per epoch report
+    (``runs`` pairs each file name with its transcript id) with the
+    scan's recorded execution status for that transcript, then the
+    collection reliability of the whole scan, then the run-wide scan
+    status. No transcript reads, no model calls, no chart runtime."""
+    failed = {error.transcript_id for error in results.scan_status.errors}
+    entries = []
+    for filename, transcript_id in runs:
+        one = _mine(results.token_timeline, transcript_id)
+        info = _mine(results.transcript_info, transcript_id)
+        entries.append(
+            {
+                "heading": _transcript_title(one if len(one) else info, info),
+                "href": quote(filename),
+                "status": "Errors recorded" if transcript_id in failed else "Ran",
+            }
+        )
+    low, mid, high = ramp_anchors()
+    return (
+        jinja_env()
+        .get_template("index.html.j2")
+        .render(
+            title=title,
+            transcripts=entries,
+            n_transcripts=len(entries),
+            collection=collection_reliability(results),
+            ramp={"low": low, "mid": mid, "high": high},
+            index_page=True,
+            scan_location=results.scan_location,
+            scan_status_view=sections.scan_status_view(results.scan_status),
+            style=Markup(_STYLE),
+            sensitivity=sensitivity,
+            logo_uri=_brand_asset("logo.svg", "image/svg+xml"),
+            favicon_uri=_brand_asset("favicon-32.png", "image/png"),
+            package_version=_package_version(),
+        )
     )
 
 

@@ -420,42 +420,16 @@ preserves its stored groups; this check does not establish narrative correctness
 `empty_groups`, `no_narrative`, or `not_run`. Complete checks partition
 coordinates, not factual accuracy.
 
-## Multi-run index
+## Run index
 
-`transect()` selects one sample per invocation. The index covers multiple
-selected epochs of that sample; it does not automatically batch different
-samples or combine separate saved scans.
-
-Multiple transcripts produce a separate `report_index.html`, opened by default
-and listed first in `report_paths`. A two-column table of report links and scan
-status comes first, then collection reliability, then scan execution and coverage.
-Each run links to its own run/epoch report file with a link back to the index.
-Structural-only runs explicitly have no judge measurements. Recorded errors
-and the run-wide execution status remain visible. This index works for
-all transcript sources without additional judge calls or the chart CDN.
-
-The collection reliability panel pools original ballots with transcript-scoped
-unit keys, partitioned by scanner, recorded judge setup and label vocabulary.
-The table uses the individual audits' agreement colour scale, with missing
-values neutral and negative coefficients at the low end. Detailed audit
-cards remain in the individual reports.
-It shows mean unit agreement and equal-sample agreement: average units within
-runs, runs/epochs within task samples, then task samples equally. Units with
-fewer than two valid original ballots cannot measure agreement. Attributed
-and unattributed phase turns are excluded. Undefined values stay unavailable.
-Ballot denominators cover retained judging units; missing records can have
-unknown unit counts. Verifier counts retain original reviews through display
-merging and separate unusable verdicts. These statistics describe consistency
-and self-revision, not correctness.
-
-### Custom narrative analysis
-
-A project can add a **Narrative analysis** box with evaluation context, an
-overall summary and proposed cross-run themes. Follow the
-[custom-ui recipe](../../custom-ui/references/cross-run-narratives.md) for the
-phase-based input, proposer, independent overview/themes critics and separate
-theme-fit confidence scoring. Present critics and confidence states by
-default; their model outputs do not validate scanner judgments or replace the
-collection reliability table. This is a custom extension, not a section
-produced by the native index. Rendering consumes saved artifacts without
-making model calls.
+When a sample was scanned over several epochs, `report_index.html` lists
+each epoch's report with its recorded scan status (`Errors recorded` when
+any scanner recorded an error for that epoch, else `Ran`), then the
+collection reliability, then the run-wide scan status. The collection
+table pools each judged surface over the epochs, one row per recorded
+judge setup and label vocabulary: valid ballots on the units judging attempted against the count the
+setup expects, the frames' own per-unit `judge_agreement` averaged, the
+pairwise agreement, α and AC1 of the pooled original ballots with
+transcript-scoped unit keys, and verifier outcomes. A single judge has one
+judgement per unit and the row says so. These are the per-epoch audits
+pooled; they measure consistency, not correctness.
