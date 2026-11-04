@@ -106,6 +106,18 @@ def test_the_demo_audit_projects_to_its_branches_and_surviving_path():
         ["I run a bakery and I"],
         ["Should I announce th"],
     ]
+    assert [c.n_input for c in conversation.calls] == [2, 4, 2, 4]
+    auditor = conversation.auditor_turns
+    assert sorted(auditor) == [0, 1, 2, 3, 4, 5]
+    assert [t.name for t in auditor[3].tools] == [
+        "rollback_conversation",
+        "send_message",
+        "resume",
+    ]
+    assert all(t.event_id for t in auditor[3].tools) and auditor[3].event_id
+    assert auditor[3].text.startswith("Still cautious")
+    assert auditor[3].n_input > auditor[1].n_input
+    assert conversation.branches[1].rollback_event_id == auditor[3].tools[0].event_id
 
 
 def test_a_conversation_without_a_stored_tree_or_endpoint_says_so():
@@ -482,6 +494,35 @@ def test_exchange_items_mark_rollbacks_and_discarded_calls(
     assert out == expected
 
 
+def test_an_exchange_card_points_at_every_viewer_item():
+    """An exchange card links the auditor's turn, each of its tool calls,
+    the context it saw, the target's reply, its tool calls and the context
+    it saw to their events in the Scout viewer, and the rollback marker
+    links the rollback's tool event."""
+    import pandas as pd
+
+    from transect.report.petri import target_report
+
+    conversation = target_conversation(read_petri_transcripts()[1])
+    turns = pd.DataFrame({"turn": [], "phase_index": [], "phase": []})
+    report = target_report(
+        conversation, None, turns, {}, 0, lambda event: f"viewer:{event}", False
+    )
+    html = str(report.section)
+    auditor = conversation.auditor_turns[3]
+    call = conversation.calls[2]
+    for event in [
+        auditor.event_id,
+        *(t.event_id for t in auditor.tools),
+        call.event_id,
+    ]:
+        assert f'href="viewer:{event}"' in html
+    assert f'href="viewer:{conversation.branches[1].rollback_event_id}"' in html
+    assert "context seen by the auditor: 10 messages" in html
+    assert "context seen by the target: 2 messages" in html
+    assert "Expand all" in html and "Collapse all" in html
+
+
 def test_a_call_without_a_recorded_send_says_so():
     """An exchange card whose call no send_message preceded states the
     absence instead of showing an empty prompt; without phases the
@@ -515,7 +556,7 @@ def test_diagram_rows_keep_circles_clear_of_the_blocks_and_segment_by_phase():
         5: (2, "closing"),
     }
     cards = {
-        call.number: _card(call, phase_of, {}, 0, "petri-0", None, False)
+        call.number: _card(call, None, phase_of, {}, 0, "petri-0", None, False)
         for call in conversation.calls
     }
     d = _diagram(conversation, cards, phase_of, 0)

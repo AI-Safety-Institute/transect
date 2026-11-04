@@ -29,17 +29,30 @@
 <p class="chips petri-legend">{% for p in d.legend %}<span class="chip"><span class="swatch" style="background:{{ p.color }};"></span>{{ p.phase }}</span>{% endfor %}<span class="chip"><svg width="14" height="14" viewBox="0 0 14 14"><circle class="petri-start" cx="7" cy="7" r="5"/></svg>trajectory start</span><span class="chip"><svg width="14" height="14" viewBox="0 0 14 14"><circle class="petri-fork" cx="7" cy="7" r="5"/></svg>fork at a rollback</span>{% if d.path_known %}<span class="chip"><span class="swatch" style="background:#d5dadf;"></span>discarded call</span>{% endif %}</p></div>
 {%- endmacro %}
 
+{% macro viewer(href, label="Scout viewer ↗") -%}
+{% if href %} · <a href="{{ href }}" target="_blank">{{ label }}</a>{% endif %}
+{%- endmacro %}
+
+{% macro tool_lines(tools, full_text, args_chars) -%}
+{% for t in tools %}<p class="meta">tool call: <strong>{{ t.name }}</strong>{% if full_text %}<br>arguments: {{ t.arguments }}{% if t.result is not none %}<br>result: {{ t.result }}{% endif %}{% if t.error %}<br>error: {{ t.error }}{% endif %}{% elif t.arguments != "{}" %}({{ t.arguments[:args_chars] }}{% if t.arguments|length > args_chars %}…{% endif %}){% endif %}{{ viewer(t.href) }}</p>{% endfor %}
+{%- endmacro %}
+
 {% macro exchange_card(c, discarded) -%}
 <details class="event petri-call-card{% if discarded %} petri-discarded-card{% endif %}" id="{{ c.id }}"><summary><strong>Call #{{ c.number }}</strong> · T{{ c.attempt }} reply {{ c.lane_turn + 1 }} · {% if c.auditor_turn is not none %}auditor turn {{ c.auditor_turn }}{% else %}before the auditor's first turn{% endif %}{% if discarded %} · <strong>discarded</strong>{% endif %}{% if c.model %} · <span class="meta">{{ c.model }}</span>{% endif %}</summary>
+{%- if c.auditor %}<p class="meta petri-side"><strong>Auditor turn {{ c.auditor.turn }}</strong>{{ viewer(c.auditor.href) }} · context seen by the auditor: {{ c.auditor.n_input }} message{{ "" if c.auditor.n_input == 1 else "s" }}{{ viewer(c.auditor.href, "messages ↗") }}</p>
+{%- if c.auditor.reasoning %}<p class="excerpt-thinking">[thinking] {{ c.auditor.reasoning }}</p>{% endif %}
+{%- if c.auditor.text %}<p class="{{ 'petri-full' if c.full_text else '' }}">{{ c.auditor.text }}{% if c.auditor.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
+{{ tool_lines(c.auditor.tools, c.full_text, c.args_chars) }}{% endif %}
 {%- if c.prompts %}{% for prompt in c.prompts %}<p class="petri-prompt{{ ' petri-full' if c.full_text else '' }}"><span class="meta">Auditor sent:</span> {{ prompt }}</p>{% endfor %}{% if c.prompt_truncated %}<p class="meta">… (auditor message truncated · full text in the Scout viewer)</p>{% endif %}{% else %}<p class="meta">No send_message recorded before this call.</p>{% endif %}
+<p class="meta petri-side"><strong>Target reply</strong>{{ viewer(c.open_link) }} · context seen by the target: {{ c.n_input }} message{{ "" if c.n_input == 1 else "s" }}{{ viewer(c.open_link, "messages ↗") }}</p>
 {%- if c.reasoning %}<p class="excerpt-thinking">[thinking] {{ c.reasoning }}{% if c.truncated and not c.text %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
 {%- if c.text %}<p class="{{ 'petri-full' if c.full_text else '' }}">{{ c.text }}{% if c.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
 {%- if not c.text and not c.reasoning and not c.tools %}<p class="meta">No text or tool call recorded.</p>{% endif %}
-{%- for t in c.tools %}<p class="meta">tool call: <strong>{{ t.name }}</strong>{% if c.full_text %}<br>arguments: {{ t.arguments }}{% if t.result is not none %}<br>result: {{ t.result }}{% endif %}{% if t.error %}<br>error: {{ t.error }}{% endif %}{% endif %}</p>{% endfor %}
-{%- if c.open_link %}<p class="meta"><a href="{{ c.open_link }}" target="_blank">Open in Scout viewer ↗</a></p>{% endif %}</details>
+{{ tool_lines(c.tools, c.full_text, c.args_chars) }}</details>
 {%- endmacro %}
 
 {% macro exchanges(items, cards, title, open=False) -%}
 {% set calls = items|selectattr("kind", "eq", "call")|list %}{% set discarded = calls|selectattr("discarded")|list|length %}<details class="event petri-exchanges"{% if open %} open{% endif %}><summary><strong>{{ title }}</strong> · {{ calls|length }} target call{{ "" if calls|length == 1 else "s" }}{% if discarded %} · {{ discarded }} discarded{% endif %}</summary>
-{%- for item in items %}{% if item.kind == "rollback" %}<p class="petri-rollback meta">↶ Rollback at auditor turn {{ item.turn }}: trajectory T{{ item.trajectory }} forks from T{{ item.parent }}{% if item.fork_after is not none %} after {{ item.fork_after }} call{{ "" if item.fork_after == 1 else "s" }}{% else %} at an unrecorded point{% endif %}.</p>{% else %}{{ exchange_card(cards[item.number], item.discarded) }}{% endif %}{% endfor %}</details>
+<p class="filter-bar petri-controls"><button type="button" onclick="this.closest('.petri-exchanges').querySelectorAll('details').forEach(function(d) { d.open = true; })">Expand all</button> <button type="button" onclick="this.closest('.petri-exchanges').querySelectorAll('details').forEach(function(d) { d.open = false; })">Collapse all</button></p>
+{%- for item in items %}{% if item.kind == "rollback" %}<p class="petri-rollback meta">↶ Rollback at auditor turn {{ item.turn }}: trajectory T{{ item.trajectory }} forks from T{{ item.parent }}{% if item.fork_after is not none %} after {{ item.fork_after }} call{{ "" if item.fork_after == 1 else "s" }}{% else %} at an unrecorded point{% endif %}.{{ viewer(item.href) }}</p>{% else %}{{ exchange_card(cards[item.number], item.discarded) }}{% endif %}{% endfor %}</details>
 {%- endmacro %}

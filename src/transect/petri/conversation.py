@@ -28,12 +28,27 @@ _SEND_TOOL = "send_message"  # the auditor tool whose ``message`` the target rea
 
 @dataclass(frozen=True)
 class ToolUse:
-    """One tool call a target reply made, with its recorded result."""
+    """One tool call a model turn made, with its recorded result and the
+    tool event that recorded it (None when no event did)."""
 
     name: str
     arguments: dict[str, Any]
     result: str | None
     error: str | None
+    event_id: str | None = None
+
+
+@dataclass(frozen=True)
+class AuditorTurn:
+    """One auditor (orchestrator) turn: its model event, its text and
+    reasoning, how many messages it saw and the tool calls it made."""
+
+    turn: int
+    event_id: str | None
+    text: str
+    reasoning: str
+    n_input: int
+    tools: list[ToolUse] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -46,7 +61,7 @@ class TargetCall:
     it (the auditor turn preceding it in event order), None when none
     did; ``prompts`` are the ``send_message`` texts the auditor sent
     since the previous target call or rollback, in order, empty when
-    none is recorded.
+    none is recorded; ``n_input`` is how many messages the call saw.
     """
 
     number: int
@@ -58,6 +73,7 @@ class TargetCall:
     model: str | None
     text: str
     reasoning: str
+    n_input: int = 0
     prompts: list[str] = field(default_factory=list)
     tools: list[ToolUse] = field(default_factory=list)
 
@@ -70,7 +86,8 @@ class Branch:
     ``fork_after`` is how many of the parent's calls precede the fork: 0
     for a restart, None on the root or when the parent holds no matching
     anchor; ``rollback_turn`` is the auditor turn whose rollback or
-    restart tool call opened the trajectory's span.
+    restart tool call opened the trajectory's span, ``rollback_event_id``
+    that tool event.
     """
 
     number: int
@@ -78,6 +95,7 @@ class Branch:
     fork_after: int | None
     calls: list[int]
     rollback_turn: int | None
+    rollback_event_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,13 +104,15 @@ class Conversation:
 
     ``surviving`` lists the call numbers of the final conversation in
     order, None when the tree or the endpoint is unavailable; ``note``
-    then says why.
+    then says why. ``auditor_turns`` holds the auditor's turns by turn
+    number.
     """
 
     calls: list[TargetCall]
     branches: list[Branch]
     surviving: list[int] | None
     note: str | None = None
+    auditor_turns: dict[int, AuditorTurn] = field(default_factory=dict)
 
     @property
     def discarded(self) -> list[int]:
@@ -127,6 +147,32 @@ def target_conversation(transcript: Any) -> Conversation | None:
         numbers.setdefault(begin.id, len(numbers) + 1)
     lane_ids = {begin.id for begin in lanes.role_begins}
     results = {e.id: e for e in lanes.events if e.event == "tool"}
+
+    def tool_uses(message: Any) -> list[ToolUse]:
+        return [
+            ToolUse(
+                name=call.function,
+                arguments=dict(call.arguments),
+                result=_result_text(results[call.id].result)
+                if call.id in results
+                else None,
+                error=_error_text(results.get(call.id)),
+                event_id=getattr(results.get(call.id), "uuid", None),
+            )
+            for call in (message.tool_calls if message else None) or []
+        ]
+
+    auditor_turns = {}
+    for turn, event, _tool_calls in lanes.turns():
+        message = turn_message(event)
+        auditor_turns[turn] = AuditorTurn(
+            turn=turn,
+            event_id=getattr(event, "uuid", None),
+            text=(message.text or "") if message else "",
+            reasoning=message_reasoning(message) if message else "",
+            n_input=len(event.input or []),
+            tools=tool_uses(message),
+        )
     calls: list[TargetCall] = []
     lane_turns: dict[str, int] = {}
     sent: list[str] = []
@@ -155,33 +201,28 @@ def target_conversation(transcript: Any) -> Conversation | None:
                 model=getattr(event, "model", None),
                 text=(message.text or "") if message else "",
                 reasoning=message_reasoning(message) if message else "",
+                n_input=len(event.input or []),
                 prompts=sent,
-                tools=[
-                    ToolUse(
-                        name=call.function,
-                        arguments=dict(call.arguments),
-                        result=_result_text(results[call.id].result)
-                        if call.id in results
-                        else None,
-                        error=_error_text(results.get(call.id)),
-                    )
-                    for call in (message.tool_calls if message else None) or []
-                ],
+                tools=tool_uses(message),
             )
         )
         sent = []
     if not calls:
         return None
     if timeline is None:
-        return Conversation(calls, [], None, note)
+        return Conversation(calls, [], None, note, auditor_turns)
     branches = _branches(timeline, tree, calls, lanes, numbers)
     placed = sorted(n for b in branches for n in b.calls)
     if placed != [c.number for c in calls]:
         return Conversation(
-            calls, [], None, "the stored target tree does not hold every target call"
+            calls,
+            [],
+            None,
+            "the stored target tree does not hold every target call",
+            auditor_turns,
         )
     surviving, note = _surviving(branches, calls, getattr(transcript, "messages", []))
-    return Conversation(calls, branches, surviving, note)
+    return Conversation(calls, branches, surviving, note, auditor_turns)
 
 
 def _target_timeline(transcript: Any) -> tuple[Any | None, str | None]:
@@ -226,11 +267,12 @@ def _branches(
         for turn, _event, tool_calls in lanes.turns()
         for call in tool_calls
     }
-    opener: dict[str, int] = {}
-    pending: int | None = None
+    opener: dict[str, tuple[int, str | None]] = {}
+    pending: tuple[int, str | None] | None = None
     for event in lanes.events:
         if event.event == "tool" and event.function in _ROLLBACK_TOOLS:
-            pending = turn_of_call.get(event.id)
+            turn = turn_of_call.get(event.id)
+            pending = (turn, getattr(event, "uuid", None)) if turn is not None else None
         elif event.event == "span_begin" and event.id in spans:
             if pending is not None:
                 opener[event.id] = pending
@@ -260,7 +302,8 @@ def _branches(
                 parent=numbers[parent.id] if parent is not None else None,
                 fork_after=fork_after,
                 calls=own,
-                rollback_turn=opener.get(span.id),
+                rollback_turn=opener[span.id][0] if span.id in opener else None,
+                rollback_event_id=opener[span.id][1] if span.id in opener else None,
             )
         )
         for child in span.branches:

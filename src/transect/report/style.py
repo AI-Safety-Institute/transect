@@ -165,6 +165,7 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-rollback, .petri-prompt {{ border-left: 3px solid var(--transect-color-border);
   padding-left: 0.5rem; }}
 .petri-rollback {{ margin: 0.5rem 0; }}
+.petri-side {{ margin-top: 0.6rem; }}
 .petri-diagram a:hover rect, .petri-diagram a:focus rect {{
   stroke: var(--transect-color-accent); stroke-width: 2; }}
 .petri-full {{ white-space: pre-wrap; }}

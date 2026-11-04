@@ -22,7 +22,7 @@ from typing import Any
 import pandas as pd
 from markupsafe import Markup
 
-from transect.petri.conversation import Branch, Conversation, TargetCall
+from transect.petri.conversation import AuditorTurn, Branch, Conversation, TargetCall
 from transect.report import sections
 from transect.report._jinja import jinja_env
 from transect.report.excerpts import TEXT_CHARS
@@ -33,6 +33,7 @@ _ROW = 50  # px per trajectory row
 _LEFT = 40  # px for the row labels
 _TOP = 44  # px above the first row: the axis caption and a segment label
 _CAPTION = 200  # px the axis caption needs (measured at 0.68rem in Chromium)
+_ARGS_CHARS = 120  # a tool call's arguments on its one-line card entry
 _tpl: Any = jinja_env().get_template("petri.html.j2").module
 
 
@@ -71,7 +72,18 @@ def target_report(
         if pd.notna(index)
     }
     cards = {
-        call.number: _card(call, phase_of, colors, idx, prefix, link, full_text)
+        call.number: _card(
+            call,
+            conversation.auditor_turns.get(call.auditor_turn)
+            if call.auditor_turn is not None
+            else None,
+            phase_of,
+            colors,
+            idx,
+            prefix,
+            link,
+            full_text,
+        )
         for call in conversation.calls
     }
     # each call under the phase of the auditor turn that drove it; a
@@ -89,7 +101,7 @@ def target_report(
             openers.setdefault(phase[0] if phase else None, []).append(branch)
     blocks = {
         index: _tpl.exchanges(
-            _items(conversation, numbers, openers.get(index, [])),
+            _items(conversation, numbers, openers.get(index, []), link),
             cards,
             "Target exchanges",
         )
@@ -99,7 +111,7 @@ def target_report(
     unhosted = by_phase.get(None, [])
     listed = (
         _tpl.exchanges(
-            _items(conversation, unhosted, openers.get(None, [])),
+            _items(conversation, unhosted, openers.get(None, []), link),
             cards,
             "Target exchanges without a judged phase" if blocks else "Target exchanges",
             open=not blocks,
@@ -121,6 +133,7 @@ def target_report(
 
 def _card(
     call: TargetCall,
+    auditor: AuditorTurn | None,
     phase_of: dict[int, tuple[int, str]],
     colors: dict[str, tuple[str, str | None]],
     idx: int,
@@ -128,12 +141,33 @@ def _card(
     link,
     full_text: bool,
 ) -> dict[str, Any]:
+    """One exchange card: the auditor turn that drove the call (when it
+    is known), what it sent, and the target's reply, each part capped
+    unless ``full_text``, each event linked into the viewer."""
     phase = phase_of.get(call.auditor_turn) if call.auditor_turn is not None else None
 
     def shown(text: str) -> str:
         return text if full_text else " ".join(text.split())[:TEXT_CHARS]
 
-    text, reasoning = shown(call.text), shown(call.reasoning)
+    def cut(*texts: str) -> bool:
+        return not full_text and any(
+            len(" ".join(t.split())) > TEXT_CHARS for t in texts
+        )
+
+    def tools(uses) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": tool.name,
+                "arguments": json.dumps(
+                    tool.arguments, ensure_ascii=False, default=str
+                ),
+                "result": tool.result,
+                "error": tool.error,
+                "href": link(tool.event_id) if link and tool.event_id else None,
+            }
+            for tool in uses
+        ]
+
     return {
         "id": f"{prefix}-call-{call.number}",
         "number": call.number,
@@ -145,39 +179,41 @@ def _card(
         "phase": phase[1] if phase else None,
         "phase_href": f"#phase-{idx}-{phase[0]}" if phase else None,
         "color": colors[phase[1]][0] if phase and phase[1] in colors else None,
+        "auditor": {
+            "turn": auditor.turn,
+            "text": shown(auditor.text),
+            "reasoning": shown(auditor.reasoning),
+            "truncated": cut(auditor.text, auditor.reasoning),
+            "n_input": auditor.n_input,
+            "tools": tools(auditor.tools),
+            "href": link(auditor.event_id) if link and auditor.event_id else None,
+        }
+        if auditor is not None
+        else None,
         "prompts": [shown(prompt) for prompt in call.prompts],
-        "prompt_truncated": not full_text
-        and any(len(" ".join(p.split())) > TEXT_CHARS for p in call.prompts),
-        "text": text,
-        "reasoning": reasoning,
-        "truncated": not full_text
-        and any(
-            len(" ".join(t.split())) > TEXT_CHARS for t in (call.text, call.reasoning)
-        ),
+        "prompt_truncated": cut(*call.prompts),
+        "text": shown(call.text),
+        "reasoning": shown(call.reasoning),
+        "truncated": cut(call.text, call.reasoning),
+        "n_input": call.n_input,
         "full_text": full_text,
-        "tools": [
-            {
-                "name": tool.name,
-                "arguments": json.dumps(
-                    tool.arguments, ensure_ascii=False, default=str
-                ),
-                "result": tool.result,
-                "error": tool.error,
-            }
-            for tool in call.tools
-        ],
+        "args_chars": _ARGS_CHARS,
+        "tools": tools(call.tools),
         "open_link": link(call.event_id) if link and call.event_id else None,
     }
 
 
 def _items(
-    conversation: Conversation, numbers: list[int], openers: list[Branch]
+    conversation: Conversation,
+    numbers: list[int],
+    openers: list[Branch],
+    link=None,
 ) -> list[dict]:
     """The exchange list for the calls ``numbers``, in recorded order:
     each call flagged when it is off the surviving path, and a rollback
     marker for each trajectory in ``openers`` before the first listed
     call at or after the trajectory's first call (at the end when none
-    follows)."""
+    follows), linked to the rollback's tool event through ``link``."""
     surviving = conversation.surviving
     markers: list[dict[str, Any]] = [
         {
@@ -187,6 +223,9 @@ def _items(
             "parent": branch.parent,
             "fork_after": branch.fork_after,
             "first_call": branch.calls[0],
+            "href": link(branch.rollback_event_id)
+            if link and branch.rollback_event_id
+            else None,
         }
         for branch in sorted(openers, key=lambda b: b.calls[0])
     ]
