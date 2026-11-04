@@ -171,9 +171,9 @@ Key arguments and what they mean:
 
 A Petri audit (`transcript_info.eval_family == "petri"`, from the recorded
 auditor and target model roles) puts the auditor on the turn axis, so the
-phases and cards describe the auditor, including when its unique recorded
-span is embedded inside a seed-design solver. Multiple auditor spans are
-rejected rather than combined; a corrected turn axis needs a fresh scan.
+phases and cards describe the auditor, including when the audit is
+embedded inside a seed-design solver whose writer calls the model first.
+Two independent audits in one transcript are rejected rather than combined.
 Only target-role calls feed the target conversation and the `[TARGET]`
 replies in the auditor's digests; the Target conversation section
 draws the target's branch tree (phase segments, discarded calls grey), and
