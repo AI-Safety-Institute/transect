@@ -1,12 +1,12 @@
 {
-  "scan_id": "4ggHuyPiEZ73cRMsRVhJZQ",
+  "scan_id": "GoKeb9Yeyorfz5keQXbWoK",
   "scan_name": "transect",
-  "timestamp": "2026-11-04T13:32:09.596630+00:00",
+  "timestamp": "2026-11-04T13:49:38.870599+00:00",
   "revision": {
     "type": "git",
     "origin": "git@github.com:AI-Safety-Institute/transect.git",
     "version": "0.0.0-dev.0+unknown",
-    "commit": "6fb6e6c"
+    "commit": "b437f02"
   },
   "packages": {
     "inspect_ai": "0.3.285",
@@ -28,31 +28,31 @@
     "token_timeline": {
       "name": "transect/token_timeline",
       "version": 0,
-      "package_version": "0.7.0",
+      "package_version": "0.6.0",
       "params": {}
     },
     "context_flush": {
       "name": "transect/context_flush",
       "version": 0,
-      "package_version": "0.7.0",
+      "package_version": "0.6.0",
       "params": {}
     },
     "human_intervention": {
       "name": "transect/human_intervention",
       "version": 0,
-      "package_version": "0.7.0",
+      "package_version": "0.6.0",
       "params": {}
     },
     "eval_setup": {
       "name": "transect/eval_setup",
       "version": 0,
-      "package_version": "0.7.0",
+      "package_version": "0.6.0",
       "params": {}
     },
     "decision_phases": {
       "name": "transect/decision_phases",
       "version": 0,
-      "package_version": "0.7.0",
+      "package_version": "0.6.0",
       "params": {
         "spec": {
           "phases": [
@@ -109,15 +109,33 @@
             }
           }
         },
-        "judge_models": {
-          "model": "mockllm/model",
-          "config": {},
-          "base_url": null,
-          "model_args": {
-            "custom_outputs": "route"
+        "judge_models": [
+          {
+            "model": "mockllm/model",
+            "config": {},
+            "base_url": null,
+            "model_args": {
+              "custom_outputs": "route"
+            }
+          },
+          {
+            "model": "mockllm/model2",
+            "config": {},
+            "base_url": null,
+            "model_args": {
+              "custom_outputs": "route"
+            }
+          },
+          {
+            "model": "mockllm/model3",
+            "config": {},
+            "base_url": null,
+            "model_args": {
+              "custom_outputs": "route"
+            }
           }
-        },
-        "k_rolls": 3,
+        ],
+        "k_rolls": 1,
         "chunk": 40,
         "digest": {
           "text_chars": 300,
@@ -126,9 +144,9 @@
           "tool_result_chars": 0,
           "tool_only_turns": true
         },
-        "verify": true,
+        "verify": null,
         "verify_chunk": 8,
-        "verify_sample": 1.0,
+        "verify_sample": null,
         "verifier_model": null,
         "narrate": true
       }
@@ -136,7 +154,7 @@
     "subagent_classification": {
       "name": "transect/subagent_classification",
       "version": 0,
-      "package_version": "0.7.0",
+      "package_version": "0.6.0",
       "params": {
         "spec": {
           "phases": [
@@ -193,18 +211,36 @@
             }
           }
         },
-        "judge_models": {
-          "model": "mockllm/model",
-          "config": {},
-          "base_url": null,
-          "model_args": {
-            "custom_outputs": "route"
+        "judge_models": [
+          {
+            "model": "mockllm/model",
+            "config": {},
+            "base_url": null,
+            "model_args": {
+              "custom_outputs": "route"
+            }
+          },
+          {
+            "model": "mockllm/model2",
+            "config": {},
+            "base_url": null,
+            "model_args": {
+              "custom_outputs": "route"
+            }
+          },
+          {
+            "model": "mockllm/model3",
+            "config": {},
+            "base_url": null,
+            "model_args": {
+              "custom_outputs": "route"
+            }
           }
-        },
-        "k_rolls": 3,
-        "verify": true,
+        ],
+        "k_rolls": 1,
+        "verify": null,
         "verifier_model": null,
-        "verify_sample": 1.0,
+        "verify_sample": null,
         "activity": false
       }
     }
