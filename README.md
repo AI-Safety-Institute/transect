@@ -268,12 +268,7 @@ is recognised from its recorded model roles (`transcript_info.eval_family`
 is `petri`). The auditor's turns are the orchestrator axis, so the phases
 and cards describe the auditor; each target trajectory is a lane, and the
 replies an auditor turn produced join that turn's digest as `[TARGET]`
-context, so the phase judge reads both sides of the audit. When an audit is
-embedded inside a seed-design solver, the recorded auditor span owns that
-axis; seed-writing and feedback-model calls are not auditor turns or target
-replies. Multiple auditor spans are rejected rather than silently combining
-independent audits. Changing the axis requires a fresh scan; re-rendering old
-judgments cannot recover omitted auditor turns.
+context, so the phase judge reads both sides of the audit.
 The report adds a **Target conversation** section with the stored branch
 tree, and each phase card hosts the target exchanges its auditor turns
 drove. `petri_full_text=True` renders the exchange text whole;

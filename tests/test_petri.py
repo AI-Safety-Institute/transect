@@ -11,6 +11,7 @@ from helpers import (
     MODEL,
     StubTranscript,
     auditor_scaffold,
+    call_turn,
     embedded_audit,
     model_turn,
     run_item,
@@ -773,6 +774,34 @@ def test_an_embedded_audit_keeps_the_auditors_helpers_wrapped():
     assert [b.id for b in lanes.begins] == ["helper"]
     assert lanes.first_models["helper"] is helper
     assert any(isinstance(i, TimelineSpan) and i.utility for i in lanes.main.content)
+
+
+@pytest.mark.parametrize(
+    "variant", ["agent-typed auditor and writer", "tool-calling writer"]
+)
+def test_an_embedded_audit_resolves_whatever_wraps_it(variant):
+    """The auditor's span is the lane whether the timeline kept it as an
+    agent span or flattened it, and whether or not the seed writer calls
+    tools (which would otherwise make the writer the axis role)."""
+    t = embedded_audit(auditor_scaffold(target_tools=True))
+    if variant == "agent-typed auditor and writer":
+        for e in t.events:
+            if e.event == "span_begin" and e.id in ("auditor", "writer"):
+                e.type = "agent"
+    else:
+        writer = next(
+            e
+            for e in t.events
+            if e.event == "model" and getattr(e, "role", None) == "contestant"
+        )
+        tooled = call_turn("write_seed", {"seed": "x"}, "w-1", text="Design a seed")
+        tooled.role, tooled.span_id = "contestant", "writer"
+        t.events[t.events.index(writer)] = tooled
+    lanes = Lanes(t)
+    assert lanes.main.id == "auditor"
+    assert lanes.axis_role == "auditor"
+    assert len(list(lanes.turns())) == 3
+    assert [len(d.target_replies) for d in turn_digests(t)] == [1, 1, 1]
 
 
 def test_off_axis_auditor_calls_are_no_second_audit():
