@@ -23,6 +23,12 @@ _STYLE = f"""
   --transect-color-text: #212529;          /* [bootstrap] --bs-body-color */
   --transect-color-muted: rgba(33, 37, 41, 0.75); /* [bootstrap] --bs-secondary-color */
   --transect-color-border: #dee2e6;        /* [bootstrap] --bs-border-color */
+  /* message blocks: the Scout viewer's readable theme, so a card reads
+     like the viewer (--inspect-readable-*-bg / -border) */
+  --transect-msg-assistant-bg: #f6f1fe; --transect-msg-assistant-border: #9575b9;
+  --transect-msg-thinking-bg: #f7f2ff;  --transect-msg-thinking-border: #8c7fbf;
+  --transect-msg-tool-bg: #edf4fb;      --transect-msg-tool-border: #6c8aa7;
+  --transect-msg-user-bg: #f1eeea;      --transect-msg-user-border: #8e8881;
   --transect-color-border-subtle: #e9ecef; /* [bootstrap] --bs-light-border-subtle */
   --transect-color-hover: #f8f9fa;         /* [bootstrap] --bs-light; the one hover
                                           wash */
@@ -162,7 +168,7 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-axis {{ fill: var(--transect-color-muted); font-size: 0.68rem; }}
 .petri-legend svg {{ vertical-align: -2px; margin-right: 4px; }}
 .petri-discarded-card > summary {{ color: var(--transect-color-muted); }}
-.petri-rollback, .petri-prompt {{ border-left: 3px solid var(--transect-color-border);
+.petri-rollback {{ border-left: 3px solid var(--transect-color-border);
   padding-left: 0.5rem; }}
 .petri-rollback {{ margin: 0.5rem 0; }}
 .petri-side {{ margin-top: 0.6rem; }}
@@ -263,8 +269,21 @@ body.classified {{ padding-top: 30px; padding-bottom: 30px; }}
                    border-left: 2px solid var(--transect-color-border-subtle);
                    padding-left: 8px; margin: 5px 0; font-size: 0.9rem; }}
 .excerpt-list li > .meta:first-child {{ display: block; }}
-.excerpt-list .excerpt-thinking {{ display: block; font-style: italic;
-                                  color: var(--transect-color-muted); }}
+.excerpt-list .excerpt-thinking {{ font-style: italic; }}
+/* one block per message kind, coloured as the Scout viewer colours them */
+.msg {{ display: block; border-left: 3px solid; border-radius: 2px;
+       padding: 0.3rem 0.6rem; margin: 0.3rem 0; }}
+.msg::before {{ content: attr(data-kind); display: block; font-size: 0.68rem;
+               text-transform: uppercase; letter-spacing: 0.04em;
+               color: var(--transect-color-muted); margin-bottom: 2px; }}
+.msg-assistant {{ background: var(--transect-msg-assistant-bg);
+                 border-color: var(--transect-msg-assistant-border); }}
+.msg-thinking {{ background: var(--transect-msg-thinking-bg);
+                border-color: var(--transect-msg-thinking-border); }}
+.msg-tool {{ background: var(--transect-msg-tool-bg);
+            border-color: var(--transect-msg-tool-border); }}
+.msg-user {{ background: var(--transect-msg-user-bg);
+            border-color: var(--transect-msg-user-border); }}
 """
 
 # `.definitions`/`.event-list` scope the muted small font away from

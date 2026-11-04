@@ -34,19 +34,19 @@
 {%- endmacro %}
 
 {% macro tool_lines(tools, full_text, args_chars) -%}
-{% for t in tools %}<p class="meta">tool call: <strong>{{ t.name }}</strong>{% if full_text %}<br>arguments: {{ t.arguments }}{% if t.result is not none %}<br>result: {{ t.result }}{% endif %}{% if t.error %}<br>error: {{ t.error }}{% endif %}{% elif t.arguments != "{}" %}({{ t.arguments[:args_chars] }}{% if t.arguments|length > args_chars %}…{% endif %}){% endif %}{{ viewer(t.href) }}</p>{% endfor %}
+{% for t in tools %}<p class="msg msg-tool" data-kind="tool call"><strong>{{ t.name }}</strong>{% if full_text %}<br>arguments: {{ t.arguments }}{% if t.result is not none %}<br>result: {{ t.result }}{% endif %}{% if t.error %}<br>error: {{ t.error }}{% endif %}{% elif t.arguments != "{}" %}({{ t.arguments[:args_chars] }}{% if t.arguments|length > args_chars %}…{% endif %}){% endif %}{{ viewer(t.href) }}</p>{% endfor %}
 {%- endmacro %}
 
 {% macro exchange_card(c, discarded) -%}
 <details class="event petri-call-card{% if discarded %} petri-discarded-card{% endif %}" id="{{ c.id }}"><summary><strong>Call #{{ c.number }}</strong> · T{{ c.attempt }} reply {{ c.lane_turn + 1 }} · {% if c.auditor_turn is not none %}auditor turn {{ c.auditor_turn }}{% else %}before the auditor's first turn{% endif %}{% if discarded %} · <strong>discarded</strong>{% endif %}{% if c.model %} · <span class="meta">{{ c.model }}</span>{% endif %}</summary>
 {%- if c.auditor %}<p class="meta petri-side"><strong>Auditor turn {{ c.auditor.turn }}</strong>{{ viewer(c.auditor.href) }} · context seen by the auditor: {{ c.auditor.n_input }} message{{ "" if c.auditor.n_input == 1 else "s" }}{{ viewer(c.auditor.href, "messages ↗") }}</p>
-{%- if c.auditor.reasoning %}<p class="excerpt-thinking">[thinking] {{ c.auditor.reasoning }}</p>{% endif %}
-{%- if c.auditor.text %}<p class="{{ 'petri-full' if c.full_text else '' }}">{{ c.auditor.text }}{% if c.auditor.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
+{%- if c.auditor.reasoning %}<p class="msg msg-thinking" data-kind="thinking">{{ c.auditor.reasoning }}</p>{% endif %}
+{%- if c.auditor.text %}<p class="msg msg-assistant{{ ' petri-full' if c.full_text else '' }}" data-kind="assistant">{{ c.auditor.text }}{% if c.auditor.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
 {{ tool_lines(c.auditor.tools, c.full_text, c.args_chars) }}{% endif %}
-{%- if c.prompts %}{% for prompt in c.prompts %}<p class="petri-prompt{{ ' petri-full' if c.full_text else '' }}"><span class="meta">Auditor sent:</span> {{ prompt }}</p>{% endfor %}{% if c.prompt_truncated %}<p class="meta">… (auditor message truncated · full text in the Scout viewer)</p>{% endif %}{% else %}<p class="meta">No send_message recorded before this call.</p>{% endif %}
+{%- if c.prompts %}{% for prompt in c.prompts %}<p class="msg msg-user{{ ' petri-full' if c.full_text else '' }}" data-kind="auditor message to the target">{{ prompt }}</p>{% endfor %}{% if c.prompt_truncated %}<p class="meta">… (auditor message truncated · full text in the Scout viewer)</p>{% endif %}{% else %}<p class="meta">No send_message recorded before this call.</p>{% endif %}
 <p class="meta petri-side"><strong>Target reply</strong>{{ viewer(c.open_link) }} · context seen by the target: {{ c.n_input }} message{{ "" if c.n_input == 1 else "s" }}{{ viewer(c.open_link, "messages ↗") }}</p>
-{%- if c.reasoning %}<p class="excerpt-thinking">[thinking] {{ c.reasoning }}{% if c.truncated and not c.text %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
-{%- if c.text %}<p class="{{ 'petri-full' if c.full_text else '' }}">{{ c.text }}{% if c.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
+{%- if c.reasoning %}<p class="msg msg-thinking" data-kind="thinking">{{ c.reasoning }}{% if c.truncated and not c.text %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
+{%- if c.text %}<p class="msg msg-assistant{{ ' petri-full' if c.full_text else '' }}" data-kind="assistant">{{ c.text }}{% if c.truncated %} <span class="meta">… (truncated · full text in the Scout viewer)</span>{% endif %}</p>{% endif %}
 {%- if not c.text and not c.reasoning and not c.tools %}<p class="meta">No text or tool call recorded.</p>{% endif %}
 {{ tool_lines(c.tools, c.full_text, c.args_chars) }}</details>
 {%- endmacro %}

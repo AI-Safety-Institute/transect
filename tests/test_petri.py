@@ -193,7 +193,8 @@ def test_a_structural_run_lists_the_exchanges_in_the_section(petri_results):
         marker = document.index("Rollback at auditor turn 3", cards[1])
         assert cards[1] < marker < cards[2]
     assert document.count('class="event petri-call-card petri-discarded-card"') == 4
-    assert "Auditor sent" in document and "My partner disagrees" in document
+    assert "auditor message to the target" in document
+    assert "My partner disagrees" in document
     assert "Start from your costs" in document
     assert "… (truncated" in document
     assert "read the effect" not in document

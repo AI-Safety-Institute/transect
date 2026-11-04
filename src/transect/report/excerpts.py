@@ -82,7 +82,7 @@ class Excerpt:
             Inspect's summarizer speaking, not the agent.
         reasoning: The turn's reasoning-block text when the source
             records it, same flattening and cap as `text`; the card
-            renders it as a muted [thinking] line above the text.
+            renders it as a thinking block above the text.
     """
 
     turn: int

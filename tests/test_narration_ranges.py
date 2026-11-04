@@ -128,7 +128,7 @@ def test_turns_with_reasoning_are_excerpted_and_rendered_as_thinking_lines():
             excerpts=excerpts,
         )
     )
-    assert html.count("[thinking]") == 2
+    assert html.count('data-kind="thinking"') == 2
     assert "silent deliberation" in html
 
 
