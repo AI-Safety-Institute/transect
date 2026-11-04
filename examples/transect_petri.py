@@ -5,9 +5,8 @@ Runs the shipped scripted audit structurally (no judge, no API key):
 
     uv run python examples/transect_petri.py
 
-`--full-text` renders every target reply whole in the Target
-conversation section; `--judge` labels the auditor's phases with a
-judge model (needs ANTHROPIC_API_KEY).
+`--full-text` renders every exchange card whole; `--judge` labels the
+auditor's phases with a judge model (needs ANTHROPIC_API_KEY).
 """
 
 import argparse
