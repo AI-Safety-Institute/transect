@@ -68,9 +68,10 @@ class Excerpt:
 
     Attributes:
         turn: The orchestrator turn number (the report's turn axis).
-        lane: Always ``"orchestrator"``: excerpts are orchestrator
-            turns only, and the card names the lane rather than
-            leaving it implied.
+        lane: The turn's recorded model role (an auditor's turns say
+            ``auditor``), else ``"orchestrator"``: excerpts are
+            orchestrator turns only, and the card names the lane rather
+            than leaving it implied.
         tools: The turn's tool calls, as names ("" for a prose turn);
             the tail beyond `_TOOLS_SHOWN` is counted, not dropped.
         text: The turn's own text, whitespace-flattened and capped at
@@ -354,7 +355,7 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
             continue
         found[turn] = Excerpt(
             turn=turn,
-            lane=_ORCHESTRATOR,
+            lane=getattr(event, "role", None) or _ORCHESTRATOR,
             tools=_tools_label(calls),
             text=text[:text_chars],
             truncated=len(text) > text_chars or len(reasoning) > text_chars,

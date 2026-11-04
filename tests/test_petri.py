@@ -21,6 +21,7 @@ from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.petri import is_petri
 from transect.petri.conversation import target_conversation
+from transect.report.excerpts import _turn_excerpts
 from transect.report.petri import _GAP, _UNIT, _card, _diagram, _items, target_report
 from transect.report.render import render_report
 from transect.scanners.base import eval_setup
@@ -143,8 +144,9 @@ def test_the_demo_audit_projects_to_its_calls_branches_and_surviving_path(
     petri_transcripts,
 ):
     """The projection numbers calls and trajectories in recorded order,
-    attributes each call to the auditor turn and prompt that drove it, and
-    reads the fork, the rollback and the surviving path from the store."""
+    attributes each call to the auditor turn and prompt that drove it,
+    reads the fork, the rollback and the surviving path from the store,
+    and the turn excerpts name the auditor's role."""
     conversation = target_conversation(petri_transcripts[1])
     assert conversation is not None
     assert [
@@ -175,6 +177,8 @@ def test_the_demo_audit_projects_to_its_calls_branches_and_surviving_path(
     assert all(t.event_id for t in auditor.tools) and auditor.event_id
     assert conversation.branches[1].rollback_event_id == auditor.tools[0].event_id
     assert [conversation.auditor_turns[t].n_input for t in (1, 3)] == [4, 10]
+    excerpt = _turn_excerpts(petri_transcripts[1])[1]
+    assert (excerpt.lane, excerpt.tools) == ("auditor", "send_message, resume")
 
 
 @pytest.mark.parametrize(
