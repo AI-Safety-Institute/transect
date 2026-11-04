@@ -867,6 +867,19 @@ def test_the_petri_token_note_names_the_recorded_role_or_none(role, expected):
     assert expected in str(sections.token_role_note(role))
 
 
+@pytest.mark.parametrize(
+    ("n_turns", "step", "n_ticks"),
+    [(6, 1, 6), (25, 1, 25), (26, 2, 13), (120, 5, 24), (600, 50, 12)],
+)
+def test_turn_axis_ticks_are_whole_turns_at_a_readable_step(n_turns, step, n_ticks):
+    """Ticks start at turn 0, step by 1, 2, 5, 10, 20, 50 as the run
+    grows, and never exceed the readable count."""
+    ticks = charts.turn_ticks(n_turns)
+    assert ticks[:2] == [0, step][: len(ticks)]
+    assert len(ticks) == n_ticks and all(isinstance(t, int) for t in ticks)
+    assert ticks[-1] < n_turns
+
+
 def test_the_phase_summary_line_names_the_orchestrators_role():
     """The run's recorded orchestrator role sits beside the phase count."""
     from helpers import phase_turns_frame
