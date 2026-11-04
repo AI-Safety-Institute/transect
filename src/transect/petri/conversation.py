@@ -10,7 +10,7 @@ missing; `Conversation.note` says what is absent.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from inspect_ai.event import TimelineEvent, TimelineSpan
 
@@ -23,10 +23,11 @@ from transect.scanners.helpers import (
 )
 
 _ROLLBACK_TOOLS = frozenset({"rollback_conversation", "restart_conversation"})
-_SEND_TOOL = "send_message"  # the auditor tool whose ``message`` the target reads
+# the auditor tools whose argument the target reads next, by argument
+_PROMPT_TOOLS = {"send_message": "message", "send_tool_call_result": "result"}
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ToolUse:
     """One tool call a model turn made, with its recorded result and the
     tool event that recorded it (None when no event did)."""
@@ -38,44 +39,56 @@ class ToolUse:
     event_id: str | None = None
 
 
-@dataclass(frozen=True)
-class AuditorTurn:
-    """One auditor (orchestrator) turn: its model event, its text and
+@dataclass(frozen=True, kw_only=True)
+class Prompt:
+    """What the auditor put before the target: a ``send_message`` text or
+    a ``send_tool_call_result`` result, with the tool event that
+    recorded it."""
+
+    kind: Literal["message", "tool result"]
+    text: str
+    event_id: str | None = None
+
+
+@dataclass(frozen=True, kw_only=True)
+class ModelCall:
+    """One model call of the audit: its model event, model, text,
     reasoning, how many messages it saw and the tool calls it made."""
 
-    turn: int
     event_id: str | None
+    model: str | None
     text: str
     reasoning: str
     n_input: int
     tools: list[ToolUse] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class TargetCall:
+@dataclass(frozen=True, kw_only=True)
+class TargetCall(ModelCall):
     """One target model call.
 
     ``number`` counts target calls in event order from 1; ``attempt``
     is the trajectory (role lane) the call ran in, ``lane_turn`` its
     ordinal there; ``auditor_turn`` is the orchestrator turn that drove
     it (the auditor turn preceding it in event order), None when none
-    did; ``prompts`` are the ``send_message`` texts the auditor sent
-    since the previous target call or rollback, in order, empty when
-    none is recorded; ``n_input`` is how many messages the call saw.
+    did; ``prompts`` is what the auditor put before the target since
+    the previous target call or rollback, in order, empty when nothing
+    is recorded.
     """
 
     number: int
     attempt: int
     lane_turn: int
     auditor_turn: int | None
-    event_id: str | None
     message_id: str | None
-    model: str | None
-    text: str
-    reasoning: str
-    n_input: int = 0
-    prompts: list[str] = field(default_factory=list)
-    tools: list[ToolUse] = field(default_factory=list)
+    prompts: list[Prompt] = field(default_factory=list)
+
+
+@dataclass(frozen=True, kw_only=True)
+class AuditorTurn(ModelCall):
+    """One auditor (orchestrator) turn, by turn number."""
+
+    turn: int
 
 
 @dataclass(frozen=True)
@@ -168,6 +181,7 @@ def target_conversation(transcript: Any) -> Conversation | None:
         auditor_turns[turn] = AuditorTurn(
             turn=turn,
             event_id=getattr(event, "uuid", None),
+            model=getattr(event, "model", None),
             text=(message.text or "") if message else "",
             reasoning=message_reasoning(message) if message else "",
             n_input=len(event.input or []),
@@ -175,13 +189,22 @@ def target_conversation(transcript: Any) -> Conversation | None:
         )
     calls: list[TargetCall] = []
     lane_turns: dict[str, int] = {}
-    sent: list[str] = []
+    sent: list[Prompt] = []
     for before, event in lanes.events_before_turn():
         if event.event == "tool":
-            if event.function == _SEND_TOOL:
+            if event.function in _PROMPT_TOOLS:
                 arguments = event.arguments if isinstance(event.arguments, dict) else {}
-                if arguments.get("message"):
-                    sent.append(str(arguments["message"]))
+                text = arguments.get(_PROMPT_TOOLS[event.function])
+                if text:
+                    sent.append(
+                        Prompt(
+                            kind="message"
+                            if event.function == "send_message"
+                            else "tool result",
+                            text=str(text),
+                            event_id=getattr(event, "uuid", None),
+                        )
+                    )
             elif event.function in _ROLLBACK_TOOLS:
                 sent = []
         lane = lanes.lane_of(event) if is_model_turn(event) else None

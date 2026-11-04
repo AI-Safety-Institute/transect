@@ -114,6 +114,7 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     html = Path(results.report_paths[0]).read_text()
     for section in sections:
         assert section in html
+    assert "Target conversation" not in html  # the Petri family only
     # an OpenClaw import records no compaction configuration at all; the
     # parallel fixture's orchestrator runs with compaction disabled (its
     # subagent_a sub-agent compacts without a memory nudge)
@@ -850,6 +851,20 @@ def test_lane_group_places_each_lane(
     states; a sub-agent lane groups by its label, else by whether a
     classifier ran."""
     assert sections.lane_group(span_id, label_of, role_of, classification_ran) == group
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [
+        ("auditor", "the auditor's token stream"),
+        (None, "the orchestrator's token stream"),
+    ],
+    ids=["role recorded", "pre-role scan"],
+)
+def test_the_petri_token_note_names_the_recorded_role_or_none(role, expected):
+    """The note under a Petri run's token chart names whose stream it is,
+    falling back to the orchestrator when the scan recorded no role."""
+    assert expected in str(sections.token_role_note(role))
 
 
 def test_the_phase_summary_line_names_the_orchestrators_role():

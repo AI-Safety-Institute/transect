@@ -1198,9 +1198,9 @@ def phase_cards(
     filter bar's separate scope. ``excerpts`` (this transcript's
     ``{turn: Excerpt}`` map) turns each turn group into a dropdown of
     message text; ``None`` leaves plain list items, with the Scout
-    deep link as the full-text path either way. ``card_extras`` is a
+    deep link as the full-text path either way. ``card_extras`` is any
     rendered block per phase index that its card hosts after the turn
-    groups (a Petri audit's target exchanges, `report.petri`).
+    groups (the Petri target exchanges of `report.petri` use it).
     """
 
     sorted_phases = phases.sort_values("phase_index").reset_index(drop=True)

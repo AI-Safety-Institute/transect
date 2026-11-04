@@ -170,12 +170,9 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-legend svg {{ vertical-align: -2px; margin-right: 4px; }}
 .petri-discarded-card > summary {{ color: var(--transect-color-muted); }}
 .petri-rollback {{ border-left: 3px solid var(--transect-color-border);
-  padding-left: 0.5rem; }}
-.petri-rollback {{ margin: 0.5rem 0; }}
-.petri-side {{ margin-top: 0.6rem; }}
-/* an exchange card's body reads like a turn excerpt dropdown */
-.petri-call-card > :not(summary) {{ font-size: 0.9rem; }}
-.petri-call-card > .meta {{ font-size: 0.85rem; }}
+  padding-left: 0.5rem; margin: 0.5rem 0; }}
+.petri-turn {{ margin: 0.4rem 0 0.8rem; }}
+.petri-side {{ margin-top: 0.6rem; font-size: 0.9rem; }}
 .petri-diagram a:hover rect, .petri-diagram a:focus rect {{
   stroke: var(--transect-color-accent); stroke-width: 2; }}
 .petri-full {{ white-space: pre-wrap; }}

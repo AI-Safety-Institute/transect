@@ -274,10 +274,10 @@ The report adds a **Target conversation** section: the stored branch tree
 as a diagram, one row per trajectory with the target calls as blocks,
 the discarded ones grey, and a coloured segment per auditor phase. Each
 phase card hosts the target exchanges its auditor turns drove (the
-auditor's turn and tool calls, what it sent, the target's reply, the
-context each side saw, a marker where a rollback opened a trajectory,
-every event linked into the Scout viewer); a run without phase cards
-lists the exchanges in the section. Replies are capped like excerpts and link to the Scout viewer;
+auditor's turn and tool calls, what it sent, the target's reply, how
+many messages each side saw, a marker where a rollback opened a
+trajectory, every event linked into the Scout viewer); a run without
+phase cards lists the exchanges in the section. Replies are capped like excerpts and link to the Scout viewer;
 `petri_full_text=True` renders them whole. `examples/transect_petri.py`
 runs the shipped scripted audit.
 

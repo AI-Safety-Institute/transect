@@ -1,18 +1,21 @@
 """The target side of a Petri report: the Target conversation section
-and the exchange cards the phase cards host.
+and the exchange blocks the phase cards host.
 
 The section draws the stored branch tree as one row per trajectory:
 a start circle, the target calls as blocks numbered in recorded order
 (surviving in their phase colour, discarded grey), and under them a
 coloured band per auditor phase labelled with the phase number; a
 child row forks at its parent's fork point, where the circle links to
-the rollback's phase card. Each exchange card holds what the auditor
-sent and the target's reply, capped like a phase-card excerpt or whole
-with ``full_text`` on, with a link to the reply's model event in the
-Scout viewer. On a judged run the cards sit inside the phase card of
-the auditor turn that drove them, and a marker sits in the phase card
-of the turn that rolled back; calls no judged phase covers, and every
-call on a structural run, list in the section in recorded order.
+the rollback's phase card. An exchange block lists, in recorded order,
+each auditor turn that drove a target call (its text, reasoning and
+tool calls, once) with one card per call under it (what the auditor
+put before the target, the reply, its tool calls), each part capped
+like a phase-card excerpt or whole with ``full_text`` on, each model
+and tool event linked into the Scout viewer, and a marker where a
+rollback opened a trajectory. On a judged run the blocks sit inside the
+phase card of the auditor turn that drove the calls, the marker in the
+phase card of the turn that rolled back; calls and markers no judged
+phase covers, and every one on a structural run, list in the section.
 """
 
 import json
@@ -58,12 +61,14 @@ def target_report(
     """The target report for one transcript: ``idx`` scopes every id on a
     multi-transcript page, ``link`` is the viewer deep-link builder or
     None, ``colors`` the report's phase colours. Without a conversation
-    the section states ``note``, the reason none could be read."""
+    the section states ``note``, the reason none could be read. A call
+    goes under the phase of the auditor turn that drove it, a rollback
+    marker under the phase of the turn that rolled back; either without
+    a judged phase goes to the section."""
     if conversation is None:
         return TargetReport(
             sections.section("Target conversation", [_tpl.unavailable(note)])
         )
-    prefix = f"petri-{idx}"
     phase_of = {
         int(turn): (int(index), str(label))
         for turn, index, label in zip(
@@ -71,54 +76,48 @@ def target_report(
         )
         if pd.notna(index)
     }
+    surviving = (
+        set(conversation.surviving) if conversation.surviving is not None else None
+    )
     cards = {
-        call.number: _card(
-            call,
-            conversation.auditor_turns.get(call.auditor_turn)
-            if call.auditor_turn is not None
-            else None,
-            phase_of,
-            colors,
-            idx,
-            prefix,
-            link,
-            full_text,
-        )
+        call.number: _card(call, surviving, phase_of, colors, idx, link, full_text)
         for call in conversation.calls
     }
-    # each call under the phase of the auditor turn that drove it; a
-    # rollback marker under the phase of the turn that rolled back
+    auditors = {
+        turn: _auditor(auditor, link, full_text)
+        for turn, auditor in conversation.auditor_turns.items()
+    }
     by_phase: dict[int | None, list[int]] = {}
-    for call in conversation.calls:
-        phase = (
-            phase_of.get(call.auditor_turn) if call.auditor_turn is not None else None
-        )
-        by_phase.setdefault(phase[0] if phase else None, []).append(call.number)
+    for card in cards.values():
+        by_phase.setdefault(card["phase_index"], []).append(card["number"])
     openers: dict[int | None, list[Branch]] = {}
     for branch in conversation.branches:
-        if branch.calls and branch.rollback_turn is not None:
-            phase = phase_of.get(branch.rollback_turn)
-            openers.setdefault(phase[0] if phase else None, []).append(branch)
+        if branch.parent is None or not branch.calls:
+            continue
+        phase = (
+            phase_of.get(branch.rollback_turn)
+            if branch.rollback_turn is not None
+            else None
+        )
+        openers.setdefault(phase[0] if phase else None, []).append(branch)
     blocks = {
         index: _tpl.exchanges(
-            _items(conversation, numbers, openers.get(index, []), link),
-            cards,
+            _items(
+                by_phase.get(index, []), openers.get(index, []), cards, auditors, link
+            ),
             "Target exchanges",
         )
-        for index, numbers in by_phase.items()
-        if index is not None
+        for index in sorted(key for key in {*by_phase, *openers} if key is not None)
     }
-    unhosted = by_phase.get(None, [])
-    listed = (
-        _tpl.exchanges(
-            _items(conversation, unhosted, openers.get(None, []), link),
-            cards,
+    listed = None
+    if by_phase.get(None) or openers.get(None):
+        listed = _tpl.exchanges(
+            _items(
+                by_phase.get(None, []), openers.get(None, []), cards, auditors, link
+            ),
             "Target exchanges without a judged phase" if blocks else "Target exchanges",
             open=not blocks,
         )
-        if unhosted
-        else None
-    )
     diagram = (
         _tpl.diagram(_diagram(conversation, cards, phase_of, idx))
         if conversation.branches
@@ -133,29 +132,62 @@ def target_report(
 
 def _card(
     call: TargetCall,
-    auditor: AuditorTurn | None,
+    surviving: set[int] | None,
     phase_of: dict[int, tuple[int, str]],
     colors: dict[str, tuple[str, str | None]],
     idx: int,
-    prefix: str,
     link,
     full_text: bool,
 ) -> dict[str, Any]:
-    """One exchange card: the auditor turn that drove the call (when it
-    is known), what it sent, and the target's reply, each part capped
-    unless ``full_text``, each event linked into the viewer."""
+    """One target call as its exchange card and diagram block read it:
+    its phase (that of the auditor turn that drove it), whether the
+    surviving path discarded it (None when no path is known), what the
+    auditor put before it and its reply, each part capped unless
+    ``full_text``, each event linked through ``link``."""
     phase = phase_of.get(call.auditor_turn) if call.auditor_turn is not None else None
+    return {
+        **_call(call, link, full_text),
+        "id": f"petri-{idx}-call-{call.number}",
+        "number": call.number,
+        "attempt": call.attempt,
+        "lane_turn": call.lane_turn,
+        "auditor_turn": call.auditor_turn,
+        "phase_index": phase[0] if phase else None,
+        "phase": phase[1] if phase else None,
+        "phase_href": f"#phase-{idx}-{phase[0]}" if phase else None,
+        "color": colors[phase[1]][0] if phase and phase[1] in colors else None,
+        "discarded": call.number not in surviving if surviving is not None else None,
+        "prompts": [
+            {
+                "kind": prompt.kind,
+                "text": _shown(prompt.text, full_text),
+                "href": _href(link, prompt.event_id),
+            }
+            for prompt in call.prompts
+        ],
+        "prompt_truncated": _cut(full_text, *(p.text for p in call.prompts)),
+    }
 
-    def shown(text: str) -> str:
-        return text if full_text else " ".join(text.split())[:TEXT_CHARS]
 
-    def cut(*texts: str) -> bool:
-        return not full_text and any(
-            len(" ".join(t.split())) > TEXT_CHARS for t in texts
-        )
+def _auditor(auditor: AuditorTurn, link, full_text: bool) -> dict[str, Any]:
+    """One auditor turn as the exchange block heads it: its text,
+    reasoning and tool calls, the prompt tools left to the cards."""
+    return {**_call(auditor, link, full_text), "turn": auditor.turn}
 
-    def tools(uses) -> list[dict[str, Any]]:
-        return [
+
+def _call(call: Any, link, full_text: bool) -> dict[str, Any]:
+    """The parts every model call renders: text, reasoning, message
+    count, tool calls, viewer link."""
+    return {
+        "text": _shown(call.text, full_text),
+        "reasoning": _shown(call.reasoning, full_text),
+        "truncated": _cut(full_text, call.text, call.reasoning),
+        "n_input": call.n_input,
+        "model": call.model,
+        "full_text": full_text,
+        "args_chars": _ARGS_CHARS,
+        "href": _href(link, call.event_id),
+        "tools": [
             {
                 "name": tool.name,
                 "arguments": json.dumps(
@@ -163,58 +195,25 @@ def _card(
                 ),
                 "result": tool.result,
                 "error": tool.error,
-                "href": link(tool.event_id) if link and tool.event_id else None,
+                "href": _href(link, tool.event_id),
             }
-            for tool in uses
-        ]
-
-    return {
-        "id": f"{prefix}-call-{call.number}",
-        "number": call.number,
-        "attempt": call.attempt,
-        "lane_turn": call.lane_turn,
-        "auditor_turn": call.auditor_turn,
-        "model": call.model,
-        "phase_index": phase[0] if phase else None,
-        "phase": phase[1] if phase else None,
-        "phase_href": f"#phase-{idx}-{phase[0]}" if phase else None,
-        "color": colors[phase[1]][0] if phase and phase[1] in colors else None,
-        "auditor": {
-            "turn": auditor.turn,
-            "text": shown(auditor.text),
-            "reasoning": shown(auditor.reasoning),
-            "truncated": cut(auditor.text, auditor.reasoning),
-            "n_input": auditor.n_input,
-            "tools": tools(auditor.tools),
-            "href": link(auditor.event_id) if link and auditor.event_id else None,
-        }
-        if auditor is not None
-        else None,
-        "prompts": [shown(prompt) for prompt in call.prompts],
-        "prompt_truncated": cut(*call.prompts),
-        "text": shown(call.text),
-        "reasoning": shown(call.reasoning),
-        "truncated": cut(call.text, call.reasoning),
-        "n_input": call.n_input,
-        "full_text": full_text,
-        "args_chars": _ARGS_CHARS,
-        "tools": tools(call.tools),
-        "open_link": link(call.event_id) if link and call.event_id else None,
+            for tool in call.tools
+        ],
     }
 
 
 def _items(
-    conversation: Conversation,
     numbers: list[int],
     openers: list[Branch],
-    link=None,
+    cards: dict[int, dict],
+    auditors: dict[int, dict],
+    link,
 ) -> list[dict]:
     """The exchange list for the calls ``numbers``, in recorded order:
-    each call flagged when it is off the surviving path, and a rollback
-    marker for each trajectory in ``openers`` before the first listed
-    call at or after the trajectory's first call (at the end when none
-    follows), linked to the rollback's tool event through ``link``."""
-    surviving = conversation.surviving
+    consecutive calls of one auditor turn grouped under that turn, and
+    a rollback marker for each trajectory in ``openers`` before the
+    first listed call at or after the trajectory's first call (at the
+    end when none follows), linked to the rollback's tool event."""
     markers: list[dict[str, Any]] = [
         {
             "kind": "rollback",
@@ -223,23 +222,27 @@ def _items(
             "parent": branch.parent,
             "fork_after": branch.fork_after,
             "first_call": branch.calls[0],
-            "href": link(branch.rollback_event_id)
-            if link and branch.rollback_event_id
-            else None,
+            "href": _href(link, branch.rollback_event_id),
         }
         for branch in sorted(openers, key=lambda b: b.calls[0])
     ]
-    items: list[dict] = []
+    items: list[dict[str, Any]] = []
     for number in numbers:
         while markers and markers[0]["first_call"] <= number:
             items.append(markers.pop(0))
-        items.append(
-            {
-                "kind": "call",
-                "number": number,
-                "discarded": surviving is not None and number not in surviving,
-            }
-        )
+        card = cards[number]
+        turn = card["auditor_turn"]
+        if items and items[-1]["kind"] == "turn" and items[-1]["turn"] == turn:
+            items[-1]["calls"].append(card)
+        else:
+            items.append(
+                {
+                    "kind": "turn",
+                    "turn": turn,
+                    "auditor": auditors.get(turn) if turn is not None else None,
+                    "calls": [card],
+                }
+            )
     return items + markers
 
 
@@ -253,7 +256,6 @@ def _diagram(
     trajectory's start, its circle, its blocks and its phase segments
     (consecutive calls of one phase), plus the legend's phase labels in
     order of first appearance."""
-    surviving = set(conversation.surviving or [])
     starts: dict[int, int] = {}
     rows: list[dict[str, Any]] = []
     for branch in conversation.branches:
@@ -262,12 +264,7 @@ def _diagram(
             start = starts[branch.parent] + (branch.fork_after or 0)
         starts[branch.number] = start
         calls: list[dict[str, Any]] = [
-            {
-                "x": (start + i) * _UNIT + _GAP,
-                "card": cards[number],
-                "discarded": conversation.surviving is not None
-                and number not in surviving,
-            }
+            {"x": (start + i) * _UNIT + _GAP, "card": cards[number]}
             for i, number in enumerate(branch.calls)
         ]
         segments: list[dict[str, Any]] = []
@@ -325,3 +322,21 @@ def _diagram(
         "height": _TOP + (len(rows) - 1) * _ROW + 30,
         "path_known": conversation.surviving is not None,
     }
+
+
+def _shown(text: str, full_text: bool) -> str:
+    """A text part as a card shows it: whole, or whitespace-flattened
+    and capped at the excerpt length."""
+    return text if full_text else " ".join(text.split())[:TEXT_CHARS]
+
+
+def _cut(full_text: bool, *texts: str) -> bool:
+    """Whether capping cut any of ``texts``."""
+    return not full_text and any(
+        len(" ".join(text.split())) > TEXT_CHARS for text in texts
+    )
+
+
+def _href(link, event_id: str | None) -> str | None:
+    """The viewer link of an event, None without a builder or an id."""
+    return link(event_id) if link and event_id else None

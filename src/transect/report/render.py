@@ -147,6 +147,9 @@ def render_report(
             )
         )
 
+        link = _viewer_link(
+            viewer_base_url, results.transcripts_location, transcript_id
+        )
         # the Petri target report: its exchange blocks go into the phase
         # cards built next, its section is added after the token spend
         target = None
@@ -159,9 +162,7 @@ def render_report(
                 my_phase_turns,
                 phase_colors,
                 idx,
-                _viewer_link(
-                    viewer_base_url, results.transcripts_location, transcript_id
-                ),
+                link,
                 petri_full_text,
             )
         # 1. phase timeline (the cards are built here too)
@@ -233,11 +234,7 @@ def render_report(
                         flush_turns,
                         intervention_turns,
                         phase_colors,
-                        _viewer_link(
-                            viewer_base_url,
-                            results.transcripts_location,
-                            transcript_id,
-                        ),
+                        link,
                         f"phase-cards-{idx}",
                         card_id_prefix,
                         # flushes.turn is the first post-flush turn; the
