@@ -167,6 +167,15 @@ Key arguments and what they mean:
 | `max_transcripts`, `max_connections`, `max_retries`, `timeout`, `results_buffer`, `fail_on_error`, `max_processes` | Scout scheduling passed through as given: transcripts in flight (several only when more than one epoch is selected; also the default `max_connections`), concurrent requests per judge model, retries and seconds per request (a judge whose own `get_model(config=...)` sets one keeps its own; sampling and `batch` settings live on the judge only), partial-result sync interval, stop at the first scanner error (the interrupted store is still loaded and reported with the gap in `scan_status`; only a stop before the structural scanners wrote anything makes `load()` refuse the store), worker processes (default 1: above 1 Scout spawns workers, which needs a `__main__` guard and has crashed mid-scan on large transcripts). |
 | `extra_layers` | user-injected `Layer` additions (own judged classification, sections, tags, audit block) - authoring them is the add-a-layer skill's subject |
 | `section_order` | report section order: listed sections first in the given order, unlisted follow in default order, the audit always last. Keys are `transect.report.SECTION_KEYS` plus each custom layer's name; also on `render()` |
+| `petri_full_text` | on a Petri audit, render each target exchange card whole instead of capped like an excerpt (default off; the Scout viewer link always has the full text); also on `render()` |
+
+A Petri audit (`transcript_info.eval_family == "petri"`, from the recorded
+auditor and target model roles) puts the auditor on the turn axis, so the
+phases and cards describe the auditor, whose digests carry the target's
+replies as `[TARGET]` context for the judge; the Target conversation section
+draws the target's branch tree (phase segments, discarded calls grey), and
+each phase card hosts the target exchanges its auditor turns drove, with a
+marker where a rollback opened a trajectory.
 
 Judge requests use inspect-ai's response cache. An identical request with
 a matching cache entry can replay; a repeated invocation does not guarantee

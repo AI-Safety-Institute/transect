@@ -18,7 +18,7 @@ from inspect_viz.plot import HtmlPage
 from markupsafe import Markup
 
 from transect.frames import TransectResults, spine
-from transect.report import charts, custom, sections
+from transect.report import charts, custom, petri as petri_report, sections
 from transect.report._jinja import jinja_env
 from transect.report.colors import _UNJUDGED_GREY, _label_colors, _phase_colors
 from transect.report.display import MEMBER_NO_VOTE, member_display, multi_roll_models
@@ -40,6 +40,7 @@ SECTION_KEYS = (
     "token_telemetry",
     "subagents",
     "token_spend",
+    "target_conversation",
     "phase_cards",
 )
 
@@ -63,6 +64,7 @@ def render_report(
     viewer_base_url: str | None = None,
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
+    petri_full_text: bool = False,
 ) -> str:
     validate_section_order(
         section_order, [layer.name for layer in results.extra_layers]
@@ -88,7 +90,11 @@ def render_report(
                 tag_layer_of[family] = layer.name
     # read once for all transcripts; empty when the store is unreachable
     # at render time, and the affected surfaces render without extras
-    transcript_extras = read_transcript_extras(results.transcripts_location, order)
+    info = results.transcript_info
+    petri_ids = set(info.transcript_id[info.eval_family == "petri"])
+    transcript_extras = read_transcript_extras(
+        results.transcripts_location, order, petri_ids
+    )
     # every chart is a fragment of this one page (`embed.embed_section`);
     # each fragment it produces must reach the template, since a fragment
     # waits without a timeout for a table an earlier one embeds
@@ -141,6 +147,24 @@ def render_report(
             )
         )
 
+        link = _viewer_link(
+            viewer_base_url, results.transcripts_location, transcript_id
+        )
+        # the Petri target report: its exchange blocks go into the phase
+        # cards built next, its section is added after the token spend
+        target = None
+        if _info_cell(my_info, "eval_family") == "petri":
+            target = petri_report.target_report(
+                my_extras.petri if my_extras else None,
+                my_extras.petri_note
+                if my_extras
+                else "the transcript store is unreachable",
+                my_phase_turns,
+                phase_colors,
+                idx,
+                link,
+                petri_full_text,
+            )
         # 1. phase timeline (the cards are built here too)
         phase_cards_section = None
         if len(my_phases):
@@ -172,7 +196,9 @@ def render_report(
                 "Phase timeline",
                 [
                     sections.phase_explanation(),
-                    sections.phase_summary_line(my_phases, my_phase_turns),
+                    sections.phase_summary_line(
+                        my_phases, my_phase_turns, _axis_role(main)
+                    ),
                     sections.reliability_warnings(
                         sections.phase_reliability_flags(
                             my_phases, my_turn_votes, my_phase_turns
@@ -208,11 +234,7 @@ def render_report(
                         flush_turns,
                         intervention_turns,
                         phase_colors,
-                        _viewer_link(
-                            viewer_base_url,
-                            results.transcripts_location,
-                            transcript_id,
-                        ),
+                        link,
                         f"phase-cards-{idx}",
                         card_id_prefix,
                         # flushes.turn is the first post-flush turn; the
@@ -226,6 +248,7 @@ def render_report(
                         tool_counts=tool_counts,
                         turn_tags=my_tags,
                         tag_layer_of=tag_layer_of,
+                        card_extras=target.card_blocks if target else None,
                     ),
                 ],
             )
@@ -263,6 +286,8 @@ def render_report(
                 derived, coincide=derived and charts.token_measures_coincide(main)
             )
         ]
+        if target is not None:
+            token_blocks.append(sections.token_role_note(_axis_role(main)))
         threshold = sections.compaction_threshold(my_info)
         components = charts.token_stack(
             main, my_flushes, threshold.tokens if threshold is not None else None
@@ -307,6 +332,7 @@ def render_report(
                 n_turns,
                 lanes,
                 my_subagents,
+                one,
                 my_subagent_votes,
                 all_flushes,
                 my_extras.spawn_prompts if my_extras else {},
@@ -333,6 +359,10 @@ def render_report(
             elif subagent_message:
                 spend_blocks.append(sections.spend_group_heading("By sub-agent label"))
                 spend_blocks.append(sections.spend_subagent_unavailable())
+        role_bars = sections.spend_role_bars(one)
+        if role_bars:
+            spend_blocks.append(sections.spend_group_heading("By model role"))
+            spend_blocks.append(_chart(page, [charts.spend_bars(role_bars)]))
         if family_groups:
             scope = f"spend-tags-{idx}"
             spend_blocks.append(
@@ -351,6 +381,8 @@ def render_report(
                 )
         if spend_blocks:
             add(("token_spend", sections.section("Token spend", spend_blocks)))
+        if target is not None:
+            add(("target_conversation", target.section))
         if phase_cards_section is not None:
             add(("phase_cards", phase_cards_section))
 
@@ -451,6 +483,7 @@ def _subagent_section(
     n_turns: int,
     lanes: list[SpanGeometry],
     subagents: pd.DataFrame,
+    one: pd.DataFrame,
     subagent_votes: pd.DataFrame,
     flushes: pd.DataFrame,
     spawn_prompts: dict[str, SpawnPrompt],
@@ -474,21 +507,21 @@ def _subagent_section(
         if pd.notna(row.label)
     }
 
-    role_ids = sections.role_lane_ids(subagents)
+    role_of = sections.role_lanes(subagents, one)
+    role_groups = set(role_of.values())
 
     def _label(span_id) -> str:
-        return sections.lane_group(span_id, label_of, role_ids, classification_ran)
+        return sections.lane_group(span_id, label_of, role_of, classification_ran)
 
     by_label: dict[str, list[SpanGeometry]] = {}
     for span in lanes:
         by_label.setdefault(_label(span.span_id), []).append(span)
     colors = (
-        _label_colors(sorted(g for g in by_label if g != sections.ROLE_LANE_GROUP))
+        _label_colors(sorted(g for g in by_label if g not in role_groups))
         if classification_ran
         else dict.fromkeys(by_label, _UNJUDGED_GREY)
     )
-    if sections.ROLE_LANE_GROUP in by_label:
-        colors[sections.ROLE_LANE_GROUP] = _UNJUDGED_GREY
+    colors.update(dict.fromkeys(role_groups & set(by_label), _UNJUDGED_GREY))
 
     # the packing footprint matches what is drawn: a tick's fixed
     # footprint when any span is a tick, else the box floor, so two
@@ -604,7 +637,7 @@ def _subagent_section(
         key=lambda row: int(row["turn"] or 0),
     )
     return sections.section(
-        "Sub-agent activity",
+        "Sub-agent / lane activity",
         [
             # honesty case (1): with no judge run the explanation would
             # describe a scan that never happened
@@ -614,6 +647,8 @@ def _subagent_section(
                 label_of,
                 subagents,
                 classification_ran,
+                role_of,
+                _axis_role(one[one.turn.notna()]),
             ),
             sections.reliability_warnings(flags),
             _chart(page, [component]),
@@ -666,6 +701,13 @@ def _span_lanes(subagents: pd.DataFrame, main: pd.DataFrame) -> list[SpanGeometr
                 )
             )
     return spans
+
+
+def _axis_role(main: pd.DataFrame) -> str | None:
+    """The model role the orchestrator's turns record, when they record
+    one role."""
+    roles = list(main.role.dropna().unique())
+    return str(roles[0]) if len(roles) == 1 else None
 
 
 def _transcript_title(one: pd.DataFrame, info: pd.DataFrame) -> str:

@@ -22,7 +22,14 @@ _STYLE = f"""
 :root {{
   --transect-color-text: #212529;          /* [bootstrap] --bs-body-color */
   --transect-color-muted: rgba(33, 37, 41, 0.75); /* [bootstrap] --bs-secondary-color */
+  --transect-color-text-soft: #40464d;     /* message blocks: lighter than body text */
   --transect-color-border: #dee2e6;        /* [bootstrap] --bs-border-color */
+  /* message blocks: the Scout viewer's readable theme, so a card reads
+     like the viewer (--inspect-readable-*-bg / -border) */
+  --transect-msg-assistant-bg: #f6f1fe; --transect-msg-assistant-border: #9575b9;
+  --transect-msg-thinking-bg: #f7f2ff;  --transect-msg-thinking-border: #8c7fbf;
+  --transect-msg-tool-bg: #edf4fb;      --transect-msg-tool-border: #6c8aa7;
+  --transect-msg-user-bg: #f1eeea;      --transect-msg-user-border: #8e8881;
   --transect-color-border-subtle: #e9ecef; /* [bootstrap] --bs-light-border-subtle */
   --transect-color-hover: #f8f9fa;         /* [bootstrap] --bs-light; the one hover
                                           wash */
@@ -139,6 +146,36 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
   cursor: pointer; box-shadow: 0 1px 3px rgba(33, 37, 41, 0.25); }}
 #transect-back-top:hover {{ background: var(--transect-color-link-hover);
   border-color: var(--transect-color-link-hover); }}
+.petri-diagram {{ overflow: auto; max-height: 480px;
+  border: 1px solid var(--transect-color-border);
+  border-radius: 2px; background: #fff; margin: 0.5rem 0; }}
+.petri-diagram.petri-expanded {{ max-height: none; }}
+@media (max-width: 650px) {{ .petri-diagram {{ max-height: 380px; }} }}
+.petri-controls button {{ font: inherit; font-size: 0.8rem; padding: 2px 8px; }}
+.petri-diagram svg {{ display: block; font-size: 0.72rem; }}
+.petri-row-label {{ fill: var(--transect-color-muted); }}
+.petri-track {{ stroke: var(--transect-color-border); stroke-width: 2; }}
+.petri-unresolved {{ stroke-dasharray: 4 3; }}
+.petri-connector {{ fill: none; stroke: var(--transect-color-border);
+  stroke-width: 1.5; }}
+.petri-fork {{ fill: #fff; stroke: var(--transect-color-link); stroke-width: 1.5; }}
+.petri-start {{ fill: var(--transect-color-muted); }}
+.petri-segment {{ stroke-width: 4; stroke-linecap: butt; }}
+.petri-segment-label {{ fill: var(--transect-color-muted); font-size: 0.62rem; }}
+.petri-call {{ fill: var(--transect-color-link); }}  /* unjudged: neutral blue */
+.petri-discarded {{ fill: #d5dadf; }}
+.petri-call-label {{ fill: #fff; pointer-events: none; }}
+.petri-discarded-label {{ fill: var(--transect-color-muted); }}
+.petri-axis {{ fill: var(--transect-color-muted); font-size: 0.68rem; }}
+.petri-legend svg {{ vertical-align: -2px; margin-right: 4px; }}
+.petri-discarded-card > summary {{ color: var(--transect-color-muted); }}
+.petri-rollback {{ border-left: 3px solid var(--transect-color-border);
+  padding-left: 0.5rem; margin: 0.5rem 0; }}
+.petri-turn {{ margin: 0.4rem 0 0.8rem; }}
+.petri-side {{ margin-top: 0.6rem; font-size: 0.9rem; }}
+.petri-diagram a:hover rect, .petri-diagram a:focus rect {{
+  stroke: var(--transect-color-accent); stroke-width: 2; }}
+.petri-full {{ white-space: pre-wrap; }}
 .event {{ background: #fff; border: 1px solid var(--transect-color-border-subtle);
          border-radius: var(--transect-radius); padding: 0.625rem; margin: 6px 0; }}
 /* verbatim prompt text in the eval-setup expandables: preserve the
@@ -233,8 +270,22 @@ body.classified {{ padding-top: 30px; padding-bottom: 30px; }}
                    border-left: 2px solid var(--transect-color-border-subtle);
                    padding-left: 8px; margin: 5px 0; font-size: 0.9rem; }}
 .excerpt-list li > .meta:first-child {{ display: block; }}
-.excerpt-list .excerpt-thinking {{ display: block; font-style: italic;
-                                  color: var(--transect-color-muted); }}
+.excerpt-list .excerpt-thinking {{ font-style: italic; }}
+/* one block per message kind, coloured as the Scout viewer colours them */
+.msg {{ display: block; border-left: 3px solid; border-radius: 2px;
+       padding: 0.3rem 0.6rem; margin: 0.3rem 0; font-size: 0.85rem;
+       color: var(--transect-color-text-soft); }}
+.msg::before {{ content: attr(data-kind); display: block; font-size: 0.68rem;
+               text-transform: uppercase; letter-spacing: 0.04em;
+               color: var(--transect-color-muted); margin-bottom: 2px; }}
+.msg-assistant {{ background: var(--transect-msg-assistant-bg);
+                 border-color: var(--transect-msg-assistant-border); }}
+.msg-thinking {{ background: var(--transect-msg-thinking-bg);
+                border-color: var(--transect-msg-thinking-border); }}
+.msg-tool {{ background: var(--transect-msg-tool-bg);
+            border-color: var(--transect-msg-tool-border); }}
+.msg-user {{ background: var(--transect-msg-user-bg);
+            border-color: var(--transect-msg-user-border); }}
 """
 
 # `.definitions`/`.event-list` scope the muted small font away from

@@ -46,19 +46,49 @@
 // shape without parsing it.
 function _transectOpenPhaseFromHash() {
   var hash = location.hash;
-  if (!hash || hash.indexOf("#phase-") !== 0) return;
+  if (!hash || (hash.indexOf("#phase-") !== 0 && hash.indexOf("#petri-") !== 0)) return;
   var target = document.getElementById(hash.slice(1));
   if (!target) return;
-  // A card filter may have hidden the target (a hidden anchor is a
-  // link to nowhere): clear that card scope's filters first.
-  if (target.style.display === "none") {
-    var scope = target.closest(".phase-cards");
-    if (scope) _transectClearCardFilters(scope.id);
+  // a Petri call card sits inside folded group cards: open them too
+  for (var node = target.parentElement; node; node = node.parentElement) {
+    if (node.tagName === "DETAILS") node.open = true;
+  }
+  // A card filter may have hidden the target, or the phase card that
+  // hosts it (a hidden anchor is a link to nowhere): clear that card
+  // scope's filters first.
+  var scope = target.closest(".phase-cards");
+  var host = scope ? target.closest(".phase-cards > .event") : null;
+  if (scope && (target.style.display === "none" || (host && host.style.display === "none"))) {
+    _transectClearCardFilters(scope.id);
   }
   if (target.tagName === "DETAILS") target.open = true;
   target.scrollIntoView({behavior: "smooth", block: "start"});
 }
 window.addEventListener("hashchange", _transectOpenPhaseFromHash);
+
+// Petri tree controls: the SVG is server-rendered, so zoom scales its
+// width. The per-call unit stays between 4 and 100 px, and "fit" never
+// enlarges past the rendered size.
+function _transectPetriZoom(button, factor) {
+  var tree = button.closest(".petri-tree");
+  var svg = tree.querySelector("svg");
+  var natural = svg.viewBox.baseVal.width;
+  var unit = parseFloat(tree.getAttribute("data-unit"));
+  var scale = svg.getBoundingClientRect().width / natural;
+  if (factor === "fit") {
+    scale = Math.min(1, (tree.querySelector(".petri-diagram").clientWidth - 2) / natural);
+  } else {
+    scale = scale * factor;
+  }
+  scale = Math.max(4 / unit, Math.min(100 / unit, scale));
+  svg.style.width = (natural * scale) + "px";
+  svg.style.height = "auto";
+}
+function _transectPetriHeight(button) {
+  var viewport = button.closest(".petri-tree").querySelector(".petri-diagram");
+  var open = viewport.classList.toggle("petri-expanded");
+  button.textContent = open ? "Limit height" : "Show full height";
+}
 document.addEventListener("DOMContentLoaded", _transectOpenPhaseFromHash);
 
 // Sort/filter handlers for the phase cards (".filter-bar[data-scope]"
@@ -67,7 +97,7 @@ document.addEventListener("DOMContentLoaded", _transectOpenPhaseFromHash);
 function _transectCardSort(containerId, by) {
   var c = document.getElementById(containerId);
   if (!c) return;
-  var cards = Array.prototype.slice.call(c.querySelectorAll(".event"));
+  var cards = Array.prototype.slice.call(c.querySelectorAll(":scope > .event"));
   // Always re-sort from data-order (this card's render-time,
   // chronological/phase_index position) first, regardless of the DOM's
   // current order - so repeated calls are idempotent (a "chronological"
@@ -125,7 +155,7 @@ function _transectCardFilter(containerId) {
   var wantIntv = !!(intvEl && intvEl.checked);
   var wantSubag = !!(subagEl && subagEl.checked);
   var confBand = confEl ? confEl.value : "";
-  var cards = c.querySelectorAll(".event");
+  var cards = c.querySelectorAll(":scope > .event");
   var shown = 0;
   cards.forEach(function(card) {
     var okLabel = checks.length === 0 || !!allowed[card.getAttribute("data-label")];

@@ -34,6 +34,7 @@ from typing import Any
 
 from inspect_scout import TranscriptContent, transcripts_from
 
+from transect.petri.conversation import Conversation, target_conversation
 from transect.scanners.helpers import (
     Lanes,
     message_reasoning,
@@ -67,9 +68,10 @@ class Excerpt:
 
     Attributes:
         turn: The orchestrator turn number (the report's turn axis).
-        lane: Always ``"orchestrator"``: excerpts are orchestrator
-            turns only, and the card names the lane rather than
-            leaving it implied.
+        lane: The turn's recorded model role (an auditor's turns say
+            ``auditor``), else ``"orchestrator"``: excerpts are
+            orchestrator turns only, and the card names the lane rather
+            than leaving it implied.
         tools: The turn's tool calls, as names ("" for a prose turn);
             the tail beyond `_TOOLS_SHOWN` is counted, not dropped.
         text: The turn's own text, whitespace-flattened and capped at
@@ -81,7 +83,7 @@ class Excerpt:
             Inspect's summarizer speaking, not the agent.
         reasoning: The turn's reasoning-block text when the source
             records it, same flattening and cap as `text`; the card
-            renders it as a muted [thinking] line above the text.
+            renders it as a thinking block above the text.
     """
 
     turn: int
@@ -123,11 +125,16 @@ class TranscriptExtras:
             section's own per-span spawn-task text.
         tool_counts: `_tool_call_counts` output - the phase cards'
             tool-call sort key + tag.
+        petri: `target_conversation` output for a Petri transcript, None
+            for any other and when it could not be read.
+        petri_note: Why ``petri`` is None on a Petri transcript.
     """
 
     excerpts: dict[int, Excerpt] = field(default_factory=dict)
     spawn_prompts: dict[str, SpawnPrompt] = field(default_factory=dict)
     tool_counts: dict[int, int] = field(default_factory=dict)
+    petri: Conversation | None = None
+    petri_note: str | None = None
 
 
 def mark_compaction_turns(
@@ -150,7 +157,7 @@ def mark_compaction_turns(
 
 
 def read_transcript_extras(
-    location: str | None, transcript_ids: list[str]
+    location: str | None, transcript_ids: list[str], petri_ids: set[str] | None = None
 ) -> dict[str, TranscriptExtras]:
     """Read the transcript store once and derive every extra for each
     wanted transcript.
@@ -165,6 +172,9 @@ def read_transcript_extras(
             transcript database directory or an eval-log path.
         transcript_ids: The transcripts the report renders. Anything
             else in the store is indexed but never read.
+        petri_ids: The Petri transcripts among them, read with their
+            messages, timelines, tool, anchor and branch events as well
+            for the target conversation section.
 
     Returns:
         ``{transcript_id: TranscriptExtras}``, with an entry for each
@@ -181,7 +191,7 @@ def read_transcript_extras(
     if not location or not transcript_ids or not Path(location).exists():
         return {}
     try:
-        return _run_sync(_read(location, set(transcript_ids)))
+        return _run_sync(_read(location, set(transcript_ids), petri_ids or set()))
     # deliberately broad, and store-level only (`_read` guards each
     # transcript's own read): the excerpts are an addition to a report
     # that rendered without them for its whole life, so no store failure
@@ -247,20 +257,29 @@ def card_excerpts(
     return selected
 
 
-async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
+async def _read(
+    location: str, wanted: set[str], petri: set[str]
+) -> dict[str, TranscriptExtras]:
     """Index the store, read the wanted transcripts, derive every extra
     from each.
 
-    ``events`` is the only content asked for: model events for the turns
-    and their text, span events for the lane tree and each sub-agent
-    span's spawn-task metadata. Reading messages as well would
-    double the read for nothing - the turn axis is an event axis.
+    Only events are asked for: model events for the turns and their
+    text, span events for the lane tree and each sub-agent span's
+    spawn-task metadata. A Petri transcript is read with its messages,
+    timelines and tool, anchor and branch events as well, for the
+    target conversation section.
 
     Each transcript's read is guarded on its own, so the result holds
     every transcript that could be read and omits only those that could
-    not (each named on stderr).
+    not (each named on stderr); a Petri projection that fails costs that
+    transcript its target conversation only.
     """
     content = TranscriptContent(events=["model", "span_begin", "span_end"])
+    petri_content = TranscriptContent(
+        messages="all",
+        events=["model", "span_begin", "span_end", "tool", "anchor", "branch"],
+        timeline=True,
+    )
     found: dict[str, TranscriptExtras] = {}
     async with transcripts_from(location).reader() as reader:
         infos = [info async for info in reader.index() if info.transcript_id in wanted]
@@ -272,11 +291,15 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
             # transcript on the page because of one bad record - the
             # grain the module docstring's honesty claim is about.
             try:
-                transcript = await reader.read(info, content)
+                is_petri = info.transcript_id in petri
+                transcript = await reader.read(
+                    info, petri_content if is_petri else content
+                )
                 found[info.transcript_id] = TranscriptExtras(
                     excerpts=_turn_excerpts(transcript),
                     spawn_prompts=_spawn_prompts(transcript),
                     tool_counts=_tool_call_counts(transcript),
+                    **(_petri_extras(transcript) if is_petri else {}),
                 )
             except Exception as failure:
                 print(
@@ -285,6 +308,18 @@ async def _read(location: str, wanted: set[str]) -> dict[str, TranscriptExtras]:
                     file=sys.stderr,
                 )
     return found
+
+
+def _petri_extras(transcript: Any) -> dict[str, Any]:
+    """The target conversation of a Petri transcript, or why none could
+    be read."""
+    try:
+        conversation = target_conversation(transcript)
+    except Exception as failure:
+        return {"petri_note": f"{type(failure).__name__}: {failure}"}
+    if conversation is None:
+        return {"petri_note": "no target trajectory was found"}
+    return {"petri": conversation}
 
 
 def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, Excerpt]:
@@ -320,7 +355,7 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
             continue
         found[turn] = Excerpt(
             turn=turn,
-            lane=_ORCHESTRATOR,
+            lane=getattr(event, "role", None) or _ORCHESTRATOR,
             tools=_tools_label(calls),
             text=text[:text_chars],
             truncated=len(text) > text_chars or len(reasoning) > text_chars,
@@ -330,9 +365,10 @@ def _turn_excerpts(transcript: Any, text_chars: int = TEXT_CHARS) -> dict[int, E
 
 
 def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
-    """Each sub-agent span's own spawn prompt, in full, keyed by
-    ``agent_span_id``. Uncapped: the expandable exists for a human to
-    read the whole task. The judge's own capped copy fills in per span
+    """Each lane's own spawn prompt, in full, keyed by ``agent_span_id``:
+    a sub-agent span's task, or the message that opened another role's
+    conversation. Uncapped: the expandable exists for a human to read
+    the whole task. The judge's own capped copy fills in per span
     when this read yields nothing for it (no store, or a span whose
     metadata carries no task text).
 
@@ -359,7 +395,7 @@ def _spawn_prompts(transcript: Any) -> dict[str, SpawnPrompt]:
     """
     lanes = Lanes(transcript)
     found: dict[str, SpawnPrompt] = {}
-    for begin in lanes.begins:
+    for begin in [*lanes.begins, *lanes.role_begins]:
         text, _source = span_task_text(begin, lanes.first_models.get(begin.id))
         if text:
             found[begin.id] = SpawnPrompt(text=text, truncated=False)

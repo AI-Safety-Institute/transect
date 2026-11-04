@@ -107,7 +107,24 @@ def chart_width(n_turns: int) -> int:
 
 
 def turn_xlim(n_turns: int) -> tuple[float, float]:
+    """The turn axis domain: half a turn of room either side, so a bar
+    centred on a turn fits whole."""
     return (-0.5, n_turns - 0.5)
+
+
+def turn_ticks(n_turns: int) -> list[int]:
+    """The turn axis ticks: whole turns only, at the smallest step of
+    1, 2, 5, 10, 20, 50, ... that keeps them at or under `_MAX_TICKS`.
+    Pinned on every turn-axis plot, with the ``"d"`` tick format,
+    because Plot's own choice over `turn_xlim` lands on half turns
+    (-0.5, 2.5) on short runs and its format then prints "2.0"."""
+    step = 1
+    while n_turns / step > _MAX_TICKS:
+        step = step * 5 // 2 if str(step)[0] == "2" else step * 2
+    return list(range(0, n_turns, step))
+
+
+_MAX_TICKS = 25  # ~40px apart at the 1000px floor width
 
 
 # "identity" is a real, browser-verified Plot scale value (see the
@@ -467,6 +484,8 @@ def phase_band(
         x_axis="top",  # this section's only turn reference
         x_label="turn",
         x_domain=turn_xlim(n_turns),
+        x_ticks=turn_ticks(n_turns),
+        x_tick_format="d",
         margin_left=_BAND_MARGIN_LEFT,
         margin_right=_BAND_MARGIN_RIGHT,
         opacity_scale="identity",  # the alpha column carries authored
@@ -660,6 +679,8 @@ def phase_band(
             y_axis=False,  # not None - see module docstring
             x_axis=False,  # not None - see module docstring
             x_domain=turn_xlim(n_turns),
+            x_ticks=turn_ticks(n_turns),
+            x_tick_format="d",
             margin_left=_BAND_MARGIN_LEFT,  # see the band's own margin_left
             margin_right=_BAND_MARGIN_RIGHT,
             color_scale=_IDENTITY_SCALE,  # the fill column carries literal
@@ -991,6 +1012,8 @@ def token_stack(
             margin_top=_TOKEN_MARGIN_TOP,  # explicit, not auto
             margin_bottom=_TOKEN_MARGIN_BOTTOM,
             x_domain=turn_xlim(n_turns),
+            x_ticks=turn_ticks(n_turns),
+            x_tick_format="d",
             x_label="turn",
         )
 
@@ -1083,6 +1106,8 @@ def token_stack(
         margin_top=_CONTEXT_MARGIN_TOP,
         margin_bottom=_CONTEXT_MARGIN_BOTTOM,
         x_domain=turn_xlim(n_turns),
+        x_ticks=turn_ticks(n_turns),
+        x_tick_format="d",
         x_label="turn",
     )
     return [
@@ -1375,6 +1400,8 @@ def interventions_chart(act: pd.DataFrame, n_turns: int) -> Component:
         # _INTERVENTION_HEIGHT
         margin_bottom=_INTERVENTION_MARGIN_BOTTOM,
         x_domain=turn_xlim(n_turns),
+        x_ticks=turn_ticks(n_turns),
+        x_tick_format="d",
         x_label="turn",
         margin_left=_INTERVENTION_MARGIN_LEFT,
         margin_right=_INTERVENTION_MARGIN_RIGHT,
@@ -1618,6 +1645,8 @@ def swimlanes(
         y_axis=False,  # not None - see module docstring
         y_domain=(n_rows - 0.5, -0.5),
         x_domain=turn_xlim(n_turns),
+        x_ticks=turn_ticks(n_turns),
+        x_tick_format="d",
         x_label="turn",
         margin_left=_SWIMLANE_MARGIN_LEFT,  # also what the row-label
         # text marks above are drawn into

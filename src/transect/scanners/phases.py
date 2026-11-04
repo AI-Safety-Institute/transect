@@ -344,7 +344,8 @@ def decision_phases(
         digests = turn_digests(transcript, digest)
         n_turns = sum(1 for _ in orchestrator_turns(transcript))
         task_prompt = agent_task_prompt(transcript)
-        system = system_prompt(spec, task_prompt=task_prompt)
+        target = any(d.target_replies for d in digests)
+        system = system_prompt(spec, task_prompt=task_prompt, target=target)
         digest_judgements: list[ConsensusJudgement] = []
         # (model name, roll) -> that member's per-turn rows, whole run
         member_rows: dict[tuple[str, int], list[DigestJudgement]] = {
@@ -410,6 +411,7 @@ def decision_phases(
                 chunk=verify_chunk,
                 cache=cache,
                 sample=verify_sample,
+                target=target,
             )
             audit.verifier_model = str(verifier)
         if n_members > 1:
@@ -508,7 +510,7 @@ def agent_task_prompt(transcript: Any) -> str:
     return ""
 
 
-def system_prompt(spec: Spec, task_prompt: str = "") -> str:
+def system_prompt(spec: Spec, task_prompt: str = "", target: bool = False) -> str:
     """Render the segmentation system prompt.
 
     Phase definitions (names + descriptions) + rules + the two context
@@ -518,6 +520,8 @@ def system_prompt(spec: Spec, task_prompt: str = "") -> str:
     Args:
         spec: Supplies the phase definitions and the user context.
         task_prompt: The agent's own task prompt ("" omits the block).
+        target: Whether the digests carry a Petri target's replies
+            (adds the [TARGET] rule).
 
     Returns:
         The complete system prompt string.
@@ -526,7 +530,11 @@ def system_prompt(spec: Spec, task_prompt: str = "") -> str:
     labels_line = ", ".join(p.label for p in phase_defs)
     prompt = _SYSTEM_HEAD + vocab_lines(phase_defs)
     prompt += numbered_rules(
-        [*_SEGMENT_RULES, *label_rules(phase_defs, ops_name), _CONFIDENCE_RULE]
+        [
+            *_SEGMENT_RULES,
+            *label_rules(phase_defs, ops_name, target),
+            _CONFIDENCE_RULE,
+        ]
     )
     prompt += context_blocks(spec, task_prompt)
     prompt += (

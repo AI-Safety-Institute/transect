@@ -1091,6 +1091,24 @@ wheels = [
 ]
 
 [[package]]
+name = "inspect-petri"
+version = "3.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "inspect-ai" },
+    { name = "inspect-scout" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "shortuuid" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ba/ff/a53b52750982a233ebaf0b437e3c17965f80bb15d129b230d3ef89315d15/inspect_petri-3.1.1.tar.gz", hash = "sha256:d9f96652b5736ac6f26c45efb65d3e4be48ee95e1cd30f03efbdf199970d6bc9", size = 156563, upload-time = "2026-10-01T18:59:30.851Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/32/4b7660af21decf975f60dd92b19e4acbb5a745034bb1fb57d69005edf0c0/inspect_petri-3.1.1-py3-none-any.whl", hash = "sha256:47717adaff1dfa9b44dcdf896019283aa66a4009998073f277a633a7fdff8e49", size = 276513, upload-time = "2026-10-01T18:59:29.34Z" },
+]
+
+[[package]]
 name = "inspect-scout"
 version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3403,7 +3421,7 @@ wheels = [
 
 [[package]]
 name = "transect"
-version = "0.5.1"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "inspect-ai" },
@@ -3419,6 +3437,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "anthropic" },
+    { name = "inspect-petri" },
     { name = "mypy" },
     { name = "openai" },
     { name = "pandas-stubs" },
@@ -3447,6 +3466,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "anthropic", specifier = ">=2.0.0" },
+    { name = "inspect-petri", specifier = ">=3.1.1" },
     { name = "mypy", specifier = ">=2.3.1" },
     { name = "openai", specifier = ">=3.13.0" },
     { name = "pandas-stubs", specifier = ">=3.0.5.260730" },

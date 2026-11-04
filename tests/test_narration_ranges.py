@@ -128,7 +128,7 @@ def test_turns_with_reasoning_are_excerpted_and_rendered_as_thinking_lines():
             excerpts=excerpts,
         )
     )
-    assert html.count("[thinking]") == 2
+    assert html.count('data-kind="thinking"') == 2
     assert "silent deliberation" in html
 
 
@@ -153,7 +153,9 @@ def test_neutral_fallback_reaches_the_report_without_unsupported_group_prose():
         == expected
     )
     excerpts = {
-        i: Excerpt(i, "orchestrator", "", f"Source evidence {i}", False)
+        i: Excerpt(
+            i, "orchestrator", "bash" if i == 2 else "", f"Source evidence {i}", False
+        )
         for i in (0, 2, 9)
     }
     html = str(
@@ -174,5 +176,6 @@ def test_neutral_fallback_reaches_the_report_without_unsupported_group_prose():
     assert "Unsupported range claim" not in html
     assert "Source evidence 9" in html
     assert "Source evidence 0" in html
+    assert "turn 2 · orchestrator · tool calls: bash" in html
     # turn 2 is a summarization call and says so; turn 5 has no excerpt to mark
     assert html.count(COMPACTION_NOTE) == 1

@@ -118,8 +118,9 @@ scanner change take effect; run a new scan and retain both results for compariso
   sub-agent span (`lane_kind` subagent) or the conversation span of
   another model role (`lane_kind` role: an auditor driving a target has
   each target trajectory span as a lane, `scanners.helpers.Lanes`).
-  Only sub-agent lanes are classified, digested as delegations or
-  listed as spawns; role lanes appear in the frames and the swimlanes.
+  Only sub-agent lanes are classified and digested as delegations;
+  role lanes appear in the frames, the swimlanes and the lane spawns,
+  and on a Petri audit their turns feed the auditor's digests.
   The axis role is the role that opens the main span and makes its
   first tool call (`scanners.helpers.axis_role`; the driven side cannot
   act before it is driven); when those disagree the transcript raises.
@@ -142,7 +143,11 @@ scanner change take effect; run a new scan and retain both results for compariso
   all of them; Scout records it with the scanner's arguments. Digests
   are prompt-side only, never stored. Changing a default changes every judge
   request, so it needs a k-roll agreement comparison on real runs, not
-  only a plausibility argument.
+  only a plausibility argument. On a Petri audit an auditor turn's digest
+  also carries the target replies its calls produced, behind `[TARGET]`
+  and capped at 1000 characters, and the judge and verifier prompts
+  gain the matching rule only then; labels stay on the auditor axis
+  and no other run's requests change.
 - **Review units.** Phase `verifier_reviews` retains the original
   selected review units through display merging;
   `transect.reliability.review_units` is the review-population read.
@@ -156,6 +161,26 @@ scanner change take effect; run a new scan and retain both results for compariso
   coordinates. Headlines and summaries store unclipped, and
   `narration_group_status` stamps the outcome (`complete` checks
   partition coordinates, not factual correctness).
+- **Petri eval family.** A run whose recorded model roles name an
+  `auditor` and a `target` is a Petri audit (`transect.petri.is_petri`,
+  stamped as `transcript_info.eval_family`); nothing else detects it.
+  The auditor is the orchestrator and each target trajectory a role
+  lane, so every judged surface describes the auditor, with the
+  target's replies as context in each auditor turn's digest. The report's
+  target side (`report/petri.py`) reads the target's calls, the stored
+  `target` branch timeline and the final message list at render time
+  through `petri.conversation.target_conversation`: branches and fork
+  points come from the timeline's `branched_from` anchors, the
+  surviving path from the last target reply in the messages, rollbacks
+  from the tool call preceding each branch event, each call's prompt
+  from the auditor's `send_message` calls before it. A missing timeline
+  or endpoint is stated, never inferred. The Target conversation section
+  holds the tree diagram; the exchange cards sit inside the phase cards
+  (`sections.phase_cards(card_extras=...)`), or in the section when no
+  judged phase hosts them. Replies render capped unless
+  `petri_full_text` is set; the viewer link carries the whole text. The
+  scripted demo audit is
+  `examples/petri_logs/petri_demo.eval` (`tests/fixtures/generate_petri_eval.py`).
 - **Execution and coverage.** `results.scan_status` is reconstructed from the
   stored scan on every load. It records execution only: completed vs total
   transcripts, recorded errors, and the model usage each scanner billed

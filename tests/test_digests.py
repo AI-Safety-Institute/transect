@@ -11,6 +11,7 @@ from helpers import (
     agent_span,
     call_turn,
     model_turn,
+    petri_scaffold,
     run_scan,
     scripted_judge,
     seg,
@@ -267,4 +268,36 @@ def test_digest_turns_items_carry_the_same_digest_lines():
     assert asyncio.run(items()) == ['0: list [CALL] bash({"cmd": "ls"})']
     assert asyncio.run(items(RESULTS_ON)) == [
         '0: list [CALL] bash({"cmd": "ls"}) [RESULT] README.md'
+    ]
+
+
+@pytest.mark.parametrize(
+    ("roles", "reply", "reply_tools", "tail"),
+    [
+        (True, None, (), " [TARGET] target 0"),
+        (
+            True,
+            "x" * 1500,
+            (),
+            " [TARGET] " + "x" * 500 + " [... 500 chars ...] " + "x" * 500,
+        ),
+        (True, "", ("bash",), " [TARGET] (tools: bash)"),
+        (False, None, (), ""),
+    ],
+    ids=["reply", "long reply clipped", "tool-call reply", "no model roles"],
+)
+def test_petri_target_replies_ride_the_auditor_turn_that_produced_them(
+    roles, reply, reply_tools, tail
+):
+    """On a Petri audit each target reply joins the digest of the auditor
+    turn whose calls produced it, behind [TARGET] and clipped at both
+    ends; a text-less reply lists the tools it called; a run without
+    recorded model roles shows no reply."""
+    rendered = [
+        digest_line(d) for d in turn_digests(petri_scaffold(roles, reply, reply_tools))
+    ]
+    assert rendered == [
+        f"{n}: auditor {n} (tools: send_message)"
+        + tail.replace("target 0", f"target {n}")
+        for n in range(3)
     ]

@@ -25,7 +25,12 @@ SCENARIOS = {
     "demo-with-subagents": (
         "examples/logs/house_price_demo.eval",
         {},
-        ["Eval setup", "Token telemetry", "Sub-agent activity", "Human interventions"],
+        [
+            "Eval setup",
+            "Token telemetry",
+            "Sub-agent / lane activity",
+            "Human interventions",
+        ],
     ),
     "plain-single-agent": (
         "tests/fixtures/logs",
@@ -35,7 +40,7 @@ SCENARIOS = {
     "parallel-subagents": (
         "tests/fixtures/parallel_logs",
         {},
-        ["Eval setup", "Token telemetry", "Sub-agent activity"],
+        ["Eval setup", "Token telemetry", "Sub-agent / lane activity"],
     ),
     "openclaw-import": (
         "tests/fixtures/openclaw/mini_telemetry.jsonl",
@@ -109,6 +114,7 @@ def test_mechanical_report_renders_whole(name, tmp_path):
     html = Path(results.report_paths[0]).read_text()
     for section in sections:
         assert section in html
+    assert "Target conversation" not in html  # the Petri family only
     # an OpenClaw import records no compaction configuration at all; the
     # parallel fixture's orchestrator runs with compaction disabled (its
     # subagent_a sub-agent compacts without a memory nudge)
@@ -150,7 +156,7 @@ def test_judged_report_renders_all_sections_from_a_stored_scan(store, tmp_path):
         "Phase timeline",
         "Token telemetry",
         "Human interventions",
-        "Sub-agent activity",
+        "Sub-agent / lane activity",
         "Token spend",
         "Phase cards",
         "Reliability",
@@ -790,16 +796,23 @@ def _lane_rows(kinds):
         (
             ["role", "role", "subagent"],
             False,
-            "2 lane(s) are another model role's",
+            "2 lane(s) carry the conversations of model role target",
             "mismatch",
         ),
-        (["subagent"], False, "", "another model role"),
-        (["role", "role"], True, "2 lane(s) are another model role's", "mismatch"),
+        (["subagent"], False, "one neutral sub-agents group", "model role"),
+        (
+            ["role", "role"],
+            False,
+            "No sub-agent spans to classify; lanes are grouped by model role",
+            "No sub-agent classification",
+        ),
+        (["role", "role"], True, "2 lane(s) carry the conversations", "mismatch"),
         (["role", "subagent"], True, "mismatch", "sub-agent span(s)"),
     ],
     ids=[
         "mixed, no classifier",
         "sub-agents only",
+        "role lanes only, no classifier",
         "role lanes only, classifier ran",
         "unjoined sub-agent",
     ],
@@ -807,33 +820,103 @@ def _lane_rows(kinds):
 def test_subagent_notes_keep_role_lanes_out_of_the_classification_states(
     kinds, classification_ran, present, absent
 ):
-    """Role lanes are named as another role's conversations and never count
-    as unjoined or unclassified sub-agents; a real unjoined sub-agent still
+    """Role lanes are named by their model role and never count as
+    unjoined or unclassified sub-agents; a real unjoined sub-agent still
     warns."""
     lanes = [SpanGeometry(f"s{i}", "lane", 0.0, 1.0, True) for i in range(len(kinds))]
+    role_of = {f"s{i}": "target" for i, kind in enumerate(kinds) if kind == "role"}
     notes = str(
-        sections.subagent_notes(lanes, {}, _lane_rows(kinds), classification_ran)
+        sections.subagent_notes(
+            lanes, {}, _lane_rows(kinds), classification_ran, role_of, "auditor"
+        )
     )
     assert present in notes
     assert absent not in notes
 
 
 @pytest.mark.parametrize(
-    ("span_id", "label_of", "role_ids", "classification_ran", "group"),
+    ("span_id", "label_of", "role_of", "classification_ran", "group"),
     [
-        ("t", {}, {"t"}, True, "other model roles"),
-        ("s", {}, {"t"}, True, "unclassified"),
-        ("s", {"s": "lit"}, {"t"}, True, "lit"),
-        ("s", {}, set(), False, "sub-agents"),
+        ("t", {}, {"t": "target"}, True, "target"),
+        ("s", {}, {"t": "target"}, True, "unclassified"),
+        ("s", {"s": "lit"}, {"t": "target"}, True, "lit"),
+        ("s", {}, {}, False, "sub-agents"),
     ],
     ids=["role lane", "unlabelled, classifier ran", "labelled", "no classifier"],
 )
 def test_lane_group_places_each_lane(
-    span_id, label_of, role_ids, classification_ran, group
+    span_id, label_of, role_of, classification_ran, group
 ):
-    """A role lane groups outside the classification states; a sub-agent
-    lane groups by its label, else by whether a classifier ran."""
-    assert sections.lane_group(span_id, label_of, role_ids, classification_ran) == group
+    """A role lane groups under its model role, outside the classification
+    states; a sub-agent lane groups by its label, else by whether a
+    classifier ran."""
+    assert sections.lane_group(span_id, label_of, role_of, classification_ran) == group
+
+
+@pytest.mark.parametrize(
+    ("role", "expected"),
+    [
+        ("auditor", "the auditor's token stream"),
+        (None, "the orchestrator's token stream"),
+    ],
+    ids=["role recorded", "pre-role scan"],
+)
+def test_the_petri_token_note_names_the_recorded_role_or_none(role, expected):
+    """The note under a Petri run's token chart names whose stream it is,
+    falling back to the orchestrator when the scan recorded no role."""
+    assert expected in str(sections.token_role_note(role))
+
+
+@pytest.mark.parametrize(
+    ("n_turns", "step", "n_ticks"),
+    [(6, 1, 6), (25, 1, 25), (26, 2, 13), (120, 5, 24), (600, 50, 12)],
+)
+def test_turn_axis_ticks_are_whole_turns_at_a_readable_step(n_turns, step, n_ticks):
+    """Ticks start at turn 0, step by 1, 2, 5, 10, 20, 50 as the run
+    grows, and never exceed the readable count."""
+    ticks = charts.turn_ticks(n_turns)
+    assert ticks[:2] == [0, step][: len(ticks)]
+    assert len(ticks) == n_ticks and all(isinstance(t, int) for t in ticks)
+    assert ticks[-1] < n_turns
+
+
+def test_the_phase_summary_line_names_the_orchestrators_role():
+    """The run's recorded orchestrator role sits beside the phase count."""
+    from helpers import phase_turns_frame
+
+    phases = pd.DataFrame(
+        [
+            {
+                "phase_index": 0,
+                "phase": "setup",
+                "judge_models": "m",
+                "verifier_model": None,
+                "n_models": 1,
+                "k_rolls": 1,
+            }
+        ]
+    )
+    turns = phase_turns_frame(["judged", "judged"], [0, 0])
+    line = str(sections.phase_summary_line(phases, turns, "auditor"))
+    assert "1 phases · orchestrator role: auditor · " in line
+    assert "orchestrator role" not in str(sections.phase_summary_line(phases, turns))
+
+
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        (["auditor", "auditor", "target", "judge"], ["auditor", "target", "judge"]),
+        ([None, None, "grader"], ["no role", "grader"]),
+        ([None, None], []),
+        (["agent", "agent"], []),
+    ],
+    ids=["three roles", "role-less and one role", "no roles", "one role"],
+)
+def test_spend_by_role_needs_more_than_one_role(roles, expected):
+    """Spend groups by recorded model role only when the run names more
+    than one, role-less calls bucketed as no role, largest first."""
+    one = pd.DataFrame({"role": roles, "new_work": [40, 30, 20, 10][: len(roles)]})
+    assert [b["label"] for b in sections.spend_role_bars(one)] == expected
 
 
 @pytest.mark.parametrize(

@@ -167,6 +167,7 @@ async def verify_phases(
     chunk: int,
     cache: bool | CachePolicy,
     sample: float | None = None,
+    target: bool = False,
 ) -> tuple[list[StitchedPhase], VerifierAudit]:
     """Run the second-round verifier and apply its overturns.
 
@@ -188,6 +189,7 @@ async def verify_phases(
         chunk: Phases per verifier call.
         cache: Judge-call caching.
         sample: The spot-checked share (see `select_for_verify`).
+        target: Whether the digests carry a Petri target's replies.
 
     Returns:
         ``(phases, audit)`` - the (possibly re-stitched) phases carrying
@@ -208,7 +210,7 @@ async def verify_phases(
     )
     if not selected:
         return phases, audit
-    system = verify_system_prompt(spec, task_prompt)
+    system = verify_system_prompt(spec, task_prompt, target=target)
     answer = _verify_answer_spec(phase_names)
     ids_chunks = [
         selected[offset : offset + chunk] for offset in range(0, len(selected), chunk)
@@ -239,12 +241,14 @@ async def verify_phases(
     return _apply_verdicts(digest_judgements, phases, attempts, audit, str(judge))
 
 
-def verify_system_prompt(spec: Spec, task_prompt: str) -> str:
+def verify_system_prompt(spec: Spec, task_prompt: str, target: bool = False) -> str:
     """Render the verifier system prompt.
 
     Args:
         spec: Supplies the phase definitions and the user context.
         task_prompt: The agent's own task prompt ("" omits the block).
+        target: Whether the digests carry a Petri target's replies
+            (adds the [TARGET] rule).
 
     Returns:
         The complete verifier system prompt string.
@@ -252,7 +256,7 @@ def verify_system_prompt(spec: Spec, task_prompt: str) -> str:
     phase_defs, ops_name = resolve_phases(spec)
     labels_line = ", ".join(p.label for p in phase_defs)
     prompt = _VERIFY_HEAD + vocab_lines(phase_defs)
-    prompt += numbered_rules(label_rules(phase_defs, ops_name))
+    prompt += numbered_rules(label_rules(phase_defs, ops_name, target))
     prompt += context_blocks(spec, task_prompt)
     prompt += (
         "\nReport your verdicts by calling the answer() tool: 'verdicts' "

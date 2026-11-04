@@ -422,14 +422,16 @@ def phase_explanation() -> Markup:
 def phase_summary_line(
     phases: pd.DataFrame,
     phase_turns: pd.DataFrame,
+    axis_role: str | None = None,
 ) -> Markup:
     """The Phase timeline section's one-line judge summary: phase count,
-    judge roster, cohort shape, mean per-turn agreement, and the
-    verifier model when one was armed."""
+    the orchestrator's model role when the run records one, judge
+    roster, cohort shape, mean per-turn agreement, and the verifier
+    model when one was armed."""
     one = phases.sort_values("phase_index")
     label, judge, cohort = _phase_judge_facts(one, phase_turns)
     return _notes.phase_summary_line(
-        len(one), label, judge, cohort, _verifier_name(one)
+        len(one), axis_role, label, judge, cohort, _verifier_name(one)
     )
 
 
@@ -591,6 +593,13 @@ def token_intro(derived: bool, coincide: bool = False) -> Markup:
     return _notes.token_intro_derived(coincide)
 
 
+def token_role_note(role: str | None) -> Markup:
+    """The Petri note under the token telemetry intro: the chart is the
+    orchestrator's (``role``, the auditor) stream, the target's calls
+    are lane turns counted elsewhere."""
+    return _notes.token_role_note(role)
+
+
 def event_legend(
     has_context_chart: bool, flushes: bool = True, threshold: int | None = None
 ) -> Markup:
@@ -671,29 +680,36 @@ def subagent_explanation() -> Markup:
     return _notes.subagent_explanation()
 
 
-ROLE_LANE_GROUP = "other model roles"
+UNNAMED_ROLE = "unnamed"
 
 
 def lane_group(
-    span_id: str, label_of: dict, role_ids: set[str], classification_ran: bool
+    span_id: str, label_of: dict, role_of: dict[str, str], classification_ran: bool
 ) -> str:
     """The swimlane group a lane draws in. A role lane (another model
-    role's conversation) always groups as `ROLE_LANE_GROUP`, outside the
+    role's conversation) groups under its role name, outside the
     classification states. A sub-agent lane groups by its label, else
     as "unclassified" when a classifier ran (it joined no label: the
     honest fallback) and as "sub-agents" when none did (no label
     dimension exists)."""
-    if span_id in role_ids:
-        return ROLE_LANE_GROUP
+    if span_id in role_of:
+        return role_of[span_id]
     label = label_of.get(span_id)
     if isinstance(label, str) and label:
         return label
     return "unclassified" if classification_ran else "sub-agents"
 
 
-def role_lane_ids(subagents: pd.DataFrame) -> set[str]:
-    """The span ids of a transcript's role lanes (``lane_kind`` role)."""
-    return {str(s) for s in subagents.agent_span_id[subagents.lane_kind == "role"]}
+def role_lanes(subagents: pd.DataFrame, timeline: pd.DataFrame) -> dict[str, str]:
+    """Each role lane's model role (``lane_kind`` role), read from its
+    own turns in the token timeline; `UNNAMED_ROLE` when they name none."""
+    spans = {str(s) for s in subagents.agent_span_id[subagents.lane_kind == "role"]}
+    lane_rows = timeline[timeline.agent_span_id.isin(spans)]
+    named = {
+        str(span): str(roles.dropna().iloc[0]) if roles.notna().any() else UNNAMED_ROLE
+        for span, roles in lane_rows.groupby("agent_span_id", observed=True).role
+    }
+    return {span: named.get(span, UNNAMED_ROLE) for span in spans}
 
 
 def subagent_notes(
@@ -701,14 +717,17 @@ def subagent_notes(
     label_of: dict,
     subagents: pd.DataFrame,
     classification_ran: bool,
+    role_of: dict[str, str] | None = None,
+    axis_role: str | None = None,
 ) -> Markup:
     """The Sub-agent activity section's prose, rendered above its chart
     (the label legend renders below it - `subagent_legend`).
 
     ``lanes`` / ``label_of`` are the same span-grouping the orchestrator
-    built for the chart. A line names how many lanes are another model
-    role's conversations (``lane_kind`` role: never sub-agents, never
-    classified) when any are. The how-to-read line renders when any span
+    built for the chart. A line names the model roles whose
+    conversations the role lanes carry (``role_of``, never classified)
+    when any exist, and the orchestrator's own role (``axis_role``)
+    when the run records one. The how-to-read line renders when any span
     draws as a wall-clock box, its completion-glyph clause when any
     span's end was recorded.
     """
@@ -717,8 +736,8 @@ def subagent_notes(
     # (labels, no note); and classification present but zero sub-agent
     # lanes joined - a silent-failure smell (identity/span-id mismatch).
     # Role lanes are never classified, so they count in none of these.
-    role_ids = role_lane_ids(subagents)
-    sub_lanes = [span for span in lanes if span.span_id not in role_ids]
+    role_of = role_of or {}
+    sub_lanes = [span for span in lanes if span.span_id not in role_of]
     any_joined = any(span.span_id in label_of for span in sub_lanes)
     if not classification_ran:
         state = "not_run"
@@ -756,10 +775,16 @@ def subagent_notes(
             "verifier": _verifier_name(subagents),
         }
 
+    roles = sorted(set(role_of.values()))
     return _subagent_tpl.subagent_notes(
         state,
         summary,
-        len(role_ids),
+        {
+            "n": len(role_of),
+            "roles": roles,
+            "axis": axis_role,
+            "mixed": bool(sub_lanes),
+        },
         any(span.boxed for span in lanes),
         bool(subagents.end_recorded.any()),
         _END_MARKER_GLYPH,
@@ -1036,6 +1061,30 @@ def spend_family_group(scope: str, family: str, chart: Markup, hidden: bool) -> 
     return _notes.spend_family_group(scope, family, chart, hidden)
 
 
+def spend_role_bars(one: pd.DataFrame) -> list[dict]:
+    """Token-spend bars by recorded model role over every model turn of
+    the transcript, lanes and off-axis calls included, with each role's
+    share of the total; empty unless the run names more than one role.
+    Calls naming no role bucket as "no role"."""
+    rows = one.dropna(subset=["new_work"])
+    roles = rows.role.fillna("no role")
+    if roles.nunique() < 2:
+        return []
+    spend = rows.new_work.groupby(roles).sum().sort_values(ascending=False)
+    spend = spend[spend > 0]
+    total = float(spend.sum())
+    colors = _label_colors(sorted(str(r) for r in spend.index))
+    return [
+        {
+            "label": str(role),
+            "value": int(value),
+            "color": colors[str(role)],
+            "share": f"{value / total:.0%} of new work",
+        }
+        for role, value in spend.items()
+    ]
+
+
 def spend_group_heading(text: str) -> Markup:
     """One spend group's own sub-heading ("By phase label" / "By
     sub-agent label"), above that group's chart."""
@@ -1133,6 +1182,7 @@ def phase_cards(
     tool_counts: dict[int, int] | None = None,
     turn_tags: pd.DataFrame | None = None,
     tag_layer_of: dict[str, str] | None = None,
+    card_extras: dict[int, Markup] | None = None,
 ) -> Markup:
     """Phase cards: one expandable card per phase, chronological (the
     drill-down under the Phase timeline band).
@@ -1148,7 +1198,9 @@ def phase_cards(
     filter bar's separate scope. ``excerpts`` (this transcript's
     ``{turn: Excerpt}`` map) turns each turn group into a dropdown of
     message text; ``None`` leaves plain list items, with the Scout
-    deep link as the full-text path either way.
+    deep link as the full-text path either way. ``card_extras`` is any
+    rendered block per phase index that its card hosts after the turn
+    groups (the Petri target exchanges of `report.petri` use it).
     """
 
     sorted_phases = phases.sort_values("phase_index").reset_index(drop=True)
@@ -1277,6 +1329,7 @@ def phase_cards(
                 "tags": tags,
                 "summary": summary,
                 "groups": group_items,
+                "extra": (card_extras or {}).get(int(p.phase_index)),
                 "members": member_items,
                 "open_link": open_link,
                 "label": str(p.phase),

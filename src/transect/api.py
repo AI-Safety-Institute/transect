@@ -110,6 +110,7 @@ def transect(
     extra_layers: list[Layer] | None = None,
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
+    petri_full_text: bool = False,
 ) -> TransectResults:
     """The default path: scan the logs, build the frames, render the
     report, bring up the Scout viewer.
@@ -214,6 +215,11 @@ def transect(
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``
             (the default) renders no marking.
+        petri_full_text: On a Petri transcript, render each target
+            exchange card whole (the auditor's message, the reply, its
+            tool arguments and results) instead of capped like an
+            excerpt; the Scout viewer link carries the full text either
+            way.
 
     Returns:
         ``TransectResults`` - the frames (plain pandas), plus
@@ -284,6 +290,7 @@ def transect(
         open_report=open_report,
         section_order=section_order,
         sensitivity=sensitivity,
+        petri_full_text=petri_full_text,
     )
 
 
@@ -416,6 +423,7 @@ def render(
     open_report: bool = True,
     section_order: list[str] | None = None,
     sensitivity: str | None = None,
+    petri_full_text: bool = False,
 ) -> TransectResults:
     """Render the HTML report from TransectResults produced by
     transect() or load().
@@ -448,6 +456,11 @@ def render(
             rendered verbatim as fixed banners at the top and bottom
             of the report and appended to the report title. ``None``
             (the default) renders no marking.
+        petri_full_text: On a Petri transcript, render each target
+            exchange card whole (the auditor's message, the reply, its
+            tool arguments and results) instead of capped like an
+            excerpt; the Scout viewer link carries the full text either
+            way.
     """
     scan_path = Path(results.scan_location)
     base = scan_path.parent if scan_path.name.startswith("scan_id=") else scan_path
@@ -496,6 +509,7 @@ def render(
                 viewer_base_url=viewer_url,
                 section_order=section_order,
                 sensitivity=sensitivity,
+                petri_full_text=petri_full_text,
             )
         )
         paths.append(str(out))

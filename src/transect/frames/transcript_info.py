@@ -36,6 +36,9 @@ Columns (identity prefix explained in common.py):
 - task_args / generate_config / model_roles: the importer's
   per-sample metadata, compact JSON strings (display cells for the
   intro, not analysis columns - parse the source log for analysis).
+- eval_family: "petri" when the run's model roles name an auditor and
+  a target (the report then adds the target conversation section);
+  None otherwise.
 - header_available: whether the source log's header was read at scan
   time (False on OpenClaw imports - no header exists there).
 - task_file / task_version: the eval code's task provenance.
@@ -112,6 +115,7 @@ _SETUP_COLUMNS = [
     "task_args",
     "generate_config",
     "model_roles",
+    "eval_family",
     "header_available",
     "task_file",
     "task_version",
@@ -169,6 +173,9 @@ def _setup_columns(value: dict) -> dict:
         row[field] = _compact(agent_args.get(field))
     for field in ("task_args", "generate_config", "model_roles"):
         row[field] = _compact(value.get(field))
+    if "eval_family" not in value:
+        raise KeyError("eval_setup value has no eval_family; run a new scan")
+    row["eval_family"] = value["eval_family"]
     header = value.get("header")
     row["header_available"] = header is not None
     header = header or {}

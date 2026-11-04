@@ -136,7 +136,8 @@ uv run python examples/transect_cohort.py   # three-model judge cohort
 - **Turn digests**: what the phase judges read - one line per
   orchestrator turn with content, carrying its reasoning, text, tool
   calls and sub-agent tasks, each part capped by a `DigestSettings`
-  passed as `digest=` to `transect()`.
+  passed as `digest=` to `transect()` (and, on a Petri audit, the
+  target's replies, capped at 1000 characters).
 - **Judge regimes**: one model solo, one model rolled `k_rolls`
   times, or a multi-model cohort - votes decided by majority - plus
   an optional verifier that re-checks doubtful judgements.
@@ -247,15 +248,31 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
 - **Human interventions**: mid-run operator messages and console inputs.
 - **Token telemetry**: per-turn token measures and context size, compactions
   and any recorded compaction threshold marked.
-- **Sub-agent activity**: one swimlane box per lane spanning the orchestrator
-  turns active while it ran: a spawned sub-agent with its classified role, or
-  another model role's conversation (a target driven by an auditor), which is
-  named as such and never classified.
+- **Sub-agent / lane activity**: one swimlane box per lane spanning the
+  orchestrator turns active while it ran: a spawned sub-agent with its
+  classified label, or another model role's conversation (a target driven by
+  an auditor) grouped under its role; each lane's opening message is listed.
 - **Token spend**: token quantities by phase, sub-agent, or custom tag family;
   these charts do not estimate monetary cost.
+- **Target conversation** (Petri audits): the target's branch tree with its
+  phase segments; the exchanges sit in the phase cards of the auditor turns
+  that drove them.
 - **Phase cards**: one expandable card per phase: label, narration, excerpts, reliability.
 - **Custom layers**: user layers' own sections; `section_order` rearranges the report.
 - **Reliability & provenance audit**: per judged surface, how every label was produced.
+
+### Petri audits
+
+An [inspect_petri](https://meridianlabs-ai.github.io/inspect_petri/) log
+is recognised from its recorded model roles (`transcript_info.eval_family`
+is `petri`). The auditor's turns are the orchestrator axis, so the phases
+and cards describe the auditor; each target trajectory is a lane, and the
+replies an auditor turn produced join that turn's digest as `[TARGET]`
+context, so the phase judge reads both sides of the audit.
+The report adds a **Target conversation** section with the stored branch
+tree, and each phase card hosts the target exchanges its auditor turns
+drove. `petri_full_text=True` renders the exchange text whole;
+`examples/transect_petri.py` runs the shipped scripted audit.
 
 ### Building your own UI
 
@@ -338,11 +355,13 @@ erDiagram
         int message_limit "None = not set / not found"
         string system_prompt "verbatim; the long prompts sit last"
         string compaction_prompt "configured Inspect template, if recorded"
+        string eval_family "petri on a Petri audit; None otherwise"
     }
     token_timeline["token_timeline (one row per model turn, any lane)"] {
         int turn PK "orchestrator turn; NA on a lane's own turns"
         int lane_turn "ordinal within the turn's own lane"
         string agent_span_id FK "lane span; NA on the orchestrator"
+        string role "recorded model role; NA when role-less"
         string timestamp "model call start, ISO"
         string completed "model call completion, ISO"
         int output_tokens

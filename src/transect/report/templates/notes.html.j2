@@ -65,6 +65,10 @@
 {% if coincide %}<p class="meta">This transcript recorded no cache reads or writes, so per-turn total and per-turn new work are equal on every turn: switching between them changes nothing here.</p>{% endif %}
 {%- endmacro %}
 
+{% macro token_role_note(role) -%}
+<p class="meta">On this Petri audit the chart is the {% if role %}{{ role }}'s{% else %}orchestrator's{% endif %} token stream; the target's calls are lane turns, counted under Token spend by model role and in the lane rows of Sub-agent / lane activity.</p>
+{%- endmacro %}
+
 {% macro token_intro_raw() -%}
 <p class="meta explainer">The orchestrator's per-call output tokens (pre-derivation fallback: this transcript's usage events don't carry the cache/context breakdown the three-measure view needs).</p>
 <p class="meta explainer">Scale: <em>linear</em> or <em>log</em> (log hides turns with a zero or negative token count, since a token count of zero has no logarithm; a turn with no reading at all is hidden under either scale).</p>
@@ -181,8 +185,8 @@
 <p class="meta explainer">An LLM judge classifies each spawned sub-agent against the spec's sub-agent label vocabulary; the labels are the judge's output.</p>
 {%- endmacro %}
 
-{% macro phase_summary_line(n_phases, judge_label, judge, cohort, verifier=None) -%}
-<p class="meta">{{ n_phases }} phases · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier %} · verifier: {{ verifier }}{% endif %}</p>
+{% macro phase_summary_line(n_phases, axis_role, judge_label, judge, cohort, verifier=None) -%}
+<p class="meta">{{ n_phases }} phases{% if axis_role %} · orchestrator role: {{ axis_role }}{% endif %} · {{ judge_label }}: {{ judge }}{% if cohort %} · cohort: {{ cohort.detail }} · mean per-turn agreement: {{ cohort.mean }} over {{ cohort.n_turns }} turn(s) with ≥ 2 voters{% endif %}{% if verifier %} · verifier: {{ verifier }}{% endif %}</p>
 {%- endmacro %}
 
 {% macro phase_meta_line(n_phases, judge_label, judge, cohort, verifier_note, unjudged_count) -%}

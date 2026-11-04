@@ -380,7 +380,11 @@ def test_transcript_info_keeps_index_metadata_and_stamps_the_scan_error():
                 {
                     "transcript_id": "ok",
                     "transcript_model": "mockllm/model",
-                    "value": {"compaction_prompt": None, "system_prompt": "sys"},
+                    "value": {
+                        "compaction_prompt": None,
+                        "eval_family": None,
+                        "system_prompt": "sys",
+                    },
                     "scan_error": None,
                 },
             ]
@@ -399,7 +403,14 @@ def test_transcript_info_keeps_index_metadata_and_stamps_the_scan_error():
 def test_transcript_info_preserves_unrecorded_setup_facts(error):
     """A successful setup with no recorded prompt is still a valid result."""
     frame = transcript_info_df(
-        pd.DataFrame([{"value": {"compaction_prompt": None}, "scan_error": error}])
+        pd.DataFrame(
+            [
+                {
+                    "value": {"compaction_prompt": None, "eval_family": None},
+                    "scan_error": error,
+                }
+            ]
+        )
     )
     assert len(frame) == 1 and frame.compaction_prompt.iloc[0] is None
 
@@ -894,3 +905,9 @@ def test_role_lanes_are_neither_spawned_sub_agents_nor_delegated_spend(raw_phase
     (phase,) = phases_df(raw_phases, subagents=subagents).itertuples()
     assert phase.n_subagents == 1
     assert phase.delegated_new_work_tokens == 1100
+
+
+def test_a_setup_value_without_an_eval_family_names_the_rescan():
+    """A store written before eval families existed is not patched over."""
+    with pytest.raises(KeyError, match=r"eval_family.*new scan"):
+        transcript_info_df(pd.DataFrame([{"value": {"compaction_prompt": None}}]))
