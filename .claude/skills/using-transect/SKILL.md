@@ -274,6 +274,15 @@ Check versions, schemas and unit alignment before attributing differences to
 agent behaviour. If the comparison requires new scans under one version,
 retain the earlier stores and size any fresh judge calls first.
 
+After moving a source, use
+`transect.load(exact_scan_location, transcripts_location="archive/run.eval")`.
+The override accepts an existing local eval-log file, log directory or retained
+OpenClaw transcript database, resolved from the current working directory. It
+redirects excerpts and viewer links without rewriting the stored scan or
+rescanning. Supply the same transcripts with their original identities; this
+argument does not verify their content. An empty or missing override raises.
+Without an override, the recorded source location is retained even if missing.
+
 ## 4. Reading the report
 
 Read [references/report-guide.md](references/report-guide.md) before

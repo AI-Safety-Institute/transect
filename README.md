@@ -586,6 +586,26 @@ Each `Layer` field is one surface, all optional:
 > [!TIP]
 > The full authoring recipe is the shipped `add-a-layer` skill.
 
+## Reloading moved transcripts
+
+If you move the original transcripts, point `load()` at their new location:
+
+```python
+from transect import load, render
+
+results = load("scans/my_run/scan_id=...", transcripts_location="archive/my_run.eval")
+render(results, viewer=False, open_report=False)
+```
+
+`transcripts_location` accepts a local eval-log file, log directory or retained
+OpenClaw transcript database. Relative paths resolve from the current working
+directory. An explicit empty or missing path raises; omitting the argument keeps
+the recorded location. The override changes where excerpts and viewer links
+read their source without rescanning or rewriting the scan store. Supply the
+same transcripts with their original identities: the override does not verify
+their content. For OpenClaw, move the retained `transcript_snapshots/` database,
+rather than reimporting JSONL with a different importer version.
+
 ## Cost
 
 Structural extraction is free (no LLM calls): without

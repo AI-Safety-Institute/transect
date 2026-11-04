@@ -295,7 +295,12 @@ def transect(
     )
 
 
-def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectResults:
+def load(
+    scans_dir: str,
+    extra_layers: list[Layer] | None = None,
+    *,
+    transcripts_location: str | Path | None = None,
+) -> TransectResults:
     """Re-read an existing scan into frames and run-wide scan_status.
 
     No scanning, API calls or report render. Available partial results keep
@@ -311,6 +316,13 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
         extra_layers: The run's `Layer` list, to remount their frames
             from the stored scan (the frame fns re-run; a layer whose
             scanner is absent from the store fails loudly).
+        transcripts_location: Existing local eval-log file, log directory
+            or transcript database to use for excerpts and viewer links
+            after relocating the source. Relative paths resolve from the
+            current working directory. None keeps the recorded location,
+            even when it no longer exists. The override does not rewrite
+            the scan or verify source content; supply the same transcripts
+            with their original identities.
     """
     scan_location = str(_resolve_scan(scans_dir))
     claimed = {
@@ -357,7 +369,7 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     transcripts = getattr(results.spec, "transcripts", None)
     transect_results = TransectResults(
         scan_location=scan_location,
-        transcripts_location=_transcripts_location(transcripts),
+        transcripts_location=_transcripts_location(transcripts, transcripts_location),
         scan_status=build_scan_status(results, mounted_scanners=claimed),
         token_timeline=token_timeline,
         flushes=flushes_df(results.scanners["context_flush"], token_timeline),
@@ -865,11 +877,24 @@ def _task_name(results: TransectResults) -> str | None:
     return str(names.iloc[0]) if len(names) else None
 
 
-def _transcripts_location(transcripts) -> str | None:
+def _transcripts_location(
+    transcripts, override: str | Path | None = None
+) -> str | None:
     """The viewer target: transcript-DB scans record it directly;
     eval-log scans leave location empty but map transcript ids to
-    their log paths.
+    their log paths. An explicit override must exist and resolves from
+    the caller's working directory, without changing the stored scan.
     """
+    if override is not None:
+        if not str(override).strip():
+            raise ValueError("transcripts_location must not be empty")
+        path = Path(override).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(
+                f"transcripts_location {str(path)!r} does not exist - pass the "
+                "relocated eval log, log directory or transcript database"
+            )
+        return str(path)
     location = getattr(transcripts, "location", None)
     if location is not None:
         return str(location)

@@ -62,6 +62,14 @@ invocation are rejected before scanning, and so is more than one input
 selection never picks among them. Never delete old stores to make a
 scanner change take effect; run a new scan and retain both results for comparison.
 
+`load(scan_location, transcripts_location=...)` redirects source viewing to a
+relocated local eval log, log directory or retained transcript database. It
+resolves the override from the current working directory and rejects an empty
+or missing path. It does not rewrite scan metadata, change stored frames or
+verify source content. The caller supplies the same transcripts with their
+original identities. With no override, even an unavailable recorded location
+is preserved so frames can still load without source viewing.
+
 ## Load-bearing contracts
 
 - **Frames are this repo's own contract.** Builders read columns
