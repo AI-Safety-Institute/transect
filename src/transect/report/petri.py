@@ -1,21 +1,17 @@
 """The target side of a Petri report: the Target conversation section
 and the exchange blocks the phase cards host.
 
-The section draws the stored branch tree as one row per trajectory:
-a start circle, the target calls as blocks numbered in recorded order
-(surviving in their phase colour, discarded grey), and under them a
-coloured band per auditor phase labelled with the phase number; a
-child row forks at its parent's fork point, where the circle links to
-the rollback's phase card. An exchange block lists, in recorded order,
-each auditor turn that drove a target call (its text, reasoning and
-tool calls, once) with one card per call under it (what the auditor
-put before the target, the reply, its tool calls), each part capped
-like a phase-card excerpt or whole with ``full_text`` on, each model
-and tool event linked into the Scout viewer, and a marker where a
-rollback opened a trajectory. On a judged run the blocks sit inside the
-phase card of the auditor turn that drove the calls, the marker in the
-phase card of the turn that rolled back; calls and markers no judged
-phase covers, and every one on a structural run, list in the section.
+The section draws the stored branch tree: one row per trajectory,
+forking at its parent's fork point, with the target calls as blocks
+coloured by the auditor phase that drove them (grey when discarded) and
+a band per phase under them. An exchange block lists each auditor turn
+once, with one card per target call it drove: what the auditor put
+before the target, the reply, the tool calls, every event linked into
+the Scout viewer, and a marker where a rollback opened a trajectory.
+Text is capped like a phase-card excerpt unless ``full_text`` is on.
+Blocks sit inside the phase card of the turn that drove the calls (a
+marker in that of the turn that rolled back); whatever no judged phase
+covers lists in the section.
 """
 
 import json
