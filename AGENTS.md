@@ -134,7 +134,12 @@ scanner change take effect; run a new scan and retain both results for compariso
   Scout would scan at depth 1, resolved from the event stream
   (`timeline_build`), never from a stored timeline (a scaffold's stored
   timelines are its own per-role or branch-tree views, and only some
-  scanners receive them); a transcript with model turns but no single
+  scanners receive them). Petri audits select their unique auditor span from
+  the original model events' span IDs, retaining a built span when available
+  and projecting its direct auditor events when timeline flattening removed
+  the custom scaffold span. This applies inside a seed-design solver too;
+  multiple auditor spans raise rather than combining independent audits.
+  A transcript with model turns but no single
   orchestrator agent raises rather than guessing.
 - **Judge digests.** `scanners.digests.turn_digests` is the one builder
   of what the phase judge, its verifier, the narrator and the
@@ -166,7 +171,10 @@ scanner change take effect; run a new scan and retain both results for compariso
   stamped as `transcript_info.eval_family`); nothing else detects it.
   The auditor is the orchestrator and each target trajectory a role
   lane, so every judged surface describes the auditor, with the
-  target's replies as context in each auditor turn's digest. The report's
+  target's replies as context in each auditor turn's digest. Only model events
+  with the target role feed those replies and the target conversation;
+  seed writers, classifiers and other roles never become target calls.
+  The report's
   target side (`report/petri.py`) reads the target's calls, the stored
   `target` branch timeline and the final message list at render time
   through `petri.conversation.target_conversation`: branches and fork

@@ -6,6 +6,7 @@ calls, so no test makes an API call.
 
 import asyncio
 import re
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -363,3 +364,28 @@ def auditor_scaffold(target_tools=False):
         SpanEndEvent(id="scorers"),
     ]
     return StubTranscript(events)
+
+
+def embedded_audit(transcript):
+    """Wrap an audit in seed-writing and feedback calls, retaining its store."""
+    result = deepcopy(transcript)
+    result.metadata = {"model_roles": {"auditor": {}, "target": {}}}
+    writer = model_turn("Design a seed", span_id="writer")
+    writer.role = "contestant"
+    classifier = model_turn("Trial feedback", span_id="feedback")
+    classifier.role = "classifier"
+    for event in result.events:
+        if event.event == "span_begin" and event.parent_id is None:
+            event.parent_id = "writer"
+    result.events = [
+        SpanBeginEvent(id="writer", name="seed writer", type="writer"),
+        writer,
+        *result.events,
+        SpanBeginEvent(
+            id="feedback", parent_id="writer", name="feedback", type="launch"
+        ),
+        classifier,
+        SpanEndEvent(id="feedback"),
+        SpanEndEvent(id="writer"),
+    ]
+    return result

@@ -208,7 +208,11 @@ def target_conversation(transcript: Any) -> Conversation | None:
             elif event.function in _ROLLBACK_TOOLS:
                 sent = []
         lane = lanes.lane_of(event) if is_model_turn(event) else None
-        if lane is None or lane.id not in lane_ids:
+        if (
+            lane is None
+            or lane.id not in lane_ids
+            or getattr(event, "role", None) != "target"
+        ):
             continue
         message = turn_message(event)
         lane_turn = lane_turns.get(lane.id, 0)

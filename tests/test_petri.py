@@ -11,6 +11,7 @@ from helpers import (
     MODEL,
     StubTranscript,
     auditor_scaffold,
+    embedded_audit,
     run_item,
     seg,
     seg_answer,
@@ -696,3 +697,19 @@ def _conversation(branches, surviving, n_calls, tools=()):
         ],
         surviving,
     )
+
+
+def test_embedded_audit_retains_target_branches_and_auditor_ownership(
+    petri_transcripts,
+):
+    """An outer writer and feedback call cannot alter the stored target tree."""
+    original = petri_transcripts[1]
+    expected = target_conversation(original)
+    nested = embedded_audit(original)
+    actual = target_conversation(nested)
+    assert expected is not None and actual is not None
+    assert len(actual.calls) == len(expected.calls) == 4
+    assert actual.branches == expected.branches
+    assert actual.surviving == expected.surviving
+    assert actual.auditor_turns == expected.auditor_turns
+    assert [call.auditor_turn for call in actual.calls] == [1, 2, 3, 4]

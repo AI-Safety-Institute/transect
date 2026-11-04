@@ -14,6 +14,8 @@ from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_b
 from inspect_ai.model import ChatMessageAssistant, ContentReasoning
 from inspect_ai.tool import ToolCall
 
+from transect.petri import is_petri
+
 # OpenClaw spawn-prompt scaffold markers
 _OPENCLAW_SPAWN_CONTEXT_PREFIX = "[subagent context]"
 _OPENCLAW_SPAWN_TASK_MARKER = "[subagent task]"
@@ -228,7 +230,9 @@ def main_span(transcript: Any) -> TimelineSpan:
     timeline: a scaffold's stored timelines are views of its own (one
     per model role, or a branch tree of a rolled-back conversation),
     not the lane tree over every call this transcript recorded, and
-    only some scanners receive them.
+    only some scanners receive them. On Petri transcripts with one recorded
+    auditor span, that span owns the axis even inside a seed-design solver.
+    Its original event ownership survives timeline flattening.
 
     Args:
         transcript: The transcript whose timeline is resolved.
@@ -246,9 +250,13 @@ def main_span(transcript: Any) -> TimelineSpan:
             first call, two or more top-level agents, or model calls only
             inside utility spans. There is then no orchestrator lane to
             number; the error is recorded per transcript and shown in
-            the scan status section.
+            the scan status section. Multiple recorded Petri auditor spans
+            are ambiguous and also raise rather than combining audits.
     """
     span = timeline_build(transcript.events).root
+    auditor = _petri_auditor_span(transcript, span)
+    if auditor is not None:
+        return auditor
     while True:
         if any(
             isinstance(item, TimelineEvent) and is_model_turn(item.event)
@@ -550,3 +558,57 @@ def _ancestor_ids(spans: dict[str, Any], span_id: str) -> set[str]:
     """The ids of a span's ancestors in the recorded span tree."""
     parent = getattr(spans.get(span_id), "parent_id", None)
     return {span.id for span in _lineage(spans, parent)}
+
+
+def _petri_auditor_span(transcript: Any, root: TimelineSpan) -> TimelineSpan | None:
+    """Resolve one Petri auditor from original event ownership, not a wrapper."""
+    if not is_petri((getattr(transcript, "metadata", None) or {}).get("model_roles")):
+        return None
+    events = [
+        event
+        for event in transcript.events
+        if is_model_turn(event) and getattr(event, "role", None) == "auditor"
+    ]
+    ids = {event.span_id for event in events}
+    if len(ids) > 1:
+        raise ValueError(
+            "Petri transcript contains multiple auditor spans; select one audit "
+            "before scanning rather than merging independent conversations"
+        )
+    if not ids:
+        return None
+    auditor_id = next(iter(ids))
+    if auditor_id is None:
+        return None
+    begin = next(
+        (
+            event
+            for event in transcript.events
+            if event.event == "span_begin" and event.id == auditor_id
+        ),
+        None,
+    )
+    if begin is None:
+        raise ValueError("Petri auditor span has no recorded span_begin")
+
+    def find(span: TimelineSpan) -> TimelineSpan | None:
+        if span.id == auditor_id:
+            return span
+        children = [item for item in span.content if isinstance(item, TimelineSpan)]
+        for child in [*children, *span.branches]:
+            found = find(child)
+            if found is not None:
+                return found
+        return None
+
+    existing = find(root)
+    if existing is not None:
+        return existing
+    # Custom scaffold span types can disappear from timeline_build. Preserve
+    # the recorded auditor event objects so every scanner uses the same turns.
+    return TimelineSpan(
+        id=auditor_id,
+        name=begin.name,
+        span_type=begin.type,
+        content=[TimelineEvent(event=event) for event in events],
+    )
