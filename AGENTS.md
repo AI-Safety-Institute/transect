@@ -134,7 +134,15 @@ scanner change take effect; run a new scan and retain both results for compariso
   Scout would scan at depth 1, resolved from the event stream
   (`timeline_build`), never from a stored timeline (a scaffold's stored
   timelines are its own per-role or branch-tree views, and only some
-  scanners receive them); a transcript with model turns but no single
+  scanners receive them). On a Petri audit that span is kept when the
+  auditor drives it; when another role's turn opens it (an audit embedded
+  in a seed-design solver, whose writer calls the model first) the main
+  lane narrows to the auditor's own span, projected out of the flattened
+  tree with its utility helpers and sub-agents still wrapped
+  (`scanners.helpers.main_span`). Auditor calls under a phase or tool span
+  and span-less calls are off the axis; unrelated spans that each hold
+  auditor turns raise rather than combining independent audits.
+  A transcript with model turns but no single
   orchestrator agent raises rather than guessing.
 - **Judge digests.** `scanners.digests.turn_digests` is the one builder
   of what the phase judge, its verifier, the narrator and the
@@ -166,7 +174,10 @@ scanner change take effect; run a new scan and retain both results for compariso
   stamped as `transcript_info.eval_family`); nothing else detects it.
   The auditor is the orchestrator and each target trajectory a role
   lane, so every judged surface describes the auditor, with the
-  target's replies as context in each auditor turn's digest. The report's
+  target's replies as context in each auditor turn's digest. Only model events
+  with the target role feed those replies and the target conversation; a
+  seed writer's or feedback model's span is still a role lane in the frames
+  and swimlanes, never a target call. The report's
   target side (`report/petri.py`) reads the target's calls, the stored
   `target` branch timeline and the final message list at render time
   through `petri.conversation.target_conversation`: branches and fork

@@ -11,12 +11,15 @@ from helpers import (
     MODEL,
     StubTranscript,
     auditor_scaffold,
+    embedded_audit,
+    model_turn,
     run_item,
     seg,
     seg_answer,
     segment_range,
 )
-from inspect_ai.model import get_model
+from inspect_ai.event import SpanBeginEvent, SpanEndEvent, TimelineSpan
+from inspect_ai.model import ChatMessageSystem, get_model
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.petri import is_petri
@@ -25,6 +28,8 @@ from transect.report.excerpts import _turn_excerpts
 from transect.report.petri import _GAP, _UNIT, _card, _diagram, _items, target_report
 from transect.report.render import render_report
 from transect.scanners.base import eval_setup
+from transect.scanners.digests import turn_digests
+from transect.scanners.helpers import Lanes
 
 PETRI_LOGS = "examples/petri_logs"
 NO_PHASES = pd.DataFrame({"turn": [], "phase_index": [], "phase": []})
@@ -696,3 +701,123 @@ def _conversation(branches, surviving, n_calls, tools=()):
         ],
         surviving,
     )
+
+
+def test_embedded_audit_retains_target_branches_and_auditor_ownership(
+    petri_transcripts,
+):
+    """An outer writer and feedback call cannot alter the stored target tree."""
+    original = petri_transcripts[1]
+    expected = target_conversation(original)
+    nested = embedded_audit(original)
+    actual = target_conversation(nested)
+    assert expected is not None and actual is not None
+    assert len(actual.calls) == len(expected.calls) == 4
+    assert actual.branches == expected.branches
+    assert actual.surviving == expected.surviving
+    assert actual.auditor_turns == expected.auditor_turns
+    assert [call.auditor_turn for call in actual.calls] == [1, 2, 3, 4]
+
+
+def test_the_plain_audit_keeps_the_built_main_span(petri_transcripts):
+    """The auditor opens the demo's main span, so the lane is the built
+    span with its helpers wrapped, not a projection of the auditor's events."""
+    lanes = Lanes(petri_transcripts[1])
+    assert lanes.axis_role == "auditor"
+    assert lanes.main.span_type == "agent"
+    assert any(isinstance(i, TimelineSpan) and i.utility for i in lanes.main.content)
+
+
+def test_an_embedded_audit_puts_the_auditor_on_the_axis():
+    """A seed writer's and a feedback call around the audit are no turns
+    and no target replies; the auditor's turns and the target's replies are."""
+    t = embedded_audit(auditor_scaffold(target_tools=True))
+    lanes = Lanes(t)
+    assert lanes.main.id == "auditor"
+    assert lanes.axis_role == "auditor"
+    assert len(list(lanes.turns())) == 3
+    digests = turn_digests(t)
+    assert [len(d.target_replies) for d in digests] == [1, 1, 1]
+    assert not any("Trial feedback" in r for d in digests for r in d.target_replies)
+    c = target_conversation(t)
+    assert c is not None
+    assert [call.text for call in c.calls] == ["target 0", "target 1", "target 2"]
+    assert set(c.auditor_turns) == {0, 1, 2}
+
+
+def test_an_embedded_audit_keeps_the_auditors_helpers_wrapped():
+    """Projecting the auditor's lane out of the flattened tree keeps what
+    the built timeline wraps: a sub-agent the auditor ran stays a lane
+    with its first turn, a foreign-prompt helper call a utility span off
+    the axis, and neither reads as a second audit."""
+    t = embedded_audit(auditor_scaffold(target_tools=True))
+    summary = model_turn(
+        "summary", span_id="auditor", input=[ChatMessageSystem(content="Summarize.")]
+    )
+    helper = model_turn(
+        "helper",
+        span_id="helper",
+        input=[ChatMessageSystem(content="You are the auditor.")],
+    )
+    summary.role = helper.role = "auditor"
+    _after_first_auditor_turn(
+        t,
+        summary,
+        SpanBeginEvent(id="helper", parent_id="auditor", type="agent", name="helper"),
+        helper,
+        SpanEndEvent(id="helper"),
+    )
+    lanes = Lanes(t)
+    assert lanes.main.id == "auditor"
+    assert len(list(lanes.turns())) == 3
+    assert [b.id for b in lanes.begins] == ["helper"]
+    assert lanes.first_models["helper"] is helper
+    assert any(isinstance(i, TimelineSpan) and i.utility for i in lanes.main.content)
+
+
+def test_off_axis_auditor_calls_are_no_second_audit():
+    """An auditor-role call under the scorers phase, inside a tool span or
+    in no span stays off the axis instead of reading as another audit."""
+    t = embedded_audit(auditor_scaffold(target_tools=True))
+    graded = model_turn("grade", span_id="scorers")
+    loose = model_turn("loose")
+    tooled = model_turn("in a tool", span_id="tool-1")
+    graded.role = loose.role = tooled.role = "auditor"
+    end = next(
+        i for i, e in enumerate(t.events) if e.event == "span_end" and e.id == "scorers"
+    )
+    t.events.insert(end, graded)
+    _after_first_auditor_turn(
+        t,
+        SpanBeginEvent(id="tool-1", parent_id="auditor", type="tool", name="tool"),
+        tooled,
+        SpanEndEvent(id="tool-1"),
+        loose,
+    )
+    lanes = Lanes(t)
+    assert lanes.main.id == "auditor"
+    assert len(list(lanes.turns())) == 3
+
+
+def test_independent_audits_in_one_transcript_are_rejected():
+    """Two unrelated auditor spans cannot share one turn axis."""
+    t = embedded_audit(auditor_scaffold(target_tools=True))
+    other = model_turn("another audit", span_id="other-auditor")
+    other.role = "auditor"
+    t.events += [
+        SpanBeginEvent(id="other-auditor", name="other auditor", type="auditor"),
+        other,
+        SpanEndEvent(id="other-auditor"),
+    ]
+    with pytest.raises(ValueError, match="2 auditor spans"):
+        Lanes(t)
+
+
+def _after_first_auditor_turn(transcript, *events):
+    """Insert events right after the auditor's first turn."""
+    index = next(
+        i
+        for i, e in enumerate(transcript.events)
+        if e.event == "model" and getattr(e, "role", None) == "auditor"
+    )
+    transcript.events[index + 1 : index + 1] = list(events)

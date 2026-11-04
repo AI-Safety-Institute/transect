@@ -14,6 +14,8 @@ from inspect_ai.event import ModelEvent, TimelineEvent, TimelineSpan, timeline_b
 from inspect_ai.model import ChatMessageAssistant, ContentReasoning
 from inspect_ai.tool import ToolCall
 
+from transect.petri import is_petri
+
 # OpenClaw spawn-prompt scaffold markers
 _OPENCLAW_SPAWN_CONTEXT_PREFIX = "[subagent context]"
 _OPENCLAW_SPAWN_TASK_MARKER = "[subagent task]"
@@ -26,6 +28,10 @@ span of another model role (`Lanes`)."""
 # Inspect's init and scoring phase spans: a model call under them is off
 # the axis and in no lane
 _PHASE_SPAN_TYPES = frozenset({"init", "scorers", "scorer"})
+
+# Spans whose model calls never drive an audit: the phase spans above and
+# a tool span (a tool that calls a model is a helper call)
+_OFF_AXIS_SPAN_TYPES = _PHASE_SPAN_TYPES | {"tool"}
 
 
 @dataclass
@@ -230,6 +236,16 @@ def main_span(transcript: Any) -> TimelineSpan:
     not the lane tree over every call this transcript recorded, and
     only some scanners receive them.
 
+    On a Petri audit (`transect.petri.is_petri`) the auditor owns the
+    axis. That span is kept whenever the auditor already drives it, the
+    plain inspect_petri shape; when another role's turn opens it (an
+    audit embedded in a seed-design solver, whose writer calls the model
+    first) or it names no single orchestrator, the main lane narrows to
+    the auditor's own span (`_auditor_span`): the built span when the
+    timeline kept it, otherwise the auditor's events and child spans
+    projected out of the span the timeline flattened them into, so its
+    utility helpers and sub-agents stay wrapped as on the plain shape.
+
     Args:
         transcript: The transcript whose timeline is resolved.
 
@@ -241,14 +257,33 @@ def main_span(transcript: Any) -> TimelineSpan:
     zero turns, the honest reading of a source that recorded no calls.
 
     Raises:
-        ValueError: When the transcript has events but no model turn
-            under a single agent span - a sample that errored before its
-            first call, two or more top-level agents, or model calls only
-            inside utility spans. There is then no orchestrator lane to
-            number; the error is recorded per transcript and shown in
-            the scan status section.
+        ValueError: When the timeline has no single orchestrator lane:
+            no model turn at all under the main span but events exist,
+            two or more top-level agents, or model calls only inside
+            utility spans; and on a Petri audit when unrelated spans
+            each hold auditor turns (`_petri_auditor_id`), independent
+            audits that raise rather than combine. There is then no
+            orchestrator lane to number; the error is recorded per
+            transcript and shown in the scan status section.
     """
-    span = timeline_build(transcript.events).root
+    root = timeline_build(transcript.events).root
+    auditor_id = _petri_auditor_id(transcript)
+    if auditor_id is None:
+        return _depth_one_span(root, transcript.events)
+    try:
+        span: TimelineSpan | None = _depth_one_span(root, transcript.events)
+    except ValueError:
+        span = None
+    if span is not None and _span_axis(span) == "auditor":
+        return span
+    return _auditor_span(root, auditor_id, transcript.events)
+
+
+def _depth_one_span(root: TimelineSpan, events: list[Any]) -> TimelineSpan:
+    """The span at depth 1 of a built timeline (`main_span`): descend
+    through a single non-utility agent child until a span holds a
+    direct model turn."""
+    span = root
     while True:
         if any(
             isinstance(item, TimelineEvent) and is_model_turn(item.event)
@@ -267,7 +302,7 @@ def main_span(transcript: Any) -> TimelineSpan:
             span = children[0]
             continue
         if not children:
-            if not transcript.events:
+            if not events:
                 return span  # no events at all: an empty lane
             raise ValueError(
                 f"transcript has no model turns under its main span {span.name!r}; "
@@ -550,3 +585,135 @@ def _ancestor_ids(spans: dict[str, Any], span_id: str) -> set[str]:
     """The ids of a span's ancestors in the recorded span tree."""
     parent = getattr(spans.get(span_id), "parent_id", None)
     return {span.id for span in _lineage(spans, parent)}
+
+
+def _petri_auditor_id(transcript: Any) -> str | None:
+    """The span driving a Petri audit: the outermost span holding the
+    auditor's model turns, read from the events' own span ids. Calls
+    under Inspect's phase spans or a tool span and span-less calls are
+    off the axis and do not count, and a span nested in another auditor
+    span (a helper the auditor runs) belongs to that audit. None when
+    the run is not a Petri audit or the auditor made no such call.
+
+    Raises:
+        ValueError: When two or more unrelated spans hold auditor
+            turns: independent audits that no single axis can number.
+    """
+    metadata = getattr(transcript, "metadata", None) or {}
+    if not is_petri(metadata.get("model_roles")):
+        return None
+    by_id = {e.id: e for e in transcript.events if e.event == "span_begin"}
+    ids: list[str] = []
+    for event in transcript.events:
+        if (
+            not is_model_turn(event)
+            or getattr(event, "role", None) != "auditor"
+            or event.span_id is None
+            or event.span_id in ids
+            or any(
+                getattr(span, "type", None) in _OFF_AXIS_SPAN_TYPES
+                for span in _lineage(by_id, event.span_id)
+            )
+        ):
+            continue
+        ids.append(event.span_id)
+    outer = [i for i in ids if not (_ancestor_ids(by_id, i) & set(ids))]
+    if len(outer) > 1:
+        names = ", ".join(repr(getattr(by_id.get(i), "name", i)) for i in outer)
+        raise ValueError(
+            f"Petri transcript holds {len(outer)} auditor spans ({names}) and no "
+            "single audit to number; select one audit before scanning rather "
+            "than merging independent conversations"
+        )
+    return outer[0] if outer else None
+
+
+def _span_axis(span: TimelineSpan) -> str | None:
+    """The axis role of a span's direct model turns (`axis_role`); None
+    when they name no single orchestrator."""
+    models = [
+        item.event
+        for item in span.content
+        if isinstance(item, TimelineEvent) and is_model_turn(item.event)
+    ]
+    try:
+        return axis_role(models)
+    except ValueError:
+        return None
+
+
+def _auditor_span(
+    root: TimelineSpan, auditor_id: str, events: list[Any]
+) -> TimelineSpan:
+    """The auditor's own span as the main lane (`main_span`): the built
+    span when the timeline kept it (an agent-type auditor), otherwise a
+    span of the same identity whose content is projected out of the span
+    the timeline flattened the auditor's into: the events and child
+    spans (utility wrappers, sub-agents) the recorded span tree places
+    under the auditor, in timeline order."""
+    found = _find_span(root, auditor_id)
+    if found is not None:
+        return found
+    by_id = {e.id: e for e in events if e.event == "span_begin"}
+    begin = by_id.get(auditor_id)
+    if begin is None:
+        raise ValueError(
+            f"Petri auditor span {auditor_id!r} has no recorded span_begin"
+        )
+    holder = _holder_of(root, auditor_id)
+    if holder is None:
+        raise ValueError(
+            f"Petri auditor span {begin.name!r} holds no model turn in the "
+            "built timeline"
+        )
+
+    def under(span_id: str | None) -> bool:
+        return any(span.id == auditor_id for span in _lineage(by_id, span_id))
+
+    content: list[Any] = []
+    for item in holder.content:
+        if isinstance(item, TimelineEvent):
+            if under(getattr(item.event, "span_id", None)):
+                content.append(item)
+        elif under(getattr(_first_event(item), "span_id", None)):
+            content.append(item)
+    return TimelineSpan(
+        id=auditor_id, name=begin.name, span_type=begin.type, content=content
+    )
+
+
+def _find_span(span: TimelineSpan, span_id: str) -> TimelineSpan | None:
+    """The span with ``span_id`` in a built tree, branches included."""
+    if span.id == span_id:
+        return span
+    children = [item for item in span.content if isinstance(item, TimelineSpan)]
+    for child in [*children, *span.branches]:
+        found = _find_span(child, span_id)
+        if found is not None:
+            return found
+    return None
+
+
+def _holder_of(span: TimelineSpan, span_id: str) -> TimelineSpan | None:
+    """The built span directly holding an event the recorded span
+    ``span_id`` owns: where the timeline flattened that span into."""
+    for item in span.content:
+        if isinstance(item, TimelineEvent) and item.event.span_id == span_id:
+            return span
+    for item in span.content:
+        if isinstance(item, TimelineSpan):
+            found = _holder_of(item, span_id)
+            if found is not None:
+                return found
+    return None
+
+
+def _first_event(span: TimelineSpan) -> Any | None:
+    """The first event anywhere under a built span, in timeline order."""
+    for item in span.content:
+        if isinstance(item, TimelineEvent):
+            return item.event
+        found = _first_event(item)
+        if found is not None:
+            return found
+    return None

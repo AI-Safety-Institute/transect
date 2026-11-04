@@ -299,7 +299,7 @@ def _target_replies(lanes: Lanes, start: int, end: int) -> list[str]:
     a text-less reply; an empty reply is left out."""
     replies: list[str] = []
     for event in lanes.events[start + 1 : end]:
-        if not is_model_turn(event):
+        if not is_model_turn(event) or getattr(event, "role", None) != "target":
             continue
         lane = lanes.lane_of(event)
         if lane is None or lanes.lane_kind(lane.id) != "role":
