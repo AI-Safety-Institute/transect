@@ -4,6 +4,8 @@ its phase cards host."""
 
 import asyncio
 import dataclasses
+from collections import Counter
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -19,8 +21,10 @@ from helpers import (
     segment_range,
 )
 from inspect_ai.event import SpanBeginEvent, SpanEndEvent, TimelineSpan
+from inspect_ai.log import write_eval_log
 from inspect_ai.model import ChatMessageSystem, get_model
 from inspect_scout import TranscriptContent, transcripts_from
+from nested_petri import nested_audit_log
 
 from transect.petri import is_petri
 from transect.petri.conversation import target_conversation
@@ -32,12 +36,15 @@ from transect.scanners.digests import turn_digests
 from transect.scanners.helpers import Lanes
 
 PETRI_LOGS = "examples/petri_logs"
+READ_ALL = TranscriptContent(
+    messages="all",
+    events=["model", "span_begin", "span_end", "tool", "anchor", "branch"],
+    timeline=True,
+)
 NO_PHASES = pd.DataFrame({"turn": [], "phase_index": [], "phase": []})
 
 
 def _require_demo_log():
-    from pathlib import Path
-
     if not Path(PETRI_LOGS, "petri_demo.eval").exists():
         pytest.fail(
             "demo Petri log missing - run: python tests/fixtures/generate_petri_eval.py"
@@ -50,15 +57,10 @@ def petri_transcripts():
     _require_demo_log()
 
     async def read():
-        content = TranscriptContent(
-            messages="all",
-            events=["model", "span_begin", "span_end", "tool", "anchor", "branch"],
-            timeline=True,
-        )
         async with transcripts_from(PETRI_LOGS).reader() as reader:
             infos = [info async for info in reader.index()]
             return {
-                info.task_repeat: await reader.read(info, content) for info in infos
+                info.task_repeat: await reader.read(info, READ_ALL) for info in infos
             }
 
     return asyncio.run(read())
@@ -121,6 +123,39 @@ def browser():
             pytest.skip(f"browser unavailable: {error}")
         yield browser
         browser.close()
+
+
+@pytest.fixture(scope="module")
+def nested_logs(tmp_path_factory):
+    """The nested audit, built from the demo log, as a log directory Scout
+    can discover."""
+    _require_demo_log()
+    logs = tmp_path_factory.mktemp("nested_petri_logs")
+    write_eval_log(nested_audit_log(), str(logs / "nested_audit.eval"))
+    return str(logs)
+
+
+@pytest.fixture(scope="module")
+def nested_transcript(nested_logs):
+    """The nested audit's one transcript as the report reads it."""
+
+    async def read():
+        async with transcripts_from(nested_logs).reader() as reader:
+            infos = [info async for info in reader.index()]
+            assert len(infos) == 1
+            return await reader.read(infos[0], READ_ALL)
+
+    return asyncio.run(read())
+
+
+@pytest.fixture(scope="module")
+def nested_results(nested_logs, tmp_path_factory):
+    """One $0 run over the nested audit."""
+    from transect.api import _run
+    from transect.spec import Spec
+
+    scans = tmp_path_factory.mktemp("nested_petri_scans")
+    return _run(logs=nested_logs, spec=Spec(), epochs="all", scans_dir=str(scans))
 
 
 @pytest.mark.parametrize(
@@ -811,6 +846,93 @@ def test_independent_audits_in_one_transcript_are_rejected():
     ]
     with pytest.raises(ValueError, match="2 auditor spans"):
         Lanes(t)
+
+
+def test_the_nested_fixture_puts_the_auditor_on_the_axis(nested_transcript):
+    """The nested log, an outer seed writer whose tool call runs the demo
+    audit and then a classifier's feedback, narrows the main lane to the
+    auditor's own span: the writer's and the classifier's calls are no
+    turns and no target replies, and each of their spans is a role lane
+    beside the two target trajectories."""
+    events = nested_transcript.events
+    assert Counter(e.role for e in events if e.event == "model") == {
+        "contestant": 2,
+        "auditor": 6,
+        "target": 4,
+        "classifier": 1,
+    }
+    lanes = Lanes(nested_transcript)
+    assert lanes.axis_role == "auditor"
+    assert lanes.main.span_type == "auditor"
+    assert len(list(lanes.turns())) == 6
+    digests = turn_digests(nested_transcript)
+    assert [len(d.target_replies) for d in digests] == [0, 1, 1, 1, 1, 0]
+    assert not any(
+        "challenged the plan" in r for d in digests for r in d.target_replies
+    )
+    first = {span: event.role for span, event in lanes.first_models.items()}
+    assert sorted(first.values()) == ["classifier", "contestant", "target", "target"]
+    assert first["seed-writer"] == "contestant"
+    assert first["feedback"] == "classifier"
+
+
+def test_the_nested_fixture_keeps_the_demo_audits_target_tree(
+    nested_transcript, petri_transcripts
+):
+    """The nested log wraps the demo audit's first epoch, so its target
+    tree is the demo's; only the surviving path is gone, because the final
+    message list belongs to the outer writer, and that absence is stated."""
+    expected = target_conversation(petri_transcripts[1])
+    actual = target_conversation(nested_transcript)
+    assert expected is not None and actual is not None
+    assert len(actual.calls) == len(expected.calls) == 4
+    assert [call.auditor_turn for call in actual.calls] == [1, 2, 3, 4]
+    assert actual.branches == expected.branches
+    assert sum(b.rollback_turn is not None for b in actual.branches) == 1
+    assert actual.auditor_turns == expected.auditor_turns
+    assert expected.surviving is not None
+    assert actual.surviving is None
+    assert actual.note == "the final conversation holds no target reply"
+
+
+def test_a_structural_run_over_the_nested_fixture_reports_every_role(
+    nested_results,
+):
+    """A $0 run over the nested log detects the Petri family, numbers the
+    auditor's turns, lists the writer's, the classifier's and the target's
+    spans as role lanes, and the report names them all and says why no
+    surviving path is drawn."""
+    assert nested_results.transcript_info.eval_family.tolist() == ["petri"]
+    timeline = nested_results.token_timeline
+    assert timeline.role.value_counts().to_dict() == {
+        "auditor": 6,
+        "target": 4,
+        "contestant": 2,
+        "classifier": 1,
+    }
+    assert sorted(timeline.turn.dropna().unique()) == [0, 1, 2, 3, 4, 5]
+    lanes = nested_results.subagents
+    assert lanes.lane_kind.tolist() == ["role"] * 4
+    assert {"seed-writer", "feedback"} < set(lanes.agent_span_id)
+    assert lanes[["spawn_turn", "end_turn"]].values.tolist() == [
+        [0, 5],
+        [0, 3],
+        [3, 5],
+        [5, 5],
+    ]
+    document = render_report(nested_results)
+    assert document.count("<h3>Target conversation</h3>") == 1
+    assert "4 target calls over 2 trajectories, with 1 rollback point" in document
+    assert (
+        "No surviving path is shown: the final conversation holds no target reply"
+        in document
+    )
+    assert (
+        "4 lane(s) carry the conversations of model role "
+        "classifier and contestant and target" in document
+    )
+    assert "(auditor) turns" in document
+    assert "the auditor's token stream" in document
 
 
 def _after_first_auditor_turn(transcript, *events):
