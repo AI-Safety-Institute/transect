@@ -1,7 +1,7 @@
 {#- The target side of a Petri transcript (report/petri.py). `intro`
     states what the section holds and what is absent; `diagram` draws the
     stored branch tree as rows of blocks and phase bands, each linking to
-    a card; `exchanges` lists auditor turns with their exchange cards and
+    a card (connectors first, so circles sit on top of them); `exchanges` lists auditor turns with their exchange cards and
     rollback markers (inside a phase card, or in the section when no
     phase hosts them). Message text renders as `.msg` blocks labelled by
     role, as the generic turn excerpts do. Call text is agent/user
@@ -18,8 +18,8 @@
 {% macro diagram(d) -%}
 <div class="petri-tree" data-unit="{{ d.unit }}"><p class="filter-bar petri-controls"><button type="button" onclick="_transectPetriZoom(this, 1 / 1.4)">Zoom out</button> <button type="button" onclick="_transectPetriZoom(this, 1.4)">Zoom in</button> <button type="button" onclick="_transectPetriZoom(this, 'fit')">Fit width</button> <button type="button" onclick="_transectPetriHeight(this)">Show full height</button></p><div class="petri-diagram"><svg width="{{ d.width }}" height="{{ d.height }}" viewBox="0 0 {{ d.width }} {{ d.height }}" role="group" aria-label="Target conversation trajectories">
 <text class="petri-axis" x="{{ d.left }}" y="12">Target conversation progress →</text>
+{%- for row in d.rows %}{% if row.parent_row is not none and not row.unresolved %}<path class="petri-connector" d="M {{ d.left + row.circle_x }} {{ d.top + row.parent_row * d.row_height }} V {{ d.top + loop.index0 * d.row_height }}"/>{% endif %}{% endfor %}
 {%- for row in d.rows %}{% set y = d.top + loop.index0 * d.row_height %}
-{%- if row.parent_row is not none and not row.unresolved %}<path class="petri-connector" d="M {{ d.left + row.circle_x }} {{ d.top + row.parent_row * d.row_height }} V {{ y }}"/>{% endif %}
 <text class="petri-row-label" x="4" y="{{ y + 4 }}">T{{ row.number }}</text>
 <line class="petri-track{% if row.unresolved %} petri-unresolved{% endif %}" x1="{{ d.left + row.x0 }}" y1="{{ y }}" x2="{{ d.left + row.x1 }}" y2="{{ y }}"/>
 {%- for s in row.segments %}<a href="{{ s.href }}"><title>phase {{ s.phase_index }} ({{ s.phase }}) · {{ s.n }} target call{{ "" if s.n == 1 else "s" }}</title><line class="petri-segment" x1="{{ d.left + s.x0 }}" y1="{{ y + 14 }}" x2="{{ d.left + s.x1 }}" y2="{{ y + 14 }}"{% if s.color %} style="stroke:{{ s.color }}"{% endif %}/><text class="petri-segment-label" x="{{ d.left + s.x0 }}" y="{{ y - 13 }}">P{{ s.phase_index }}</text></a>{% endfor %}

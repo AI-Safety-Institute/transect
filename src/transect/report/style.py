@@ -162,7 +162,7 @@ details.flag p {{ margin: 0.4rem 0 0; font-weight: 400;
 .petri-start {{ fill: var(--transect-color-muted); }}
 .petri-segment {{ stroke-width: 4; stroke-linecap: butt; }}
 .petri-segment-label {{ fill: var(--transect-color-muted); font-size: 0.62rem; }}
-.petri-call {{ fill: #8896a2; }}
+.petri-call {{ fill: var(--transect-color-link); }}  /* unjudged: neutral blue */
 .petri-discarded {{ fill: #d5dadf; }}
 .petri-call-label {{ fill: #fff; pointer-events: none; }}
 .petri-discarded-label {{ fill: var(--transect-color-muted); }}
