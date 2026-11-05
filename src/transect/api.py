@@ -54,11 +54,10 @@ from transect.layers import (
     validate_layers,
 )
 from transect.provenance import (
-    build_run_provenance,
+    build_run_metadata,
     custom_layer_identities,
     input_hashes,
-    model_identity,
-    provenance_from_scanner_params,
+    provenance_from_scan,
 )
 from transect.report import render_report
 from transect.report.blocks import validate_section
@@ -70,7 +69,6 @@ from transect.scanners.base import (
     human_intervention,
     token_timeline,
 )
-from transect.scanners.cohort import cohort_members, resolve_verify
 from transect.scanners.digests import DigestSettings, resolve_digest
 from transect.scanners.phases import decision_phases
 from transect.scanners.subagents import subagent_classification
@@ -364,8 +362,6 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
     # judge scanners are opt-in: absent from the scan -> empty frames
     raw_phases = results.scanners.get("decision_phases", pd.DataFrame())
     raw_subagents = results.scanners.get("subagent_classification", pd.DataFrame())
-    setup_scanner = results.spec.scanners.get("eval_setup")
-    provenance = provenance_from_scanner_params(getattr(setup_scanner, "params", None))
     # the phases frame reads the spans' spawn turns, so sub-agents first
     subagents = subagents_df(
         raw_subagents,
@@ -378,7 +374,7 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
         scan_location=scan_location,
         transcripts_location=_transcripts_location(transcripts),
         scan_status=build_scan_status(results, mounted_scanners=claimed),
-        provenance=provenance,
+        provenance=provenance_from_scan(results.spec),
         token_timeline=token_timeline,
         flushes=flushes_df(results.scanners["context_flush"], token_timeline),
         interventions=interventions_df(results.scanners["human_intervention"]),
@@ -608,13 +604,6 @@ def _run(
     # its factory runs (and constructs judge models)
     validate_layers(list(extra_layers or []), builtin_frame_names())
     custom_layers = custom_layer_identities(list(extra_layers or []))
-    _validate_judge_setup(
-        spec,
-        judge_models,
-        k_rolls=k_rolls,
-        verify=verify,
-        verify_sample=verify_sample,
-    )
     digest = resolve_digest(digest)
     extra_layers = resolve_scanner_factories(
         list(extra_layers or []),
@@ -628,6 +617,19 @@ def _run(
         spec,
     )
     jsonl = _openclaw_files(logs)
+    scanners = _scanners(
+        spec,
+        judge_models,
+        k_rolls=k_rolls,
+        chunk=chunk,
+        digest=digest,
+        verify=verify,
+        verifier_model=verifier_model,
+        verify_sample=verify_sample,
+        verify_chunk=verify_chunk,
+        narrate=narrate,
+        subagent_activity=subagent_activity,
+    )
     if jsonl:
         # Keep new snapshots outside an existing database's recursive search root.
         logs = os.path.join(scans_dir, "transcript_snapshots", uuid4().hex)
@@ -644,48 +646,6 @@ def _run(
         )
         selected = set(selection.transcript_ids)
         infos = [info for info in infos if info.transcript_id in selected]
-    provenance = build_run_provenance(
-        spec,
-        spec_source=spec_source,
-        spec_bytes=spec_bytes,
-        settings={
-            "sample": sample,
-            "epochs": epochs,
-            "judge_models": model_identity(judge_models),
-            "k_rolls": k_rolls,
-            "chunk": chunk,
-            "digest": digest.model_dump(mode="json"),
-            "verify": verify,
-            "verifier_model": model_identity(verifier_model),
-            "verify_sample": verify_sample,
-            "verify_chunk": verify_chunk,
-            "narrate": narrate,
-            "subagent_activity": subagent_activity,
-            "max_processes": max_processes,
-            "max_transcripts": max_transcripts,
-            "max_connections": max_connections,
-            "max_retries": max_retries,
-            "timeout": timeout,
-            "results_buffer": results_buffer,
-            "fail_on_error": fail_on_error,
-        },
-        inputs=input_hashes(infos),
-        custom_layers=custom_layers,
-    )
-    scanners = _scanners(
-        spec,
-        judge_models,
-        k_rolls=k_rolls,
-        chunk=chunk,
-        digest=digest,
-        verify=verify,
-        verifier_model=verifier_model,
-        verify_sample=verify_sample,
-        verify_chunk=verify_chunk,
-        narrate=narrate,
-        subagent_activity=subagent_activity,
-        provenance=provenance.model_dump(mode="json"),
-    )
     # no scan-level reuse: every call performs a fresh scan (judge
     # calls are deduplicated by inspect-ai's generate cache)
     scanners += [
@@ -702,30 +662,19 @@ def _run(
         ),
         results_buffer=results_buffer,
         fail_on_error=fail_on_error,
+        metadata={
+            "transect": build_run_metadata(
+                spec,
+                spec_source=spec_source,
+                spec_bytes=spec_bytes,
+                sample=sample,
+                epochs=epochs,
+                inputs=input_hashes(infos),
+                custom_layers=custom_layers,
+            ).model_dump(mode="json"),
+        },
     )
     return load(status.location, extra_layers=extra_layers)
-
-
-def _validate_judge_setup(
-    spec: Spec,
-    judge_models: str | Model | list[str | Model] | None,
-    *,
-    k_rolls: int,
-    verify: bool | None,
-    verify_sample: float | None,
-) -> None:
-    """Validate judge choices before reading logs or constructing scanners."""
-    if judge_models is None:
-        return
-    if isinstance(judge_models, list) and not judge_models:
-        raise ValueError(
-            "judge_models is an empty list - pass at least one "
-            "judge model (or None for the judge-less scanner set)"
-        )
-    if not spec.phases and not spec.subagent_labels:
-        return
-    members = cohort_members(judge_models, k_rolls)
-    resolve_verify(len(members), verify, verify_sample)
 
 
 def _scanners(
@@ -740,7 +689,6 @@ def _scanners(
     verify_chunk: int = 8,
     narrate: bool = True,
     subagent_activity: bool = False,
-    provenance: dict[str, Any] | None = None,
 ) -> list:
     """The scanner set for a run: structural always; judge scanners when a
     model is given - decision_phases additionally needs a phase vocab.
@@ -751,7 +699,7 @@ def _scanners(
         token_timeline(),
         context_flush(),
         human_intervention(),
-        eval_setup(provenance=provenance),
+        eval_setup(),
     ]
     if judge_models is not None:
         if isinstance(judge_models, list) and not judge_models:

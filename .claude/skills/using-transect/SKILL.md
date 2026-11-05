@@ -249,14 +249,9 @@ reloads, pass the saved `results.scan_location` rather than the parent directory
 a parent selects its newest scan by modification time. Partial loads still
 require readable structural tables and valid mounted custom-frame contracts.
 
-`results.provenance` records the exact validated family Spec, its canonical
-`spec_id` and source-file hash, effective judge and scan settings, input-file
-hashes, package versions and custom-scanner source identity. `load()` restores
-the same record without judge calls. Compare `spec_id`, settings and inputs
-before treating two scans as the same analysis; provenance identifies the
-configuration but does not establish rubric validity. Scans created before this
-record existed return `provenance=None`. Expert evidence and validation status
-remain outside Transect.
+`results.provenance` combines Transect's added identities with Scout's stored
+header and per-scanner parameters. See `help(transect.RunProvenance)` and
+the README's `load()` discussion.
 
 For an independently fresh response-cache run, point `INSPECT_CACHE_DIR` at
 a new empty directory before starting the process. Preserve existing caches

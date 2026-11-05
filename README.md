@@ -232,32 +232,14 @@ viewer.
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
 
-### Provenance and replay
-
-Every new scan records `results.provenance`. It identifies the exact
-evaluation-family Spec and the effective settings used to interpret the
-transcript:
-
-```python
-provenance = results.provenance
-provenance.spec_id        # sha256:<canonical Spec hash>
-provenance.spec           # the validated vocabulary and context
-provenance.settings       # judges, regime, verifier, digest and scan knobs
-provenance.inputs         # resolved input paths and their SHA-256 hashes
-provenance.custom_layers  # custom scanners and source-file hashes
-```
-
-The canonical Spec identity changes when a label, description, context or
-other Spec content changes. A changed identity means a new behavioural
-analysis, not a replay of the old one. `load()` restores the same record
-without judge calls. Scans created before provenance support load with
-`results.provenance is None`; they are not retroactively reconstructed.
-The scan store now retains the full family Spec and resolved input paths as
-part of this record, so review the store before sharing it.
-
-Provenance covers the analysis configuration, not correctness. Expert
-sources, validation status and the separation of development from held-out
-assessment transcripts remain research records owned by the evaluator.
+`results.provenance` combines Transect's added run identities with Scout's
+recorded header and per-scanner parameters (`provenance.scan`). Scout metadata
+stores the installed Transect version, canonical `spec_id`, Spec source path
+and bytes hash, `sample` / `epochs` arguments, eval-log file hashes and custom
+layer source identities. OpenClaw scans retain their snapshot directory in
+Scout's transcript location without hashing its database files. `load()` reads
+this view without source files or judge calls; scans without the added metadata
+return `provenance=None`.
 
 ## Reading the report
 

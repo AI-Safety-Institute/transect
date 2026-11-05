@@ -68,8 +68,8 @@ class TransectResults:
     recorded errors); remains run-wide when rendering a selected epoch."""
 
     provenance: RunProvenance | None = field(default=None, kw_only=True)
-    """The exact Spec and effective settings recorded by a new scan.
-    None for scans created before provenance support."""
+    """Read-time view of Transect metadata and Scout's scan specification.
+    None when the scan has no Transect provenance metadata."""
 
     layer_frames: dict[str, pd.DataFrame] = field(default_factory=dict)
     """User layers' pandas frames, keyed by layer name."""

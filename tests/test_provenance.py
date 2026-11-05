@@ -1,49 +1,123 @@
-"""Run provenance is stable across Spec spelling and survives reload."""
+"""Added run identities survive reload without duplicating Scout's facts."""
 
+import json
+import shutil
 from hashlib import sha256
 from pathlib import Path
 
+import pytest
+from conftest import turn_counter
 from helpers import demo_judge
+from inspect_scout import ScanSpec
 
-from transect import Layer, Spec, __version__, load, transect
-from transect.provenance import (
-    canonical_spec_json,
-    custom_layer_identities,
-    model_identity,
-)
+import transect.provenance as provenance_module
+from transect import Layer, Spec, __version__, load, transect, turns_frame
+from transect.provenance import canonical_spec_json
+from transect.spec import load_spec
 
 
-def test_new_scan_records_and_reloads_spec_and_run_provenance(demo_log, tmp_path):
-    """The exact Spec source, its identity, effective settings and input
-    hash are available after the scan and after a judge-free reload."""
-    spec_path = demo_log.parents[2] / "examples" / "spec.yaml"
+@pytest.mark.parametrize("source", ["eval_log", "openclaw"])
+def test_scan_and_reload_provenance(
+    source, demo_log, openclaw_log, tmp_path, monkeypatch
+):
+    """Novel identities live in metadata; reload reads stored facts without inputs."""
+    original = demo_log if source == "eval_log" else openclaw_log
+    log = tmp_path / original.name
+    shutil.copyfile(original, log)
+    spec_path = tmp_path / "spec.yaml"
+    shutil.copyfile(demo_log.parents[2] / "examples" / "spec.yaml", spec_path)
+    spec = load_spec(spec_path)
+    hashed_paths = []
+    file_sha256 = provenance_module.file_sha256
+
+    def record_hash(path):
+        hashed_paths.append(path)
+        return file_sha256(path)
+
+    monkeypatch.setattr(provenance_module, "file_sha256", record_hash)
+    layers = [Layer(name="custom_turns", scanner=turn_counter, frame=turns_frame)]
+    sample = "house-price" if source == "eval_log" else None
     results = transect(
-        logs=str(demo_log),
-        spec=str(spec_path),
+        logs=str(log),
+        spec=spec_path,
+        sample=sample,
+        epochs="all",
+        judge_models=demo_judge() if source == "eval_log" else None,
+        narrate=False,
         scans_dir=str(tmp_path / "scans"),
         viewer=False,
         open_report=False,
+        extra_layers=layers,
     )
 
     provenance = results.provenance
     assert provenance is not None
-    assert provenance.spec_source == str(spec_path.resolve())
-    assert provenance.spec_text == spec_path.read_text()
-    assert provenance.spec_source_sha256 == sha256(spec_path.read_bytes()).hexdigest()
-    assert provenance.spec_id == f"sha256:{provenance.spec_sha256}"
-    assert provenance.settings["judge_models"] is None
-    assert provenance.packages["transect"] == __version__
-    assert provenance.inputs == {
-        str(demo_log.resolve()): sha256(demo_log.read_bytes()).hexdigest()
+    stored = json.loads((Path(results.scan_location) / "_scan.json").read_text())
+    assert provenance.scan == ScanSpec.model_validate(stored)
+    assert stored["metadata"] == {
+        "transect": provenance.model_dump(mode="json", exclude={"scan"})
     }
+    assert set(stored["metadata"]["transect"]) == {
+        "transect_version",
+        "spec_id",
+        "spec_source",
+        "spec_source_sha256",
+        "sample",
+        "epochs",
+        "inputs",
+        "custom_layers",
+    }
+    assert stored["scanners"]["eval_setup"]["params"] == {}
+    assert all("provenance" not in s["params"] for s in stored["scanners"].values())
+    assert provenance.spec_source == str(spec_path.resolve())
+    assert provenance.spec_source_sha256 == sha256(spec_path.read_bytes()).hexdigest()
+    assert (
+        provenance.spec_id
+        == f"sha256:{sha256(canonical_spec_json(spec).encode()).hexdigest()}"
+    )
+    assert provenance.transect_version == __version__
+    assert (provenance.sample, provenance.epochs) == (sample, "all")
+    identity = provenance.custom_layers[0]
+    assert set(identity) == {"name", "scanner", "scanner_source", "frame_source"}
+    assert Path(identity["scanner_source"]["path"]).name == "conftest.py"
+    for key in ("scanner_source", "frame_source"):
+        path = Path(identity[key]["path"])
+        assert identity[key]["sha256"] == sha256(path.read_bytes()).hexdigest()
+    allowed_hashes = {
+        Path(identity[key]["path"]) for key in ("scanner_source", "frame_source")
+    }
+    if source == "eval_log":
+        allowed_hashes.add(log.resolve())
+        assert provenance.inputs == {
+            str(log.resolve()): sha256(log.read_bytes()).hexdigest()
+        }
+        for key in ("decision_phases", "subagent_classification"):
+            params = provenance.scan.scanners[key].params
+            assert params == stored["scanners"][key]["params"]
+            assert params["judge_models"]["model"] == "mockllm/model"
+    else:
+        assert provenance.inputs == {}
+        assert provenance.scan.transcripts is not None
+        snapshot = Path(provenance.scan.transcripts.location)
+        assert snapshot.is_dir()
+        assert str(snapshot) == results.transcripts_location
+        assert "transcript_snapshots" in snapshot.parts
+    assert set(hashed_paths) == allowed_hashes
 
-    loaded = load(results.scan_location)
-    assert loaded.provenance == provenance
+    def no_hash(path):
+        pytest.fail(f"load() tried to hash {path}")
+
+    monkeypatch.setattr(provenance_module, "file_sha256", no_hash)
+    log.unlink()
+    spec_path.unlink()
+    assert load(results.scan_location, extra_layers=layers).provenance == provenance
+    assert (
+        load(str(Path(__file__).parent / "fixtures" / "demo_scan")).provenance is None
+    )
 
 
 def test_spec_identity_tracks_content_not_mapping_order():
-    """The canonical identity is stable across equivalent mappings and
-    changes when a behavioural definition changes."""
+    """Equivalent mappings share an identity; changed behavioural definitions differ."""
     first = Spec.model_validate(
         {
             "phases": [{"label": "planning", "description": "Choose a method."}],
@@ -65,30 +139,3 @@ def test_spec_identity_tracks_content_not_mapping_order():
 
     assert canonical_spec_json(first) == canonical_spec_json(reordered)
     assert canonical_spec_json(first) != canonical_spec_json(changed)
-
-
-def test_judge_model_identity_records_constructor_settings():
-    """A Model object records its resolved name, config, endpoint and args."""
-    identity = model_identity(demo_judge())
-    assert identity["model"] == "mockllm/model"
-    assert identity["config"] == {}
-    assert identity["model_args"] == {"custom_outputs": None}
-
-
-def test_custom_layer_identity_records_frame_source():
-    """A data-only custom layer still records the code that mounted it."""
-
-    def mount_view(raw):
-        return raw
-
-    identity = custom_layer_identities([Layer(name="custom_view", frame=mount_view)])[0]
-    assert identity["scanner"] is None
-    assert identity["frame_source"]["path"].endswith("test_provenance.py")
-    assert len(identity["frame_source"]["sha256"]) == 64
-
-
-def test_a_scan_created_before_provenance_still_loads():
-    """Legacy stores remain readable and state that provenance was not
-    recorded."""
-    fixture = Path(__file__).parent / "fixtures" / "demo_scan"
-    assert load(str(fixture)).provenance is None
