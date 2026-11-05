@@ -323,6 +323,8 @@ def load(
             even when it no longer exists. The override does not rewrite
             the scan or verify source content; supply the same transcripts
             with their original identities.
+            An empty override raises ValueError; a missing path raises
+            FileNotFoundError.
     """
     scan_location = str(_resolve_scan(scans_dir))
     claimed = {

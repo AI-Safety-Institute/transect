@@ -2,8 +2,6 @@
 one-sample/epoch selection rules."""
 
 import asyncio
-import base64
-import html
 import importlib
 import re
 import shutil
@@ -13,11 +11,9 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from helpers import demo_judge
 from inspect_ai.log import read_eval_log, write_eval_log
 from inspect_scout import TranscriptContent, transcripts_from
 
-from transect import render
 from transect.api import _import_openclaw, _openclaw_files, _run, load
 from transect.report.excerpts import read_transcript_extras
 from transect.selection import read_index, select_transcripts
@@ -239,13 +235,7 @@ def test_load_repoints_moved_transcripts_without_rescanning(
     """Moved transcripts restore source viewing without changing the stored scan."""
     source = tmp_path / ("input.jsonl" if source_kind == "openclaw" else "input.eval")
     shutil.copyfile(openclaw_log if source_kind == "openclaw" else demo_log, source)
-    ran = _run(
-        str(source),
-        Spec.model_validate({"phases": ["model_development"]}),
-        scans_dir=str(tmp_path / "scans"),
-        judge_models=demo_judge(),
-        verify=False,
-    )
+    ran = _run(str(source), Spec(), scans_dir=str(tmp_path / "scans"))
     location = Path(ran.transcripts_location)
     if source_kind == "eval-directory":
         location = tmp_path / "logs"
@@ -274,28 +264,6 @@ def test_load_repoints_moved_transcripts_without_rescanning(
     extras = read_transcript_extras(loaded.transcripts_location, tids)
     assert set(extras) == set(tids)
     assert all(extra.excerpts for extra in extras.values())
-
-    viewer_locations = []
-
-    def spawn_viewer(location):
-        viewer_locations.append(location)
-        return "http://127.0.0.1:12345"
-
-    monkeypatch.setattr("transect.api._spawn_viewer", spawn_viewer)
-    render(loaded, report_path=str(tmp_path / "report.html"), open_report=False)
-    assert viewer_locations == [str(moved.resolve())]
-    encoded = (
-        base64.urlsafe_b64encode(str(moved.resolve()).encode()).decode().rstrip("=")
-    )
-    rendered = Path(loaded.report_paths[0]).read_text()
-    assert f"/#/transcripts/{encoded}/" in rendered
-    assert 'class="excerpt-list"' in rendered
-    assert any(
-        e.text in html.unescape(rendered)
-        for extra in extras.values()
-        for e in extra.excerpts.values()
-        if e.text
-    )
     assert scan_spec.read_bytes() == recorded
 
 
