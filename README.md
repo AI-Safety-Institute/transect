@@ -232,17 +232,6 @@ viewer.
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
 
-When a sample was scanned over several epochs (`epochs="all"` or an
-explicit list), `transect()` and `render()` write one report per epoch
-(`report_epoch2.html`, ...) plus `report_index.html`, listed first in
-`results.report_paths` and opened by default. The index links each
-epoch's report with its recorded scan status, pools each judged surface's
-reliability over the epochs (per recorded judge setup and vocabulary:
-ballots, mean unit agreement, pairwise agreement, α and AC1, verifier
-relabels and spot-check overturns; a single judge has no agreement to
-measure and says so), and
-repeats the run-wide scan status. A single epoch renders no index.
-
 ## Reading the report
 
 ![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)
