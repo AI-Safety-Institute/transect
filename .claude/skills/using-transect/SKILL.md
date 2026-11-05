@@ -249,6 +249,10 @@ reloads, pass the saved `results.scan_location` rather than the parent directory
 a parent selects its newest scan by modification time. Partial loads still
 require readable structural tables and valid mounted custom-frame contracts.
 
+`results.provenance` combines Transect's added identities with Scout's stored
+header and per-scanner parameters. See `help(transect.RunProvenance)` and
+the README's `load()` discussion.
+
 For an independently fresh response-cache run, point `INSPECT_CACHE_DIR` at
 a new empty directory before starting the process. Preserve existing caches
 and scans for comparison. The public `transect()` call has no `cache=False`

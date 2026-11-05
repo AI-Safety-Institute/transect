@@ -232,6 +232,15 @@ viewer.
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
 
+`results.provenance` combines Transect's added run identities with Scout's
+recorded header and per-scanner parameters (`provenance.scan`). Scout metadata
+stores the installed Transect version, canonical `spec_id`, Spec source path
+and bytes hash, `sample` / `epochs` arguments, eval-log file hashes and custom
+layer source identities. OpenClaw scans retain their snapshot directory in
+Scout's transcript location without hashing its database files. `load()` reads
+this view without source files or judge calls; scans without the added metadata
+return `provenance=None`.
+
 ## Reading the report
 
 ![The Transect report on a CRUX AI R&D run: 71-phase timeline with the per-turn agreement strip (hovered: member votes, agreement with its denominator, and label provenance), human interventions, and token telemetry](docs/images/transect_report.png)

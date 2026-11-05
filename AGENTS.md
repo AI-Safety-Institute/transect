@@ -39,6 +39,7 @@ store -> frames -> report.
 |---|---|---|
 | API | `src/transect/api.py` | `transect()` / `load()` / `render()`, viewer spawn, epoch loop, and the OpenClaw import driver (`_openclaw_files` / `_import_openclaw`) |
 | Spec | `src/transect/spec.py` | `Spec` / `Phase` / `load_spec` - the user's eval vocabulary |
+| Provenance | `src/transect/provenance.py` | Transect run identities in Scout metadata and a read-time view of the scan header and scanner parameters |
 | Selection | `src/transect/selection.py` | sample + epoch selection before any judge spend |
 | Ingestion | `src/transect/ingestion/` | the vendored OpenClaw telemetry parser only - the import logic that drives it lives in `api.py` (`.eval` logs are read natively by Scout) |
 | Scanners | `src/transect/scanners/` | Scout scanners; each scanner's `value` dict is the store schema, documented in that scanner's docstring |

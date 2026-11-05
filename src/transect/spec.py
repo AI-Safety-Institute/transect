@@ -140,4 +140,9 @@ def is_label_key(label: object) -> bool:
 
 def load_spec(path: Path | str) -> Spec:
     """Load a spec from JSON or YAML (same schema either way)."""
-    return Spec.model_validate(yaml.safe_load(Path(path).read_text()))
+    return load_spec_bytes(Path(path).read_bytes())
+
+
+def load_spec_bytes(content: str | bytes) -> Spec:
+    """Load a spec from JSON or YAML bytes or text."""
+    return Spec.model_validate(yaml.safe_load(content))

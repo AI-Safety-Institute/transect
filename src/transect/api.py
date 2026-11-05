@@ -53,6 +53,12 @@ from transect.layers import (
     validate_audit,
     validate_layers,
 )
+from transect.provenance import (
+    build_run_metadata,
+    custom_layer_identities,
+    input_hashes,
+    provenance_from_scan,
+)
 from transect.report import render_report
 from transect.report.blocks import validate_section
 from transect.report.render import render_index, validate_section_order
@@ -67,7 +73,7 @@ from transect.scanners.digests import DigestSettings, resolve_digest
 from transect.scanners.phases import decision_phases
 from transect.scanners.subagents import subagent_classification
 from transect.selection import read_index, select_transcripts
-from transect.spec import Spec, load_spec
+from transect.spec import Spec, load_spec_bytes
 from transect.tags import turn_tags_frame
 
 # The scanners every run executes; a store without their results is not
@@ -228,7 +234,14 @@ def transect(
     """
     # a typo'd section key must fail here, not after the judge spend
     validate_section_order(section_order, [layer.name for layer in extra_layers or []])
-    loaded_spec = spec if isinstance(spec, Spec) else load_spec(spec)
+    if isinstance(spec, Spec):
+        loaded_spec = spec
+        spec_source: str | Path | None = None
+        spec_bytes: bytes | None = None
+    else:
+        spec_source = spec
+        spec_bytes = Path(spec).read_bytes()
+        loaded_spec = load_spec_bytes(spec_bytes)
     if judge_models is None:
         declared = (
             f"the spec declares {len(loaded_spec.phases)} phases and "
@@ -282,6 +295,8 @@ def transect(
         results_buffer=results_buffer,
         fail_on_error=fail_on_error,
         extra_layers=extra_layers,
+        spec_source=spec_source,
+        spec_bytes=spec_bytes,
     )
     return render(
         results,
@@ -359,6 +374,7 @@ def load(scans_dir: str, extra_layers: list[Layer] | None = None) -> TransectRes
         scan_location=scan_location,
         transcripts_location=_transcripts_location(transcripts),
         scan_status=build_scan_status(results, mounted_scanners=claimed),
+        provenance=provenance_from_scan(results.spec),
         token_timeline=token_timeline,
         flushes=flushes_df(results.scanners["context_flush"], token_timeline),
         interventions=interventions_df(results.scanners["human_intervention"]),
@@ -575,6 +591,8 @@ def _run(
     results_buffer: int | None = None,
     fail_on_error: bool = False,
     extra_layers: list[Layer] | None = None,
+    spec_source: str | Path | None = None,
+    spec_bytes: bytes | None = None,
 ) -> TransectResults:
     """Scan the logs with the Transect scanner set and return the frames.
 
@@ -585,6 +603,7 @@ def _run(
     # validate before resolving: a malformed layer must be refused before
     # its factory runs (and constructs judge models)
     validate_layers(list(extra_layers or []), builtin_frame_names())
+    custom_layers = custom_layer_identities(list(extra_layers or []))
     digest = resolve_digest(digest)
     extra_layers = resolve_scanner_factories(
         list(extra_layers or []),
@@ -617,15 +636,16 @@ def _run(
         asyncio.run(_import_openclaw(jsonl, logs))
     transcripts = transcripts_from(logs if isinstance(logs, str) else list(logs))
     # one-sample rule + epoch selection
-    selection = select_transcripts(
-        asyncio.run(read_index(transcripts)), sample=sample, epochs=epochs
-    )
+    infos = asyncio.run(read_index(transcripts))
+    selection = select_transcripts(infos, sample=sample, epochs=epochs)
     for note in selection.notes:
         print(f"WARNING: {note}")
     if selection.transcript_ids is not None:
         transcripts = transcripts.where(
             columns.transcript_id.in_(selection.transcript_ids)
         )
+        selected = set(selection.transcript_ids)
+        infos = [info for info in infos if info.transcript_id in selected]
     # no scan-level reuse: every call performs a fresh scan (judge
     # calls are deduplicated by inspect-ai's generate cache)
     scanners += [
@@ -642,6 +662,17 @@ def _run(
         ),
         results_buffer=results_buffer,
         fail_on_error=fail_on_error,
+        metadata={
+            "transect": build_run_metadata(
+                spec,
+                spec_source=spec_source,
+                spec_bytes=spec_bytes,
+                sample=sample,
+                epochs=epochs,
+                inputs=input_hashes(infos),
+                custom_layers=custom_layers,
+            ).model_dump(mode="json"),
+        },
     )
     return load(status.location, extra_layers=extra_layers)
 
