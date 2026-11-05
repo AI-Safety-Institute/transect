@@ -7,6 +7,8 @@ User frames are plain pandas with the identity prefix.
 - `generic_flatten` is the default when a layer gives no frame fn.
 """
 
+import json
+
 import pandas as pd
 
 from transect.frames.common import (
@@ -34,6 +36,10 @@ def turns_frame(results: pd.DataFrame, key: str = "turns") -> pd.DataFrame:
     projects one row: the item id and its ``Result.metadata`` (the
     ``turn`` key for a per-turn loader), the decided ``label``, and -
     whenever the value carries a judge block - the judged columns.
+    ``message_references`` and ``event_references`` contain Scout's
+    recorded citation objects for an item. They include citations from
+    dissenting members and verifiers, not only the final label's
+    explanation. Batch-wide references are not attributed to individual units.
 
     Args:
         results: The layer scanner's raw results table.
@@ -175,6 +181,11 @@ def _item_row(r, value: dict) -> dict:
     """One loader item's row: metadata + label, plus the judged
     projection when the scanner stamped a judge block."""
     row = {"item": input_id(r), **item_metadata(r)}
+    for name in ("message_references", "event_references"):
+        references = r.get(name)
+        row[name] = (
+            json.loads(references) if isinstance(references, str) else references
+        )
     raw = r.get("answer")
     label = label_key(raw) if isinstance(raw, str) and raw.strip() else None
     row["label"] = label

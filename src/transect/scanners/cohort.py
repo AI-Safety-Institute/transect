@@ -26,6 +26,7 @@ from inspect_ai.model import (
     ModelOutput,
     get_model,
 )
+from inspect_ai.scorer import Reference
 from inspect_scout import (
     AnswerStructured,
     RefusalError,
@@ -34,7 +35,7 @@ from inspect_scout import (
     Transcript,
     llm_scanner,
 )
-from pydantic import BaseModel, Field, JsonValue, create_model
+from pydantic import BaseModel, Field, JsonValue, PrivateAttr, create_model
 
 from transect.spec import is_label_key, label_key
 
@@ -126,10 +127,14 @@ class _UnitDecision:
     confidence: float | None
     explanation: str | None
     overturned: bool
+    references: list[Reference]
 
 
 class VerifierReview(BaseModel):
     """One second-round review of a doubtful judgement."""
+
+    # Scout's Result owns references; the stored review value does not duplicate them.
+    _references: list[Reference] = PrivateAttr(default_factory=list)
 
     trigger: Trigger
     """Why this judgement was selected for review."""
@@ -265,6 +270,12 @@ def cohort_llm_scanner(
     0.6 (``low_confidence`` - the judges' own doubt), or a k-roll
     vote agreement below 0.6 (``low_agreement`` - instability across
     rolls). An overturn is applied only at verifier confidence >= 0.6.
+
+    Unbatched results retain Scout's message/event references from the
+    members and verifier, deduplicated by (type, id), including dissenting
+    citations. They identify cited content, not agreement on its meaning.
+    Ask for citations in the question; the default answer prompt is unchanged.
+    Batched calls do not assign their citations to individual units.
 
     Voting-regime Result contract (both regimes also stamp the loader
     item's own metadata as ``Result.metadata``):
@@ -467,6 +478,14 @@ def cohort_llm_scanner(
             answer=decided.label,
             label=decided.label,
             explanation=decided.explanation,
+            references=_merge_references(
+                [
+                    outcome.references
+                    for outcome in results
+                    if isinstance(outcome, Result)
+                ]
+                + [decided.references]
+            ),
             metadata=item.metadata,
         )
 
@@ -862,6 +881,7 @@ def _verified_llm_scanner(
         value = outcome.value if isinstance(outcome.value, dict) else {}
         label, confidence, explanation = _answer_fields(outcome)
         final_label = label
+        review_references: list[Reference] = []
         verifier: dict[str, JsonValue] | None = (
             {"ran": False, "model": _model_name(verifier_model)} if verify_on else None
         )
@@ -882,6 +902,7 @@ def _verified_llm_scanner(
                     trigger=trigger,
                 )
                 verifier = {"ran": True, **review.model_dump()}
+                review_references = review._references
                 if review.overturned:
                     final_label = review.verifier_label
                     explanation = review.verifier_explanation
@@ -906,6 +927,7 @@ def _verified_llm_scanner(
             answer=final_label,
             label=final_label,
             explanation=explanation,
+            references=_merge_references([outcome.references, review_references]),
             metadata=item.metadata,
         )
 
@@ -1013,6 +1035,7 @@ async def _verify_judgement(
         result.status = "error"
         return result
     v_label, v_confidence, v_explanation = _answer_fields(outcome)
+    result._references = outcome.references
     if v_label is None:
         result.status = "error"
         return result
@@ -1045,6 +1068,7 @@ async def _vote_and_verify(
     verifier: dict[str, JsonValue] | None = (
         {"ran": False, "model": _model_name(verifier_model)} if verify_on else None
     )
+    references: list[Reference] = []
     if vote and verify_on:
         trigger: Trigger | None = _verify_trigger(
             vote.confidence,
@@ -1065,12 +1089,28 @@ async def _vote_and_verify(
                 trigger=trigger,
             )
             verifier = {"ran": True, **review.model_dump()}
+            references = review._references
             if review.overturned:
                 label = review.verifier_label
                 confidence = review.verifier_confidence
                 explanation = review.verifier_explanation
     overturned = bool(verifier and verifier.get("overturned"))
-    return _UnitDecision(vote, verifier, label, confidence, explanation, overturned)
+    return _UnitDecision(
+        vote, verifier, label, confidence, explanation, overturned, references
+    )
+
+
+def _merge_references(groups: Sequence[Sequence[Reference]]) -> list[Reference]:
+    """Keep the first citation for each native Scout reference identity."""
+    seen: set[tuple[str, str]] = set()
+    merged: list[Reference] = []
+    for group in groups:
+        for reference in group:
+            key = (reference.type, reference.id)
+            if key not in seen:
+                seen.add(key)
+                merged.append(reference)
+    return merged
 
 
 def _cohort_block(
