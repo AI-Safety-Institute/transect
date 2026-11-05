@@ -1,0 +1,33 @@
+{% macro percent(value) -%}{% if value is none %}no data{% else %}{{ '%.1f'|format(value * 100) }}%{% endif %}{%- endmacro %}
+{% macro coefficient(value) -%}{% if value is none %}no data{% else %}{{ '%.3f'|format(value) }}{% endif %}{%- endmacro %}
+<section class="section" id="collection-reliability">
+<h3>Collection reliability</h3>
+{% if collection %}
+<p class="meta explainer">Each judged surface pooled over the scan's epochs, one row per recorded judge setup and label vocabulary. Agreement colour scale: 0 <span class="ramp-bar" style="background:linear-gradient(90deg,{{ ramp.low }},{{ ramp.mid }} 50%,{{ ramp.high }})"></span> 1</p>
+<div class="relmap-scroll"><table class="relmap collection-reliability-table">
+<thead><tr><th>Scanner / setup</th><th>Ballots</th><th>Mean unit agreement</th><th>Pairwise agreement</th><th>α</th><th>AC1</th><th>Verifier relabels</th><th>Verifier spot-check</th></tr></thead><tbody>
+{% for r in collection %}<tr><th scope="row">{{ r.name }}{% if r.available %}<div>{{ r.setup }}</div>{% endif %}</th>
+{% if not r.available %}<td colspan="7">{{ r.reason }}{% if r.scope is defined %} · {{ r.scope }} epoch(s){% endif %}</td>
+{% elif not r.voting %}<td colspan="5">single judge: one judgement per unit, no agreement to measure · {{ r.seen }} unit(s) over {{ r.scope }} epoch(s)</td>
+{% else %}
+<td>{{ r.ballots }} / {{ r.expected }}<div>{{ r.seen }} units · {{ r.scope }} epoch(s)</div></td>
+<td style="{{ r.styles.mean }}">{{ percent(r.mean.mean) }}<div>{{ r.mean.n }} units</div></td>
+<td style="{{ r.styles.pairwise }}">{{ percent(r.cohort.percent_agreement) }}<div>{{ r.cohort.n }} ratings</div></td>
+<td style="{{ r.styles.alpha }}">{{ coefficient(r.cohort.alpha) }}</td>
+<td style="{{ r.styles.ac1 }}">{{ coefficient(r.cohort.ac1) }}</td>
+{% endif %}{% if r.available %}{% if not r.verifier.on %}<td>Off</td><td>Off</td>{% else %}<td>{{ r.verifier.relabelled }} / {{ r.verifier.completed }}<div>{{ r.verifier.selected }} selected · {{ r.verifier.selected - r.verifier.completed }} without verdict</div></td><td>{% if r.verifier.random.of %}{{ r.verifier.random.count }} / {{ r.verifier.random.of }} overturned{% else %}none sampled{% endif %}</td>{% endif %}{% endif %}
+</tr>{% endfor %}
+</tbody></table></div>
+<details class="event definitions relmap-legend"><summary>How to read</summary>
+<ul class="collection-reading">
+<li><strong>Scanner / setup:</strong> epochs are grouped by the judge setup and label vocabulary their scan recorded; different setups never pool.</li>
+<li><strong>Ballots:</strong> valid original ballots on the units judging attempted (phase turns the judge saw, sub-agent spans), against the count the setup expects (units × models × rolls). A single judge has one judgement per unit and no ballots to compare.</li>
+<li><strong>Mean unit agreement:</strong> the per-unit agreement the frames carry (<code>judge_agreement</code>, defined where at least two members voted), averaged over the pooled units.</li>
+<li><strong>Pairwise agreement, α, AC1:</strong> pairs of original ballots pooled across epochs with transcript-scoped unit keys, so turn 3 of two epochs are different units; α is Krippendorff's alpha and AC1 Gwet's, two chance models over the same ballots.</li>
+<li><strong>Verifier relabels:</strong> units the verifier relabelled out of its usable verdicts, with the reviews selected and the attempts that returned no verdict.</li>
+<li><strong>Verifier spot-check:</strong> overturns among the randomly sampled reviews, usable verdicts only.</li>
+</ul>
+<p class="meta explainer">These numbers are the per-epoch audits pooled; they measure the judges' consistency, not correctness.</p>
+</details>
+{% else %}<p class="meta">No judged scanner ran in this scan; structural scanners have no judge reliability to measure.</p>{% endif %}
+</section>

@@ -210,6 +210,17 @@ scanner change take effect; run a new scan and retain both results for compariso
   this run-wide status outside optional sections. Keep it in custom UIs,
   including when an epoch filter hides other scan transcripts.
 
+- **Run index.** `transect()` scans one sample per invocation; when that
+  sample was scanned over several epochs, `render()` writes one report
+  file per epoch (`report_epoch2.html`, ...) plus `report_index.html`,
+  listed first in `report_paths` and opened by default. The index holds
+  the epoch reports with their recorded execution status, the
+  collection reliability (each judged surface pooled per recorded judge
+  setup and vocabulary, from the frames' own `judge_agreement` and the
+  original ballots with transcript-scoped unit keys) and the run-wide
+  scan status; it sits outside `section_order`, reads no transcripts
+  and needs no chart runtime. A single epoch renders no index.
+
 ## Report code: read before touching
 
 - The module docstring of `src/transect/report/charts.py` is a

@@ -35,6 +35,9 @@ from transect.reliability import (
 )
 from transect.report.colors import _UNJUDGED_BASES
 
+# phase turns the judge never saw: neither judged nor attributed to a judgement
+UNSEEN_BASES = ("attributed", "unattributed")
+
 # The flagging policy: single source for the flag thresholds and the
 # confidence-tier bounds.
 AGREEMENT_RELIABLE = 0.80  # Krippendorff's conventional "reliable" band

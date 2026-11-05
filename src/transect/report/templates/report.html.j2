@@ -14,7 +14,8 @@
 <div class="sensitivity-banner sensitivity-bottom">{{ sensitivity }}</div>
 {%- endif %}
 <h1><img class="brand-logo" src="{{ logo_uri }}" alt=""> {{ title }}</h1>
-<p class="meta">scan: {{ scan_location }} · {{ n_transcripts }} transcript(s)</p>
+{% if index_href %}<p><a href="{{ index_href }}">&larr; Run index</a></p>{% endif %}
+<p class="meta scan-line">scan: {{ scan_location }} · {{ n_transcripts }} transcript(s)</p>
 {%- if scan_status_view.failures %}
 <p class="warning flag">&#9888; Some requested scanners failed or have missing coverage - see <a href="#scan-status">Scan execution &amp; coverage</a>.</p>
 {%- endif %}

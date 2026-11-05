@@ -15,6 +15,7 @@ import sys
 import webbrowser
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
 from uuid import uuid4
 
 import pandas as pd
@@ -54,7 +55,7 @@ from transect.layers import (
 )
 from transect.report import render_report
 from transect.report.blocks import validate_section
-from transect.report.render import validate_section_order
+from transect.report.render import render_index, validate_section_order
 from transect.scan_status import build_scan_status, scan_error
 from transect.scanners.base import (
     context_flush,
@@ -429,9 +430,12 @@ def render(
     transect() or load().
 
     Fills ``report_paths``/``viewer_url`` on the given results and
-    returns that same object. Normally one report file renders;
-    when the frames carry more than one epoch, one file renders per
-    epoch (``report_epoch2.html``, ...).
+    returns that same object. Normally one report file renders; when
+    the sample was scanned over several epochs, one file renders per
+    epoch (``report_epoch2.html``, ...) plus a run index
+    (``report_index.html``), listed first in ``report_paths`` and
+    opened by default, that links each epoch's report and pools the
+    scan's judge reliability.
 
     Args:
         results: The frames to render (from transect() or load()).
@@ -474,18 +478,27 @@ def render(
             else base.name
         )
         title = f"Transect report · {stem}"
+    plain_title = title
     if sensitivity:
         title = f"{title} · {sensitivity}"
     viewer_url = None
     if viewer and results.transcripts_location:
         viewer_url = _spawn_viewer(results.transcripts_location)
     path.parent.mkdir(parents=True, exist_ok=True)
-    # split per-epoch only when some sample carries several epochs
-    # (epochs="all"/list); auto-selection picks one epoch per sample
-    epochs = (
-        sorted(int(e) for e in results.token_timeline.epoch.dropna().unique())
-        if len(results.token_timeline)
-        and results.token_timeline.groupby("sample_id").epoch.nunique().max() > 1
+    # one file per epoch when the sample was scanned over several
+    # (epochs="all"/list), plus a run index; auto-selection picks one
+    info = results.transcript_info.sort_values("epoch")
+    if info.epoch.isna().any():
+        raise ValueError("transcript_info records a transcript without an epoch")
+    epochs: list[tuple[int, str]] = (
+        list(
+            zip(
+                info.epoch.astype(int).tolist(),
+                info.transcript_id.astype(str).tolist(),
+                strict=True,
+            )
+        )
+        if info.epoch.nunique() > 1
         else []
     )
     views = (
@@ -493,15 +506,17 @@ def render(
             (
                 path.with_name(f"{path.stem}_epoch{epoch}{path.suffix}"),
                 f"{title} · epoch {epoch}",
-                _epoch_view(results, epoch),
+                _epoch_view(results, transcript_id),
+                transcript_id,
             )
-            for epoch in epochs
+            for epoch, transcript_id in epochs
         ]
         if epochs
-        else [(path, title, results)]
+        else [(path, title, results, None)]
     )
+    index_path = path.with_name(f"{path.stem}_index{path.suffix}") if epochs else None
     paths: list[str] = []
-    for out, view_title, view in views:
+    for out, view_title, view, _ in views:
         out.write_text(
             render_report(
                 view,
@@ -510,9 +525,20 @@ def render(
                 section_order=section_order,
                 sensitivity=sensitivity,
                 petri_full_text=petri_full_text,
+                index_href=quote(index_path.name) if index_path else None,
             )
         )
         paths.append(str(out))
+    if index_path is not None:
+        index_path.write_text(
+            render_index(
+                results,
+                [(out.name, str(transcript_id)) for out, _, _, transcript_id in views],
+                title=plain_title,
+                sensitivity=sensitivity,
+            )
+        )
+        paths.insert(0, str(index_path))
     results.report_paths = paths
     results.viewer_url = viewer_url
     for p in paths:
@@ -740,14 +766,11 @@ async def _import_openclaw(files: list[Path], db_dir: str) -> None:
         await db.disconnect()
 
 
-def _epoch_view(results: TransectResults, epoch: int) -> TransectResults:
-    """Per-epoch view: every frame filtered to the epoch's transcripts
-    (via the token timeline's epoch column).
-
-    The original results object is untouched, views only feed the report."""
-    tids = set(
-        results.token_timeline[results.token_timeline.epoch == epoch].transcript_id
-    )
+def _epoch_view(results: TransectResults, transcript_id: str) -> TransectResults:
+    """Per-epoch view: every frame cut to the epoch's transcript, the
+    run-wide scan status kept whole. The original results object is
+    untouched, views only feed the report."""
+    tids = {transcript_id}
 
     def cut(frame: pd.DataFrame) -> pd.DataFrame:
         if "transcript_id" in frame.columns:

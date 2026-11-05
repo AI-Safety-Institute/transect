@@ -280,6 +280,11 @@ Read [references/report-guide.md](references/report-guide.md) before
 walking a user through a report - it covers every section top to
 bottom (what it shows, how to read it, what to check), the
 reliability audit's thresholds, and the interpretation discipline.
+A sample scanned over several epochs renders one report per epoch plus
+`report_index.html`, first in `report_paths` and opened by default: the
+epoch reports with their scan status, the judged surfaces' reliability
+pooled over the epochs, and the run-wide scan status. A single epoch
+renders no index.
 The one-line version: everything judged is descriptive and carries
 its provenance (who decided, confidence, agreement); grey always
 means "not judged", never "fine"; absence is stated, never faked.

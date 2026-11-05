@@ -1,5 +1,7 @@
 """The public transect/load/render functions, end to end on real logs."""
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 from helpers import JSON_SPEC, demo_judge
@@ -274,9 +276,10 @@ def test_load_rereads_a_scan_identically_without_rescanning(demo_log, tmp_path):
     )
 
 
-def test_epochs_all_renders_one_report_per_epoch(epochs_logs, tmp_path):
+def test_epochs_all_renders_one_report_per_epoch_plus_an_index(epochs_logs, tmp_path):
     """A multi-epoch sample under epochs="all" produces a report file
-    per epoch, each named by its epoch."""
+    per epoch, each named by its epoch, behind one run index (a single
+    epoch renders the one report the default-path test unpacks)."""
     results = transect(
         logs=str(epochs_logs),
         spec=JSON_SPEC,
@@ -286,7 +289,12 @@ def test_epochs_all_renders_one_report_per_epoch(epochs_logs, tmp_path):
         viewer=False,
         open_report=False,
     )
-    assert len(results.report_paths) == 3
+    assert [Path(p).name for p in results.report_paths] == [
+        "report_index.html",
+        "report_epoch1.html",
+        "report_epoch2.html",
+        "report_epoch3.html",
+    ]
     assert sorted(results.token_timeline.epoch.unique()) == [1, 2, 3]
     assert results.token_timeline.transcript_id.nunique() == 3
     assert all(s.total_transcripts == 3 for s in results.scan_status.scanners)

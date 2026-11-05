@@ -7,7 +7,7 @@
     audit; this block only accounts for execution. The usage table
     is the judges' own spend, not the agent's Token spend. -#}
 <section id="scan-status" class="section"><h3>Scan execution &amp; coverage</h3>
-<p class="meta explainer">Run-wide record for the stored scan (all epochs): <strong>execution {{ scan_status_view.execution }}</strong>. Execution completion does not establish usable labels; per-label coverage is in the {% if n_transcripts %}<a href="#reliability-audit">reliability audit</a>{% else %}reliability audit{% endif %}.</p>
+<p class="meta explainer">Run-wide record for the stored scan (all epochs): <strong>execution {{ scan_status_view.execution }}</strong>. Execution completion does not establish usable labels; per-label coverage is in the {% if index_page | default(false) %}linked run audits{% elif n_transcripts %}<a href="#reliability-audit">reliability audit</a>{% else %}reliability audit{% endif %}.</p>
 <div class="relmap-scroll"><table class="relmap">
 <tr><th>scanner</th><th>transcripts completed</th><th>errors</th></tr>
 {% for row in scan_status_view.rows %}<tr><th>{{ row.name }}{% if row.sub %}<br/><span class="relmap-sub">{{ row.sub }}</span>{% endif %}</th>{% for cell in (row.completed, row.errors) %}<td{% if cell.bg %} style="background:{{ cell.bg }};color:{{ cell.fg }}"{% endif %}>{{ cell.text }}</td>{% endfor %}</tr>

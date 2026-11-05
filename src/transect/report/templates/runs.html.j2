@@ -1,0 +1,11 @@
+<section class="section" id="runs">
+<h3>Reports</h3>
+<div class="relmap-scroll"><table class="relmap runs-table">
+<thead><tr><th scope="col">Report</th><th scope="col">Scan status</th></tr></thead>
+<tbody>
+{% for t in transcripts %}
+<tr><td><a href="{{ t.href }}">{{ t.heading }}</a></td><td>{{ t.status }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+<p class="meta">Scan status is execution only: <em>Errors recorded</em> when any scanner recorded an error for that epoch (the details are under Scan execution &amp; coverage).</p>
+</section>

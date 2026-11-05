@@ -419,3 +419,18 @@ preserves its stored groups; this check does not establish narrative correctness
 `phases.narration_group_status` records `complete`, `invalid_partition`,
 `empty_groups`, `no_narrative`, or `not_run`. Complete checks partition
 coordinates, not factual accuracy.
+
+## Run index
+
+When a sample was scanned over several epochs, `report_index.html` lists
+each epoch's report with its recorded scan status (`Errors recorded` when
+any scanner recorded an error for that epoch, else `Ran`), then the
+collection reliability, then the run-wide scan status. The collection
+table pools each judged surface over the epochs, one row per recorded
+judge setup and label vocabulary: valid ballots on the units judging attempted against the count the
+setup expects, the frames' own per-unit `judge_agreement` averaged, the
+pairwise agreement, α and AC1 of the pooled original ballots with
+transcript-scoped unit keys, the verifier's relabels out of its usable
+verdicts, and its random spot-check overturns. A single judge has one
+judgement per unit and the row says so. These are the per-epoch audits
+pooled; they measure consistency, not correctness.
