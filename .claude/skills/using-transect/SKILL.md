@@ -274,6 +274,9 @@ Check versions, schemas and unit alignment before attributing differences to
 agent behaviour. If the comparison requires new scans under one version,
 retain the earlier stores and size any fresh judge calls first.
 
+After moving the source, pass `transcripts_location=` to `load()`; see the
+docstring with `help(transect.load)` for the contract.
+
 ## 4. Reading the report
 
 Read [references/report-guide.md](references/report-guide.md) before

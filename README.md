@@ -231,6 +231,8 @@ viewer.
 `load(scans_dir)` re-reads a stored scan without rescanning (and without API
 calls); `render(results)` re-renders the report. Use `results.scan_location`
 to reload that exact scan rather than whichever scan is latest in its parent.
+After moving the source, pass `transcripts_location=` to `load()` to restore
+source viewing; see the [`load()` docstring](src/transect/api.py).
 
 ## Reading the report
 

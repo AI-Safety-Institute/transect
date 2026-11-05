@@ -15,6 +15,7 @@ from inspect_ai.log import read_eval_log, write_eval_log
 from inspect_scout import TranscriptContent, transcripts_from
 
 from transect.api import _import_openclaw, _openclaw_files, _run, load
+from transect.report.excerpts import read_transcript_extras
 from transect.selection import read_index, select_transcripts
 from transect.spec import Spec
 
@@ -225,6 +226,58 @@ async def _stored_transcripts(location):
             await reader.read(info, TranscriptContent(messages="all", events="all"))
             async for info in reader.index()
         ]
+
+
+@pytest.mark.parametrize("source_kind", ["eval", "eval-directory", "openclaw"])
+def test_load_repoints_moved_transcripts_without_rescanning(
+    source_kind, demo_log, openclaw_log, tmp_path, monkeypatch
+):
+    """Moved transcripts restore source viewing without changing the stored scan."""
+    source = tmp_path / ("input.jsonl" if source_kind == "openclaw" else "input.eval")
+    shutil.copyfile(openclaw_log if source_kind == "openclaw" else demo_log, source)
+    ran = _run(str(source), Spec(), scans_dir=str(tmp_path / "scans"))
+    location = Path(ran.transcripts_location)
+    if source_kind == "eval-directory":
+        location = tmp_path / "logs"
+        location.mkdir()
+        shutil.move(source, location / source.name)
+    moved = tmp_path / "archive" / location.name
+    moved.parent.mkdir()
+    shutil.move(location, moved)
+    assert not Path(ran.transcripts_location).exists()
+    scan_spec = Path(ran.scan_location) / "_scan.json"
+    recorded = scan_spec.read_bytes()
+
+    def unexpected_scan(**kwargs):
+        pytest.fail("load() must not rescan relocated transcripts")
+
+    monkeypatch.setattr("transect.api.scout_scan", unexpected_scan)
+    monkeypatch.chdir(moved.parent)
+    override = moved if source_kind == "openclaw" else moved.name
+    loaded = load(ran.scan_location, transcripts_location=override)
+    assert loaded.transcripts_location == str(moved.resolve())
+    assert load(ran.scan_location).transcripts_location == ran.transcripts_location
+    for name, frame in ran.frames().items():
+        pd.testing.assert_frame_equal(loaded.frames()[name], frame)
+    assert loaded.scan_status == ran.scan_status
+    tids = loaded.transcript_info.transcript_id.astype(str).tolist()
+    extras = read_transcript_extras(loaded.transcripts_location, tids)
+    assert set(extras) == set(tids)
+    assert all(extra.excerpts for extra in extras.values())
+    assert scan_spec.read_bytes() == recorded
+
+
+@pytest.mark.parametrize(
+    ("location", "error"), [("", ValueError), ("missing.eval", FileNotFoundError)]
+)
+def test_load_rejects_an_invalid_explicit_transcripts_location(
+    location, error, tmp_path, monkeypatch
+):
+    """An invalid explicit location fails without using the recorded path."""
+    fixture = Path(__file__).parent / "fixtures" / "demo_scan"
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(error, match="transcripts_location"):
+        load(str(fixture), transcripts_location=location)
 
 
 def test_reused_scan_directory_selects_only_current_inputs(openclaw_log, tmp_path):

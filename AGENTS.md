@@ -56,8 +56,10 @@ response cache. OpenClaw JSONL inputs are reparsed into a separate retained
 databases for source viewing. To reclaim disk, delete only snapshot
 directories no kept scan references (`load(scan_location).transcripts_location`
 names the one a scan reads); a scan whose snapshot is gone still loads, but
-renders without transcript excerpts and viewer links. Duplicate transcript identities within one
-invocation are rejected before scanning, and so is more than one input
+renders without transcript excerpts and viewer links. After moving the source,
+pass `transcripts_location=` to `load()` as described in its docstring.
+Duplicate transcript identities within one invocation are rejected before
+scanning, and so is more than one input
 (a second run, a copied log) for a selected sample and epoch: auto epoch
 selection never picks among them. Never delete old stores to make a
 scanner change take effect; run a new scan and retain both results for comparison.
