@@ -239,7 +239,8 @@ explicit list), `transect()` and `render()` write one report per epoch
 epoch's report with its recorded scan status, pools each judged surface's
 reliability over the epochs (per recorded judge setup and vocabulary:
 ballots, mean unit agreement, pairwise agreement, α and AC1, verifier
-outcomes; a single judge has no agreement to measure and says so), and
+relabels and spot-check overturns; a single judge has no agreement to
+measure and says so), and
 repeats the run-wide scan status. A single epoch renders no index.
 
 ## Reading the report

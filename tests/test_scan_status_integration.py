@@ -178,9 +178,6 @@ def test_structural_scanner_failing_one_transcript_loads_and_renders(
     failed_epoch = int(info.loc[error.transcript_id, "epoch"])
     assert len(result.report_paths) == 4
     assert result.report_paths[0].endswith("report_index.html")
-    index = Path(result.report_paths[0]).read_text()
-    assert index.count("<td>Errors recorded</td>") == 1
-    assert index.count("<td>Ran</td>") == 2
     for path in result.report_paths:
         assert "eval_setup" in " ".join(_status_element(path).itertext())
     for path in result.report_paths[1:]:

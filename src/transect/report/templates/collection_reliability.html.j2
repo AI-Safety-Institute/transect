@@ -1,5 +1,5 @@
-{% macro percent(value) -%}{% if value is none %}No data{% else %}{{ '%.1f'|format(value * 100) }}%{% endif %}{%- endmacro %}
-{% macro coefficient(value) -%}{% if value is none %}No data{% else %}{{ '%.3f'|format(value) }}{% endif %}{%- endmacro %}
+{% macro percent(value) -%}{% if value is none %}no data{% else %}{{ '%.1f'|format(value * 100) }}%{% endif %}{%- endmacro %}
+{% macro coefficient(value) -%}{% if value is none %}no data{% else %}{{ '%.3f'|format(value) }}{% endif %}{%- endmacro %}
 <section class="section" id="collection-reliability">
 <h3>Collection reliability</h3>
 {% if collection %}

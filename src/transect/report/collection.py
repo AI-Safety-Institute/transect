@@ -18,9 +18,7 @@ from transect.frames import TransectResults
 from transect.frames.common import JUDGE_COLS
 from transect.frames.user import member_ballots
 from transect.report.colors import cell_text_color, health_color
-from transect.report.reliability import describe_regime
-
-_UNSEEN_BASES = ("attributed", "unattributed")  # phase turns the judge never saw
+from transect.report.reliability import UNSEEN_BASES, describe_regime
 
 
 @dataclass(frozen=True)
@@ -78,10 +76,7 @@ def collection_reliability(results: TransectResults) -> list[dict]:
     for layer in results.extra_layers:
         if layer.audit is None:
             continue
-        frame = results.layer_frames.get(layer.name)
-        if frame is None:
-            rows.append(_unavailable(layer.name, "no retained frame"))
-            continue
+        frame = results.layer_frames[layer.name]
         unit_col, label_col = layer.audit
         try:
             votes = member_ballots(frame, unit_col, label_col)
@@ -94,7 +89,7 @@ def collection_reliability(results: TransectResults) -> list[dict]:
     for surface in surfaces:
         try:
             rows.extend(_groups(surface, results))
-        except (KeyError, ValueError) as error:
+        except ValueError as error:
             rows.append(_unavailable(surface.name, f"not audited: {error}"))
     return rows
 
@@ -106,17 +101,15 @@ def _unavailable(name: str, reason: str) -> dict:
 
 def _groups(surface: _Surface, results: TransectResults) -> list[dict]:
     """The surface's rows: its transcripts grouped by judge setup and
-    vocabulary, each group summarised over its pooled frames."""
+    vocabulary, each group summarised over its pooled frames; a group
+    without a recorded setup, or without judged units, states that."""
     for frame, required in (
-        (
-            surface.entity,
-            ["transcript_id", *JUDGE_COLS, "judge_models", "verifier_model"],
-        ),
-        (surface.units, ["transcript_id", surface.unit_col, "judge_agreement"]),
+        (surface.entity, ("transcript_id", "judge_regime")),
+        (surface.units, ("transcript_id", surface.unit_col, "judge_agreement")),
     ):
-        missing = set(required) - set(frame.columns)
+        missing = sorted(set(required) - set(frame.columns))
         if missing:
-            raise KeyError(f"missing columns {sorted(missing)}")
+            raise ValueError(f"missing columns {missing}")
     definitions = results.label_definitions
     groups: dict[tuple, list[str]] = {}
     regimes: dict[tuple, reliability.Regime] = {}
@@ -141,10 +134,9 @@ def _groups(surface: _Surface, results: TransectResults) -> list[dict]:
     rows = []
     for key, members in groups.items():
         units = surface.units[surface.units.transcript_id.isin(members)]
-        if not len(units):
-            rows.append(
-                {**_unavailable(surface.name, "no judged units"), "scope": len(members)}
-            )
+        if not len(units) or regimes[key].kind == "none":
+            reason = "no judged units" if not len(units) else "no judge setup recorded"
+            rows.append({**_unavailable(surface.name, reason), "scope": len(members)})
             continue
         entity = surface.entity[surface.entity.transcript_id.isin(members)]
         votes = surface.votes[surface.votes.transcript_id.isin(members)]
@@ -162,37 +154,24 @@ def _summarize(
     regime: reliability.Regime,
     scope: int,
 ) -> dict:
-    """One group's row from its pooled frames."""
+    """One group's row from its pooled frames; the agreement numbers
+    exist only for a voting setup (k-rolls or a cohort)."""
     keys = ["transcript_id", surface.unit_col]
     if units.duplicated(keys).any():
         raise ValueError(f"duplicate {surface.name} judgement units")
     if votes.duplicated([*keys, "model", "roll"]).any():
         raise ValueError(f"duplicate {surface.name} original ballots")
     # the units judging attempted: phase turns the judge saw, every span
-    seen = (
-        units[~units.basis.isin(_UNSEEN_BASES)] if "basis" in units.columns else units
-    )
-    ballots = votes.merge(seen[keys], on=keys, validate="many_to_one")
-    ballots = ballots[ballots[surface.label_col].notna()]
-    if "status" in ballots.columns:
-        ballots = ballots[ballots.status == "ok"]
-    mean = reliability.mean_stat(seen.judge_agreement)
-    cohort = reliability.cohort_agreement(ballots, surface.unit_col, surface.label_col)
+    seen = units[~units.basis.isin(UNSEEN_BASES)] if "basis" in units.columns else units
     reviews = reliability.review_units(entity)
     relabelled = reliability.relabel_rate(entity).overall
-    voting = regime.kind in ("k_roll", "cohort")
-    return {
+    row: dict = {
         "name": surface.name,
         "available": True,
         "setup": describe_regime(regime),
-        "voting": voting,
+        "voting": regime.kind in ("k_roll", "cohort"),
         "scope": scope,
-        "units": len(units),
         "seen": len(seen),
-        "mean": mean,
-        "cohort": cohort,
-        "ballots": len(ballots) if voting else None,
-        "expected": len(seen) * regime.n_models * regime.k_rolls if voting else None,
         "verifier": {
             "on": regime.verifier_on,
             "selected": len(reviews),
@@ -200,7 +179,21 @@ def _summarize(
             "relabelled": relabelled.count,
             "random": reliability.spot_check_overturns(entity),
         },
-        "styles": {
+    }
+    if not row["voting"]:
+        return row
+    ballots = votes.merge(seen[keys], on=keys, validate="many_to_one")
+    ballots = ballots[ballots[surface.label_col].notna()]
+    if "status" in ballots.columns:
+        ballots = ballots[ballots.status == "ok"]
+    mean = reliability.mean_stat(seen.judge_agreement)
+    cohort = reliability.cohort_agreement(ballots, surface.unit_col, surface.label_col)
+    row.update(
+        ballots=len(ballots),
+        expected=len(seen) * regime.n_models * regime.k_rolls,
+        mean=mean,
+        cohort=cohort,
+        styles={
             name: _cell_style(value)
             for name, value in {
                 "mean": mean.mean,
@@ -209,7 +202,8 @@ def _summarize(
                 "ac1": cohort.ac1,
             }.items()
         },
-    }
+    )
+    return row
 
 
 def _cell_style(value: float | None) -> str:

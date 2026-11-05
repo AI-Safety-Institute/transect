@@ -1,3 +1,4 @@
+import dataclasses
 from pathlib import Path
 from typing import cast
 
@@ -160,8 +161,6 @@ def judged_stores():
 def epoch_runs(judged_stores, monkeypatch):
     """Two epochs of one sample, each from its own store, so the scan
     carries two judge setups; excerpt reads are skipped."""
-    import dataclasses
-
     combined = {}
     for name in judged_stores[0].frames():
         frames = []

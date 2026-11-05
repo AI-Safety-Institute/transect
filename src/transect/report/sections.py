@@ -2224,7 +2224,7 @@ def _entity_audit(
         unit_word = "turn"
         unjudged_count = sum(reliability.abstention_counts(agreement_source).values())
         attempted = len(agreement_source) - (
-            int(agreement_source.basis.isin(("attributed", "unattributed")).sum())
+            int(agreement_source.basis.isin(reliability.UNSEEN_BASES).sum())
             if len(agreement_source)
             else 0
         )

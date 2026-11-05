@@ -111,8 +111,8 @@ h4 {{ font-size: var(--transect-font-size-smaller); font-weight: 600; }}
 .collection-reliability-table tr th:first-child {{
   white-space: normal; vertical-align: top; min-width: 8rem;
 }}
-.collection-reliability-table td:nth-child(6),
-.collection-reliability-table td:nth-child(7) {{ min-width: 4rem; }}
+.collection-reliability-table td:nth-child(5),
+.collection-reliability-table td:nth-child(6) {{ min-width: 4rem; }}
 .collection-reading {{ list-style-type: "- "; }}
 .relmap-sub {{ font-size: 0.7rem; opacity: 0.85; font-weight: 400; }}
 .relmap-ci {{ font-size: 0.65rem; opacity: 0.85; }}
