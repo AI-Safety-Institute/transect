@@ -586,6 +586,11 @@ Each `Layer` field is one surface, all optional:
 > [!TIP]
 > The full authoring recipe is the shipped `add-a-layer` skill.
 
+See the `cohort_llm_scanner` docstring for citations projected by
+`turns_frame`; message references resolve with `messages="all"` or a
+loader that preserves source message IDs. Findings remain tracked in
+[issue #77](https://github.com/AI-Safety-Institute/transect/issues/77).
+
 ## Cost
 
 Structural extraction is free (no LLM calls): without

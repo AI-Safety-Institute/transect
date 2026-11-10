@@ -8,14 +8,16 @@ from typing import get_args
 
 import pandas as pd
 import pytest
-from helpers import phase_turns_frame
+from helpers import phase_turns_frame, scripted_judge, vote_output
 from inspect_ai.log import read_eval_log, write_eval_log
+from inspect_scout import scanner
 
 import transect
 from transect import load, render
 from transect.api import _run
 from transect.frames.flushes import flushes_df
 from transect.report import charts, sections
+from transect.report.blocks import Table
 from transect.report.lanes_layout import SpanGeometry
 from transect.report.render import render_report
 from transect.scanners.phases_common import TurnBasis
@@ -178,11 +180,44 @@ def test_judged_report_renders_all_sections_from_a_stored_scan(store, tmp_path):
     _assert_no_page_errors(results.report_paths[0])
 
 
+def test_cited_layer_default_table_renders(demo_log, tmp_path):
+    """A real browser can mount the default table for a layer with citations."""
+
+    @scanner(messages="all")
+    def cited_behaviour():
+        return transect.cohort_llm_scanner(
+            question="Classify and cite the first message.",
+            answer=["risky", "safe"],
+            models=scripted_judge(vote_output("safe", explanation="See [M1].")),
+            verify=False,
+        )
+
+    layer = transect.Layer(
+        name="cited_behaviour",
+        scanner=cited_behaviour,
+        frame=transect.turns_frame,
+        section=[Table()],
+    )
+    results = _run(str(demo_log), Spec(), scans_dir=str(tmp_path), extra_layers=[layer])
+    frame = results.layer_frames["cited_behaviour"]
+    row = frame.iloc[0]
+    assert row.message_references and row.event_references == []
+    assert row.task_args == {}
+    results.layer_frames["cited_behaviour"] = pd.concat(
+        [frame, frame.assign(task_args=None)], ignore_index=True
+    )
+    render(results, open_report=False, viewer=False)
+    _assert_no_page_errors(
+        results.report_paths[0], min_charts=1, expected_table="cited_behaviour custom"
+    )
+
+
 def _assert_no_page_errors(
     report_path: str,
     min_charts: int = 6,
     setup_prompts: dict[str, str] | None = None,
     compaction_threshold: int | None = None,
+    expected_table: str | None = None,
 ) -> None:
     """Load the report in a real browser and require zero page errors,
     one document, and a drawn chart in every chart box: a plot's svg, or a
@@ -241,6 +276,12 @@ def _assert_no_page_errors(
         except AssertionError:
             pass
         n_blank = blank.count()
+        if expected_table is not None and not cdn_failures:
+            section = page.locator(".section").filter(
+                has=page.get_by_role("heading", name=expected_table, exact=True)
+            )
+            grid = section.locator(".inspect-viz-table .ag-root-wrapper")
+            playwright.expect(grid.get_by_role("gridcell").first).to_be_visible()
         browser.close()
     if cdn_failures:
         pytest.skip(f"inspect-viz CDN unreachable: {cdn_failures[0]}")
