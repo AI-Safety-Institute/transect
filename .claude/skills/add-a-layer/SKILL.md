@@ -456,9 +456,9 @@ per turn first (section 1's one-row-per-unit rule).
 Quote `"yes"` and `"no"` in the YAML, which otherwise reads them as
 booleans. The same question can also be asked
 once per transcript with no loader (`@scanner(messages="all")`,
-section 1). Unbatched results retain Scout's native citations when the
-question asks for them; `turns_frame` projects the reference objects.
-See `cohort_llm_scanner`'s docstring for their aggregation and batching limits.
+section 1). See the `cohort_llm_scanner` docstring for citations;
+message references resolve with `messages="all"` or a loader that
+preserves source message IDs.
 On a transcript longer than the judge's context window, the answer still
 comes from the last segment only. Findings and report links remain tracked in
 [issue #77](https://github.com/AI-Safety-Institute/transect/issues/77).

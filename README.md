@@ -586,10 +586,9 @@ Each `Layer` field is one surface, all optional:
 > [!TIP]
 > The full authoring recipe is the shipped `add-a-layer` skill.
 
-Unbatched `cohort_llm_scanner` results retain Scout's native citations;
-`turns_frame` exposes them as `message_references` and `event_references`.
-Ask for citations in the layer's question. The scanner docstring describes
-aggregation and batching limits; event findings remain tracked in
+See the `cohort_llm_scanner` docstring for citations projected by
+`turns_frame`; message references resolve with `messages="all"` or a
+loader that preserves source message IDs. Findings remain tracked in
 [issue #77](https://github.com/AI-Safety-Institute/transect/issues/77).
 
 ## Cost

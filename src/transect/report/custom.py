@@ -57,6 +57,7 @@ class SectionContext:
 _CHART_HEIGHT = 150
 _LANE_HEIGHT = 22
 _TABLE_HEIGHT = 260
+_REFERENCE_COLUMNS = frozenset({"message_references", "event_references"})
 _MARGINS = 46
 
 # a tooltip channel literally named "label" collides with the mark's
@@ -138,8 +139,26 @@ def _viz_block(block, own: pd.DataFrame | None, ctx: SectionContext):
             "load-time validation should have refused this layer"
         )
     if isinstance(block, b.Table):
-        columns = block.columns or [c for c in frame.columns]
-        return [table(Data.from_dataframe(frame[columns]), height=_TABLE_HEIGHT)], None
+        if block.columns:
+            data = frame[block.columns]
+        else:
+            data = frame.drop(columns=list(_REFERENCE_COLUMNS), errors="ignore")
+            # DuckDB cannot import an Arrow struct with zero fields. Keep empty
+            # metadata objects readable as "{}" without changing the layer frame.
+            for name, series in data.items():
+                if series.dtype != object:
+                    continue
+                present = series.dropna()
+                if (
+                    not present.empty
+                    and present.map(
+                        lambda value: isinstance(value, dict) and not value
+                    ).all()
+                ):
+                    data[name] = series.map(
+                        lambda value: "{}" if isinstance(value, dict) else value
+                    )
+        return [table(Data.from_dataframe(data), height=_TABLE_HEIGHT)], None
     if isinstance(block, b.TurnChart):
         return [_turn_chart(block, frame, ctx)], None
     if isinstance(block, b.TurnBand):

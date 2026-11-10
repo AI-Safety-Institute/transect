@@ -57,7 +57,8 @@ class EventMarks:
 
 @dataclass(frozen=True)
 class Table:
-    """A sortable table; ``columns`` selects and orders, None = all."""
+    """A sortable table. Explicit ``columns`` select and order columns;
+    the default skips the raw message and event reference columns."""
 
     columns: list[str] | None = None
     frame: pd.DataFrame | None = None

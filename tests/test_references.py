@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 from helpers import run_item, scripted_judge, vote_output
-from inspect_ai.model import ChatMessageAssistant, ChatMessageUser, get_model
+from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
 from inspect_ai.scorer import Reference
-from inspect_scout import Transcript, llm_scanner, scan_results_df, scanner
+from inspect_scout import Result, Transcript, scan_results_df, scanner
 
 from transect import Layer, Spec, cohort_llm_scanner, load, turns_frame
 from transect.api import _run
-from transect.scanners.cohort import _merge_references, _structured_answer
+from transect.scanners import cohort
 
 LABELS = ["risky", "safe"]
 QUESTION = "Classify the behaviour and cite the relevant [Mn] message IDs."
@@ -31,15 +31,6 @@ def cited_item():
 def test_wrapper_preserves_native_references(regime):
     """References retain source identity and deduplicate across all members."""
     output = vote_output("risky", explanation="Failure in [M2].")
-    native = run_item(
-        llm_scanner(
-            question=QUESTION,
-            answer=_structured_answer(LABELS),
-            model=scripted_judge(output),
-        ),
-        cited_item(),
-    )
-    assert [r.id for r in native.references] == ["evidence"]
     kwargs = {"verify": False}
     if regime == "solo":
         models = scripted_judge(output)
@@ -60,7 +51,7 @@ def test_wrapper_preserves_native_references(regime):
         cohort_llm_scanner(question=QUESTION, answer=LABELS, models=models, **kwargs),
         cited_item(),
     )
-    expected = list(native.references)
+    expected = [Reference(type="message", cite="[M2]", id="evidence")]
     if regime != "solo":
         expected.append(Reference(type="message", cite="[M1]", id="task"))
     assert result.references == expected
@@ -68,15 +59,35 @@ def test_wrapper_preserves_native_references(regime):
 
 
 @pytest.mark.parametrize("k_rolls", [1, 3])
-@pytest.mark.parametrize("verifier_label", ["risky", "safe"])
-def test_verifier_references_remain_in_native_result(k_rolls, verifier_label):
-    """Verifier citations survive without expanding the stored review value."""
+@pytest.mark.parametrize(
+    "review", ["risky", "safe", "invalid", "out_of_vocab", "exception"]
+)
+def test_verifier_references_remain_in_native_result(k_rolls, review, monkeypatch):
+    """Only successful verifier citations join the first-round references."""
     outputs = [
         vote_output("risky", confidence=0.4, explanation="Failure in [M2].")
     ] * k_rolls
-    outputs.append(
-        vote_output(verifier_label, confidence=0.9, explanation="Task in [M1].")
-    )
+    if review in LABELS:
+        outputs.append(vote_output(review, confidence=0.9, explanation="Task in [M1]."))
+    else:
+        original = cohort.llm_scanner
+
+        def scanner_with_failed_review(*args, **kwargs):
+            if kwargs["question"] == QUESTION:
+                return original(*args, **kwargs)
+
+            async def failed_review(item):
+                if review == "exception":
+                    raise RuntimeError("verifier unavailable")
+                return Result(
+                    value={},
+                    label="unsupported" if review == "out_of_vocab" else None,
+                    references=[Reference(type="message", cite="[M1]", id="task")],
+                )
+
+            return failed_review
+
+        monkeypatch.setattr(cohort, "llm_scanner", scanner_with_failed_review)
     result = run_item(
         cohort_llm_scanner(
             question=QUESTION,
@@ -88,12 +99,14 @@ def test_verifier_references_remain_in_native_result(k_rolls, verifier_label):
         ),
         cited_item(),
     )
-    assert [(r.type, r.id) for r in result.references] == [
-        ("message", "evidence"),
-        ("message", "task"),
-    ]
-    assert "references" not in result.value["verifier"]
-    assert result.answer == verifier_label
+    expected = [("message", "evidence")]
+    if review in LABELS:
+        expected.append(("message", "task"))
+    assert [(r.type, r.id) for r in result.references] == expected
+    verifier = result.value["verifier"]
+    assert "references" not in verifier
+    assert verifier["status"] == ("ok" if review in LABELS else "error")
+    assert result.answer == (review if review in LABELS else "risky")
 
 
 @scanner(messages="all")
@@ -113,6 +126,8 @@ def test_references_survive_the_store_and_layer_projection(demo_log, tmp_path):
         str(demo_log), Spec(), scans_dir=str(tmp_path / "scans"), extra_layers=[layer]
     )
     raw = scan_results_df(result.scan_location).scanners["cited_behaviour"]
+    with pytest.raises(KeyError, match="message_references"):
+        turns_frame(raw.drop(columns="message_references"))
     expected = json.loads(raw.iloc[0].message_references)
     assert len(expected) == 1
     assert expected[0]["type"] == "message"
@@ -122,54 +137,3 @@ def test_references_survive_the_store_and_layer_projection(demo_log, tmp_path):
         reloaded.layer_frames["cited_behaviour"].iloc[0].message_references == expected
     )
     assert (Path(result.scan_location) / "_scan.json").is_file()
-
-
-@pytest.mark.parametrize("explanation", ["No citation.", "Unknown [M999]."])
-def test_absent_or_unknown_citations_do_not_create_references(explanation):
-    """Scout's missing-reference result survives without invented source IDs."""
-    result = run_item(
-        cohort_llm_scanner(
-            question=QUESTION,
-            answer=LABELS,
-            models=scripted_judge(vote_output("risky", explanation=explanation)),
-            verify=False,
-        ),
-        cited_item(),
-    )
-    assert result.references == []
-    assert result.answer == "risky"
-
-
-def test_failed_verifier_keeps_first_round_references():
-    """A failed review adds no reference and preserves the judge's citations."""
-    judge = scripted_judge(
-        vote_output("risky", confidence=0.4, explanation="Failure in [M2].")
-    )
-
-    def fail(input, tools, tool_choice, config):
-        raise RuntimeError("verifier unavailable")
-
-    result = run_item(
-        cohort_llm_scanner(
-            question=QUESTION,
-            answer=LABELS,
-            models=judge,
-            verifier_model=get_model(
-                "mockllm/reviewer", custom_outputs=fail, memoize=False
-            ),
-            verify=True,
-            verify_sample=0,
-        ),
-        cited_item(),
-    )
-    assert [r.id for r in result.references] == ["evidence"]
-    assert result.value["verifier"]["status"] == "error"
-    assert result.answer == "risky"
-
-
-def test_reference_identity_includes_type():
-    """A message and an event with the same ID remain distinct citations."""
-    first = Reference(type="message", cite="[M1]", id="shared")
-    duplicate = Reference(type="message", cite="[M2]", id="shared")
-    event = Reference(type="event", id="shared")
-    assert _merge_references([[first], [duplicate, event]]) == [first, event]

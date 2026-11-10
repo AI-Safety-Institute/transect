@@ -35,7 +35,7 @@ from inspect_scout import (
     Transcript,
     llm_scanner,
 )
-from pydantic import BaseModel, Field, JsonValue, PrivateAttr, create_model
+from pydantic import BaseModel, Field, JsonValue, create_model
 
 from transect.spec import is_label_key, label_key
 
@@ -127,14 +127,10 @@ class _UnitDecision:
     confidence: float | None
     explanation: str | None
     overturned: bool
-    references: list[Reference]
 
 
 class VerifierReview(BaseModel):
     """One second-round review of a doubtful judgement."""
-
-    # Scout's Result owns references; the stored review value does not duplicate them.
-    _references: list[Reference] = PrivateAttr(default_factory=list)
 
     trigger: Trigger
     """Why this judgement was selected for review."""
@@ -272,10 +268,13 @@ def cohort_llm_scanner(
     rolls). An overturn is applied only at verifier confidence >= 0.6.
 
     Unbatched results retain Scout's message/event references from the
-    members and verifier, deduplicated by (type, id), including dissenting
-    citations. They identify cited content, not agreement on its meaning.
-    Ask for citations in the question; the default answer prompt is unchanged.
-    Batched calls do not assign their citations to individual units.
+    members and successful verifier reviews, deduplicated by (type, id),
+    including dissenting citations. Ask for citations in the question.
+    Message references resolve to transcript messages with
+    ``messages="all"`` or a loader that preserves source message IDs.
+    Synthetic loader messages (such as ``digest_turns`` items) can carry
+    generated IDs that do not resolve to a source message. Batched calls
+    do not assign their citations to individual units.
 
     Voting-regime Result contract (both regimes also stamp the loader
     item's own metadata as ``Result.metadata``):
@@ -451,7 +450,7 @@ def cohort_llm_scanner(
                     Ballot(label=label, confidence=confidence, explanation=explanation)
                 )
         # only the k-roll regime reaches the verifier here
-        decided = await _vote_and_verify(
+        decided, review_references = await _vote_and_verify(
             ballots,
             item,
             question,
@@ -484,7 +483,7 @@ def cohort_llm_scanner(
                     for outcome in results
                     if isinstance(outcome, Result)
                 ]
-                + [decided.references]
+                + [review_references]
             ),
             metadata=item.metadata,
         )
@@ -742,7 +741,7 @@ def _batch_llm_scanner(
                 messages=[ChatMessageUser(content=unit_text.get(n) or content)],
                 metadata=facts,
             )
-            decided = await _vote_and_verify(
+            decided, _ = await _vote_and_verify(
                 ballots,
                 unit_item,
                 question,
@@ -773,6 +772,7 @@ def _batch_llm_scanner(
             if decided.verifier is not None:
                 entry["verifier"] = decided.verifier
             entries.append(entry)
+        # A batch Result does not attribute references to its individual units.
         labelled = any(entry["label"] for entry in entries)
         value: dict[str, JsonValue] = {
             "status": "ok" if labelled else _failure_status(call_statuses),
@@ -890,7 +890,7 @@ def _verified_llm_scanner(
             if trigger is None and _spot_check(item, verify_sample):
                 trigger = "random_sample"
             if trigger is not None:
-                review = await _verify_judgement(
+                review, review_references = await _verify_judgement(
                     item,
                     question,
                     labels,
@@ -902,7 +902,6 @@ def _verified_llm_scanner(
                     trigger=trigger,
                 )
                 verifier = {"ran": True, **review.model_dump()}
-                review_references = review._references
                 if review.overturned:
                     final_label = review.verifier_label
                     explanation = review.verifier_explanation
@@ -987,7 +986,7 @@ async def _verify_judgement(
     confidence: float | None,
     explanation: str | None,
     trigger: Trigger,
-) -> VerifierReview:
+) -> tuple[VerifierReview, list[Reference]]:
     """One second-round review of a doubtful judgement.
 
     The verifier sees the same content plus the first-round
@@ -995,8 +994,7 @@ async def _verify_judgement(
     label overturns only at verifier confidence >= 0.6.
 
     Returns:
-        The complete ``VerifierReview`` record (labels,
-        confidences, and explanations).
+        The stored review record and references from a usable answer.
     """
     review = (
         "You are a second-round reviewer. A first-round judge answered "
@@ -1026,26 +1024,25 @@ async def _verify_judgement(
         raise
     except RefusalError:
         result.status = "refusal"
-        return result
+        return result, []
     except Exception:
         result.status = "error"
-        return result
+        return result, []
     # per-item inner never produces a multi-result list
     if isinstance(outcome, list):
         result.status = "error"
-        return result
+        return result, []
     v_label, v_confidence, v_explanation = _answer_fields(outcome)
-    result._references = outcome.references
-    if v_label is None:
+    if v_label is None or v_label not in labels:
         result.status = "error"
-        return result
+        return result, []
     result.verifier_label = v_label
     result.verifier_confidence = v_confidence
     result.verifier_explanation = v_explanation
     result.overturned = (
         v_label != label and v_confidence is not None and v_confidence >= LOWCONF
     )
-    return result
+    return result, outcome.references
 
 
 async def _vote_and_verify(
@@ -1057,7 +1054,7 @@ async def _vote_and_verify(
     verifier_model: str | Model | None,
     verify_sample: float,
     cache: bool | CachePolicy,
-) -> _UnitDecision:
+) -> tuple[_UnitDecision, list[Reference]]:
     """One unit's decision, shared by the per-item and batch paths:
     the ballots' vote, then the verifier's optional second round,
     with an overturn applied to the final facts."""
@@ -1077,7 +1074,7 @@ async def _vote_and_verify(
         if trigger is None and _spot_check(item, verify_sample):
             trigger = "random_sample"
         if trigger is not None:
-            review = await _verify_judgement(
+            review, references = await _verify_judgement(
                 item,
                 question,
                 labels,
@@ -1089,15 +1086,13 @@ async def _vote_and_verify(
                 trigger=trigger,
             )
             verifier = {"ran": True, **review.model_dump()}
-            references = review._references
             if review.overturned:
                 label = review.verifier_label
                 confidence = review.verifier_confidence
                 explanation = review.verifier_explanation
     overturned = bool(verifier and verifier.get("overturned"))
-    return _UnitDecision(
-        vote, verifier, label, confidence, explanation, overturned, references
-    )
+    decision = _UnitDecision(vote, verifier, label, confidence, explanation, overturned)
+    return decision, references
 
 
 def _merge_references(groups: Sequence[Sequence[Reference]]) -> list[Reference]:

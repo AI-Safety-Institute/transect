@@ -182,7 +182,8 @@ def _item_row(r, value: dict) -> dict:
     projection when the scanner stamped a judge block."""
     row = {"item": input_id(r), **item_metadata(r)}
     for name in ("message_references", "event_references"):
-        references = r.get(name)
+        # Scout serializes persisted reference columns as JSON text.
+        references = r[name]
         row[name] = (
             json.loads(references) if isinstance(references, str) else references
         )
