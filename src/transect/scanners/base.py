@@ -245,7 +245,7 @@ def context_flush() -> Scanner[Transcript]:
             "compaction",
             "span_begin",
             "span_end",
-            "sample_init",
+            "sample_init",  # initial message identities distinguish setup from steering
         ],
     ),
 )
@@ -425,17 +425,12 @@ def _initial_input_ids(events: list[Any]) -> tuple[set[str], bool]:
     for event in events:
         if event.event != "sample_init":
             continue
-        state = getattr(event, "state", None)
+        state = event.state
         if not isinstance(state, dict):
             continue
-        messages = state.get("messages")
-        if not isinstance(messages, list):
-            continue
-        for message in messages:
-            if not isinstance(message, dict) or not isinstance(message.get("id"), str):
-                continue
+        for message in state["messages"]:
             ids.add(message["id"])
-            has_task_prompt = has_task_prompt or message.get("role") == "user"
+            has_task_prompt = has_task_prompt or message["role"] == "user"
     return ids, has_task_prompt
 
 

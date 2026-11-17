@@ -101,15 +101,32 @@ def test_initial_conversation_is_not_steering_after_scan_and_reload(demo_log, tm
         first.input[:0] = examples
     path = tmp_path / "history.eval"
     write_eval_log(log, str(path))
-    changed, plain = (
-        _run(str(source), Spec(), scans_dir=str(tmp_path / name))
-        for name, source in [("changed", path), ("plain", demo_log)]
-    )
+    changed = _run(str(path), Spec(), scans_dir=str(tmp_path / "changed"))
     assert not changed.scan_status.has_failures
     columns = ["turn", "channel", "initiator", "content", "prompt", "outcome"]
-    pd.testing.assert_frame_equal(
-        changed.interventions[columns], plain.interventions[columns]
+    expected = pd.DataFrame(
+        [
+            (
+                7,
+                "operator",
+                "human",
+                "Operator note: we are time-boxed - blend the two models you "
+                "have rather than trying a third family.",
+                None,
+                None,
+            ),
+            (
+                9,
+                "input_event",
+                "agent",
+                "y",
+                "Submit the blended predictions as the final answer?",
+                None,
+            ),
+        ],
+        columns=columns,
     )
+    pd.testing.assert_frame_equal(changed.interventions[columns], expected)
     restored = load(changed.scan_location)
     pd.testing.assert_frame_equal(restored.interventions, changed.interventions)
 
