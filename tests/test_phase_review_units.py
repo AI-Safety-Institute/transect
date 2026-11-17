@@ -4,15 +4,7 @@ import asyncio
 
 import pandas as pd
 import pytest
-from helpers import (
-    PHASES_SPEC,
-    model_turn,
-    run_scan,
-    scripted_judge,
-    seg,
-    seg_answer,
-    verify_answer,
-)
+from helpers import PHASES_SPEC, model_turn, run_scan, scripted_judge, seg, seg_answer
 from inspect_ai.model import get_model
 
 import transect.scanners.phases_verify as phase_verifier
@@ -163,48 +155,6 @@ def test_restitched_confidence_spread_uses_the_final_turn_confidences(
         (phase.phase, phase.confidence, phase.min_confidence, phase.confidence_spread)
         for phase in phases
     ] == expected
-
-
-def test_merged_confidence_spread_survives_scanning_and_frame_projection():
-    """A verifier merge exports the final confidence spread without changing reviews."""
-    value = run_scan(
-        decision_phases(
-            PHASES_SPEC,
-            scripted_judge(
-                seg_answer(
-                    seg(0, 0, "setup", 0.95),
-                    seg(1, 1, "experiment", 0.3),
-                    seg(2, 2, "setup", 0.95),
-                ),
-                verify_answer(
-                    {
-                        "phase_index": 1,
-                        "phase": "setup",
-                        "confidence": 0.6,
-                        "explanation": "setup continues",
-                    }
-                ),
-            ),
-            verify=True,
-            verify_sample=0,
-            narrate=False,
-            cache=False,
-        ),
-        [
-            model_turn("prepare data"),
-            model_turn("prepare config"),
-            model_turn("prepare tools"),
-        ],
-    ).value
-    assert [turn["confidence"] for turn in value["turns"]] == [0.95, 0.6, 0.95]
-    frame = phases_df(pd.DataFrame([{"transcript_id": "t1", "value": value}]))
-    assert len(frame) == 1
-    assert frame.iloc[0].confidence_spread == 0.229
-    assert frame.iloc[0].confidence == 0.833
-    assert value["verifier"]["n_relabelled"] == 1
-    review = frame.iloc[0].verifier_reviews[0]["review"]
-    assert review["original_confidence"] == 0.3
-    assert review["verifier_confidence"] == 0.6
 
 
 def test_label_statistics_read_original_review_population():

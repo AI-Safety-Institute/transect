@@ -189,14 +189,17 @@ def decision_phases(
           - ``min_confidence``: minimum - the verifier's selection signal.
           - ``min_agreement``: minimum per-turn vote agreement over
             turns carrying one (voting regimes); None solo.
-          - ``confidence_spread``: 95%-CI half-width of the same
-            final per-turn confidences, after verifier updates and
-            display merging. A uniform overturn has zero spread;
-            merging it with other confidences can produce nonzero spread.
+          - ``confidence_spread``: 95%-CI half-width of all final
+            per-turn confidences, whatever their source. Recomputed when
+            an applied overturn re-stitches phases. A uniform overturn
+            has zero spread; merging with judge or other verifier
+            confidences can produce nonzero spread.
           - ``judge_agreement``: mean per-turn vote agreement
             (voting regimes); None solo.
           - ``confidence_source``: whose confidence the phase
-            carries - single_judge / majority_vote / verifier.
+            carries - single_judge / majority_vote / verifier. "verifier"
+            names the representative overturning verdict, not the source
+            of every contributing confidence.
           - ``explanation``: the first contributing segment's explanation.
           - ``verifier``: a representative second-round review (the
             ``VerifierReview`` record: trigger, original label /

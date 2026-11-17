@@ -184,8 +184,9 @@ class StitchedPhase(BaseModel):
     confidence_spread: float = Field(
         default=0.0,
         description=(
-            "95%-CI half-width of the phase's per-turn confidences "
-            "after any verifier updates and display merging."
+            "95%-CI half-width of the phase's per-turn confidences; "
+            "recomputed from the final per-turn confidences when an "
+            "applied overturn re-stitches the phases."
         ),
     )
     judge_agreement: float | None = Field(
@@ -196,7 +197,10 @@ class StitchedPhase(BaseModel):
     )
     confidence_source: LabelSource = Field(
         default="single_judge",
-        description="Whose confidence the phase carries.",
+        description=(
+            "Confidence provenance; verifier names the representative "
+            "overturning verdict, not every contributing confidence."
+        ),
     )
     explanation: str = Field(
         description=("The first contributing segment's explanation.")
