@@ -15,8 +15,9 @@ Columns (identity prefix explained in common.py):
     human approver (name "human"); a custom approver under another
     name is not counted.
 
-  The transcript's first user message is the task prompt, never an
-  intervention, whichever channel delivered it.
+  Messages identified by Inspect's recorded initial state are task
+  history, never interventions. Without that provenance, the first
+  human-channel user message is treated as the task prompt.
 - content: the human's own text - the message, the answer (structured
   fields as "name: value" lines), or the approval explanation. Empty
   on a declined or cancelled ask_user (outcome carries the fact) and

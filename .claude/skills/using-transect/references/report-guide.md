@@ -147,9 +147,10 @@ the source - explain them when asked:
   - **operator**: a message steering the running agent from outside
     (inspect's operator channel: ACP remote steering, OpenClaw inbound
     messages including slash commands such as `/stop`).
-  - **input**: a human typed into the session mid-run. The run's first
-    input message is the task prompt itself and is deliberately not
-    counted - only later ones are interventions.
+  - **input**: a human typed into the session mid-run. Messages recorded
+    in Inspect's initial state are task setup, not interventions.
+    Without that provenance, the first human-channel user message is
+    treated as the task prompt.
 - Agent-initiated, shown as "asked (agent)" (the question or tool
   call) and "answered (human)" (the reply), with the outcome on the
   header line when the source recorded one:

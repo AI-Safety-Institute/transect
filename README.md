@@ -246,6 +246,8 @@ appear as swimlanes placed by wall-clock, never as turns of their own):
   compaction prompt and memory nudge), compaction threshold, limits, run summary.
 - **Phase timeline**: the phase band plus the per-turn judge-agreement strip.
 - **Human interventions**: mid-run operator messages and console inputs.
+  Messages Inspect recorded as the sample's initial input are task setup,
+  not interventions.
 - **Token telemetry**: per-turn token measures and context size, compactions
   and any recorded compaction threshold marked.
 - **Sub-agent / lane activity**: one swimlane box per lane spanning the
