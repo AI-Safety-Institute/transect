@@ -57,10 +57,13 @@ Columns (identity prefix explained in common.py):
   verifier_same_model: the scanner-stamped judge-identity columns
   (common.JUDGE_COLS), constant across the run.
 - judge_agreement: mean per-turn vote agreement over the range.
-- confidence_spread: 95%-CI half-width of the phase's per-turn
-  confidences.
+- confidence_spread: 95%-CI half-width over all final per-turn
+  confidences, whatever their source. An applied verifier overturn
+  re-stitches phases and recomputes this spread; a merged phase can
+  mix judge and verifier confidences and have nonzero spread.
 - confidence_source: who the confidence describes - single_judge /
-  majority_vote / verifier.
+  majority_vote / verifier. "verifier" names the representative
+  overturning verdict, not the source of every contributing confidence.
 - new_work_tokens: orchestrator new-work summed over the orchestrator
   turns the dense map assigns to the phase (tool-only turns included).
 - delegated_new_work_tokens: new-work of the sub-agent spans spawned

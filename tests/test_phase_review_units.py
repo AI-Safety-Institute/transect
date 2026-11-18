@@ -99,6 +99,64 @@ def test_original_triggers_survive_merge():
     assert (measured.count, measured.of) == (0, 2)
 
 
+@pytest.mark.parametrize(
+    ("initial", "verdicts", "expected"),
+    [
+        (
+            [("A", 0.95), ("B", 0.3), ("A", 0.95)],
+            {1: ("A", 0.6)},
+            [("A", 0.833, 0.6, 0.229)],
+        ),
+        (
+            [("B", 0.3), ("C", 0.4)],
+            {0: ("A", 0.6), 1: ("A", 0.9)},
+            [("A", 0.75, 0.6, 0.294)],
+        ),
+        (
+            [("B", 0.3), ("B", 0.3)],
+            {0: ("A", 0.8)},
+            [("A", 0.8, 0.8, 0.0)],
+        ),
+        (
+            [("A", 0.95), ("B", 0.3), ("D", 0.7), ("D", 0.9)],
+            {1: ("C", 0.8)},
+            [("A", 0.95, 0.95, 0.0), ("C", 0.8, 0.8, 0.0), ("D", 0.8, 0.7, 0.196)],
+        ),
+    ],
+    ids=[
+        "merge-with-unreviewed",
+        "merge-two-overturns",
+        "uniform-overturn",
+        "isolated",
+    ],
+)
+def test_restitched_confidence_spread_uses_the_final_turn_confidences(
+    initial, verdicts, expected
+):
+    """Merged phases retain the spread of their final per-turn confidence values."""
+    rows = [
+        ConsensusJudgement(turn=i, phase=label, confidence=confidence, basis="judged")
+        for i, (label, confidence) in enumerate(initial)
+    ]
+    attempts = {
+        i: _ReviewAttempt(
+            trigger="low_confidence",
+            verdict=_Verdict(
+                phase_index=i, phase=label, confidence=confidence, explanation="fixture"
+            ),
+            status="ok",
+        )
+        for i, (label, confidence) in verdicts.items()
+    }
+    phases, _ = _apply_verdicts(
+        rows, stitch_phases(rows), attempts, VerifierAudit(), "m"
+    )
+    assert [
+        (phase.phase, phase.confidence, phase.min_confidence, phase.confidence_spread)
+        for phase in phases
+    ] == expected
+
+
 def test_label_statistics_read_original_review_population():
     """Per-label review statistics keep labels merged out of display phases."""
     frame, _ = reviewed_frame()
