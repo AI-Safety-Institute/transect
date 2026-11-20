@@ -180,6 +180,12 @@ def turn_digests(transcript: Any, digest: DigestSettings | None = None) -> list[
     return [by_turn[turn] for turn in sorted(by_turn)]
 
 
+def _flatten(text: str) -> str:
+    """Collapse all whitespace — including every Unicode line terminator —
+    to single spaces so one turn stays on one digest line."""
+    return " ".join(text.split())
+
+
 def digest_line(d: Digest) -> str:
     """Render one digest as a single prompt line: index, reasoning
     behind a [THINKING] marker, text, the tool calls, each target
@@ -191,18 +197,21 @@ def digest_line(d: Digest) -> str:
     arguments or output, otherwise as the bare ``(tools: ...)`` names."""
     parts = [f"{d.turn}:"]
     if d.reasoning:
-        parts.append(f"[THINKING] {d.reasoning}".replace("\n", " "))
+        parts.append(_flatten(f"[THINKING] {d.reasoning}"))
     if d.text:
-        parts.append(d.text.replace("\n", " "))
+        flat_text = _flatten(d.text)
+        if flat_text:
+            parts.append(flat_text)
     if any(c.arguments or c.result or c.error for c in d.tool_calls):
         parts.extend(_call_part(c) for c in d.tool_calls)
     elif d.tool_calls:
-        parts.append(f"(tools: {', '.join(c.function for c in d.tool_calls)})")
+        names = ", ".join(_flatten(c.function) for c in d.tool_calls)
+        parts.append(f"(tools: {names})")
     for reply in d.target_replies:
-        parts.append(f"[TARGET] {reply}".replace("\n", " "))
+        parts.append(_flatten(f"[TARGET] {reply}"))
     for goal in d.delegations:
         if goal:
-            parts.append(f"[DELEGATES] {goal}".replace("\n", " "))
+            parts.append(_flatten(f"[DELEGATES] {goal}"))
     return " ".join(parts)
 
 
@@ -404,4 +413,4 @@ def _call_part(call: ToolDigest) -> str:
         part += f"({call.arguments})"
     if call.result or call.error:
         part += f" [{'ERROR' if call.error else 'RESULT'}] {call.result}".rstrip()
-    return part.replace("\n", " ")
+    return _flatten(part)
