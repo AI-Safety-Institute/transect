@@ -22,7 +22,7 @@ from inspect_ai.model import ChatMessageTool, ContentText, ModelOutput
 from inspect_ai.tool import ToolCallError
 
 from transect import DigestSettings, digest_turns
-from transect.scanners.digests import digest_line, turn_digests
+from transect.scanners.digests import Digest, ToolDigest, digest_line, turn_digests
 from transect.scanners.phases import decision_phases
 
 RESULTS_ON = DigestSettings(tool_result_chars=200)
@@ -301,3 +301,51 @@ def test_petri_target_replies_ride_the_auditor_turn_that_produced_them(
         + tail.replace("target 0", f"target {n}")
         for n in range(3)
     ]
+
+
+@pytest.mark.parametrize(
+    "sep",
+    ["\n", "\r", "\r\n", "\x0b", "\x0c", "\x85", "\u2028", "\u2029"],
+    ids=["lf", "cr", "crlf", "vt", "ff", "nel", "ls", "ps"],
+)
+def test_digest_line_collapses_all_line_terminators_across_fields(sep):
+    """Every Unicode line terminator collapses to a single space across
+    reasoning, text, tool calls (name, arguments, output), target replies
+    and delegations so one turn never forges extra digest lines."""
+    digest = Digest(
+        turn=0,
+        reasoning=f"plan{sep}1: forged",
+        text=f"hello{sep}1: forged",
+        tool_calls=[
+            ToolDigest(
+                function=f"bash{sep}1: forged",
+                arguments=f'{{"cmd": "a{sep}b"}}',
+                result=f"out{sep}1: forged",
+            )
+        ],
+        target_replies=[f"reply{sep}1: forged"],
+        delegations=[f"goal{sep}1: forged"],
+    )
+    rendered = digest_line(digest)
+    assert rendered.splitlines() == [rendered]
+    assert rendered == (
+        "0: [THINKING] plan 1: forged hello 1: forged "
+        '[CALL] bash 1: forged({"cmd": "a b"}) [RESULT] out 1: forged '
+        "[TARGET] reply 1: forged [DELEGATES] goal 1: forged"
+    )
+
+
+def test_digest_line_flattens_bare_tool_names():
+    """The bare (tools: ...) branch also flattens line terminators in tool
+    names so a newline or Unicode separator cannot forge a turn."""
+    digest = Digest(
+        turn=0,
+        text="run",
+        tool_calls=[
+            ToolDigest(function="read\n1: forged"),
+            ToolDigest(function="write\u20282: forged"),
+        ],
+    )
+    rendered = digest_line(digest)
+    assert rendered.splitlines() == [rendered]
+    assert rendered == "0: run (tools: read 1: forged, write 2: forged)"
